@@ -941,20 +941,21 @@ $CAT_PALETTE = [
     .muted{color:var(--c-muted);font-size:13px}
 
     .cards{
-      --card-min: clamp(240px, 25%, 300px);
+      --card-gap:14px;
+      --card-min: min(100%, 280px);
       display:grid;
       grid-template-columns: repeat(auto-fit, minmax(var(--card-min), 1fr));
-      gap: 14px;
+      gap: var(--card-gap);
       align-items: stretch;
     }
-    @media (max-width: 1024px){
-      .cards{ --card-min: clamp(220px, 33.33%, 280px); }
+    .cards.cols-2{ --card-min: min(100%, calc((100% - var(--card-gap)) / 2)); }
+    .cards.cols-3{ --card-min: min(100%, calc((100% - (var(--card-gap) * 2)) / 3)); }
+    .cards.cols-4{ --card-min: min(100%, calc((100% - (var(--card-gap) * 3)) / 4)); }
+    @media (max-width: 900px){
+      .cards{ --card-min: min(100%, 320px); }
     }
-    @media (max-width: 768px){
-      .cards{ --card-min: min(100%, 280px); }
-    }
-    @media (max-width: 520px){
-      .cards{ grid-template-columns: repeat(auto-fit, minmax( min(100%, 240px), 1fr)); }
+    @media (max-width: 600px){
+      .cards{ --card-min: min(100%, 360px); }
     }
 
     .card{
@@ -964,6 +965,7 @@ $CAT_PALETTE = [
     }
     .card[draggable="true"]{ cursor: grab; }
     .card.is-dragging{ opacity:0.65; cursor: grabbing; box-shadow:0 12px 32px rgba(0,0,0,0.35); }
+    .card.is-hidden{ display:none !important; }
     .cards.drag-active{ position:relative; }
     .cards.drag-active::after{
       content:""; position:absolute; inset:-6px; border-radius:calc(var(--radius) + 6px);
@@ -978,6 +980,158 @@ $CAT_PALETTE = [
 
     .span-2{ grid-column: span 1; }
     @media (min-width: 1200px){ .span-2{ grid-column: span 2; } }
+
+    .dashboard-head{
+      margin:4px 0 12px;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .dashboard-head__title{ display:flex; flex-direction:column; gap:4px; min-width:0; }
+    .dashboard-head__title h1{ margin:0; }
+
+    .dash-settings-toggle{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 14px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:#111a2c;
+      color:var(--c-text);
+      font-size:13px;
+      font-weight:600;
+      letter-spacing:0.02em;
+      text-transform:uppercase;
+      cursor:pointer;
+      transition:background .2s ease, border-color .2s ease, color .2s ease;
+    }
+    .dash-settings-toggle svg{ width:16px; height:16px; }
+    .dash-settings-toggle:is(:hover,:focus-visible){ background:#182338; border-color:#2a3650; }
+    .dash-settings-toggle:focus-visible{ outline:2px solid var(--c-accent); outline-offset:2px; }
+    .dash-settings-toggle.is-active{ background:linear-gradient(90deg, var(--c-accent), var(--c-accent-2)); border-color:transparent; color:#fff; }
+
+    .dash-settings-overlay{
+      position:fixed;
+      inset:0;
+      background:rgba(5, 10, 20, 0.55);
+      backdrop-filter:blur(2px);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .3s ease;
+      z-index:940;
+    }
+    .dash-settings-overlay.is-visible{ opacity:1; pointer-events:auto; }
+
+    .dash-settings{
+      position:fixed;
+      top:0;
+      right:0;
+      width:320px;
+      max-width:90vw;
+      height:100vh;
+      background:rgba(13,18,31,0.98);
+      border-left:1px solid var(--border);
+      box-shadow:-16px 0 48px rgba(0,0,0,0.45);
+      transform:translateX(100%);
+      transition:transform .3s ease;
+      z-index:950;
+      display:flex;
+      flex-direction:column;
+    }
+    .dash-settings.is-open{ transform:translateX(0); }
+    .dash-settings__inner{ padding:20px 20px 24px; display:flex; flex-direction:column; gap:20px; overflow-y:auto; flex:1; }
+    .dash-settings__header{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .dash-settings__header h2{ margin:0; font-size:16px; }
+    .dash-settings__close{
+      border:1px solid var(--border);
+      background:#111a2c;
+      color:var(--c-text);
+      border-radius:999px;
+      padding:6px 12px;
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:0.05em;
+      cursor:pointer;
+      transition:background .2s ease, border-color .2s ease;
+    }
+    .dash-settings__close:is(:hover,:focus-visible){ background:#182338; border-color:#2a3650; }
+    .dash-settings__section{ display:flex; flex-direction:column; gap:12px; }
+    .dash-settings__section h3{ margin:0; font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:#f3f6ff; }
+    .dash-settings__columns{ display:flex; gap:10px; flex-wrap:wrap; }
+    .dash-settings__columns label{
+      position:relative;
+      flex:1 1 80px;
+      cursor:pointer;
+    }
+    .dash-settings__columns label input{
+      position:absolute;
+      inset:0;
+      opacity:0;
+      pointer-events:none;
+    }
+    .dash-settings__columns label span{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:8px 10px;
+      border:1px solid var(--border);
+      border-radius:12px;
+      background:#10192a;
+      font-size:13px;
+      font-weight:600;
+      transition:border-color .2s ease, background .2s ease, color .2s ease;
+      pointer-events:none;
+    }
+    .dash-settings__columns label:hover span{ border-color:#2a3650; background:#182338; }
+    .dash-settings__columns label input:checked + span{
+      background:linear-gradient(90deg, var(--c-accent), var(--c-accent-2));
+      border-color:transparent;
+      color:#fff;
+    }
+    .dash-settings__columns label input:focus-visible + span{ outline:2px solid var(--c-accent); outline-offset:2px; }
+
+    .dash-settings__groups{ display:flex; flex-direction:column; gap:14px; }
+    .dash-settings__group{ display:flex; flex-direction:column; gap:6px; }
+    .dash-settings__group h4{ margin:12px 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--c-muted); }
+    .dash-settings__option{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:8px 10px;
+      border:1px solid var(--border);
+      border-radius:10px;
+      background:#10192a;
+      font-size:13px;
+      cursor:pointer;
+      transition:border-color .2s ease, background .2s ease, color .2s ease;
+    }
+    .dash-settings__option input{
+      width:16px;
+      height:16px;
+      accent-color: var(--c-accent);
+    }
+    .dash-settings__option span{ flex:1; }
+    .dash-settings__option .dash-settings__tag{
+      font-size:11px;
+      color:var(--c-muted);
+      text-transform:uppercase;
+      letter-spacing:0.08em;
+      flex:0;
+      white-space:nowrap;
+    }
+    .dash-settings__option:is(:hover,:focus-within){ border-color:#2a3650; background:#182338; }
+    .dash-settings__option.is-locked{ opacity:0.6; cursor:not-allowed; }
+    .dash-settings__option.is-locked input{ pointer-events:none; }
+    .dash-settings__empty{ font-size:13px; color:var(--c-muted); }
+
+    @media (max-width: 768px){
+      .dashboard-head{ flex-direction:column; align-items:stretch; }
+      .dash-settings-toggle{ width:100%; justify-content:center; }
+      .dash-settings{ width:100%; max-width:100%; }
+    }
 
     .section{ margin-top: 18px; }
     .section h2{ margin: 0 0 8px; font-size: 15px; color: var(--c-muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
@@ -1099,13 +1253,21 @@ $CAT_PALETTE = [
   <!-- header from ppf_header.php include -->
 
   <main class="wrap">
-    <header style="margin:4px 0 12px;">
-      <h1>Dashboard</h1>
-      <div class="muted">Welcome back<?php echo isset($USER_NAME) ? ', '.h($USER_NAME) : ''; ?>.</div>
+    <header class="dashboard-head">
+      <div class="dashboard-head__title">
+        <h1>Dashboard</h1>
+        <div class="muted">Welcome back<?php echo isset($USER_NAME) ? ', '.h($USER_NAME) : ''; ?>.</div>
+      </div>
+      <button type="button" class="dash-settings-toggle" aria-expanded="false" aria-controls="dashboard-settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path fill="currentColor" d="M12 8a4 4 0 100 8 4 4 0 000-8zm9 4a1 1 0 01-.64.93l-1.55.62c-.09.25-.19.49-.3.72l.74 1.53a1 1 0 01-.22 1.17l-1.42 1.42a1 1 0 01-1.17.22l-1.53-.74a7.2 7.2 0 01-.72.3l-.62 1.55a1 1 0 01-.93.64h-2a1 1 0 01-.93-.64l-.62-1.55a7.2 7.2 0 01-.72-.3l-1.53.74a1 1 0 01-1.17-.22L3.3 16.97a1 1 0 01-.22-1.17l.74-1.53a7.2 7.2 0 01-.3-.72l-1.55-.62A1 1 0 012 12v-2a1 1 0 01.64-.93l1.55-.62c.09-.25.19-.49.3-.72l-.74-1.53A1 1 0 013.3 5.03l1.42-1.42a1 1 0 011.17-.22l1.53.74c.23-.11.47-.21.72-.3l.62-1.55A1 1 0 0110.7 2h2a1 1 0 01.93.64l.62 1.55c.25.09.49.19.72.3l1.53-.74a1 1 0 011.17.22l1.42 1.42a1 1 0 01.22 1.17l-.74 1.53c.11.23.21.47.3.72l1.55.62A1 1 0 0121 10v2z" />
+        </svg>
+        <span>Dashboard Options</span>
+      </button>
     </header>
 
-    <section class="cards" aria-label="Overview cards">
-      <article class="card security-card">
+    <section class="cards cols-4" aria-label="Overview cards">
+      <article class="card security-card" data-card-key="security">
         <h3>Security</h3>
 
         <div class="donut-wrap" aria-label="Account security status">
@@ -1174,7 +1336,7 @@ $CAT_PALETTE = [
         <!-- Admin/Trainer-only cards -->
 
         <!-- TOTAL CLIENTS — donut -->
-        <article class="card">
+        <article class="card" data-card-key="total-clients">
           <h3>Total Clients</h3>
 
           <div class="donut-wrap" aria-label="Total Clients donut">
@@ -1231,7 +1393,7 @@ $CAT_PALETTE = [
         </article>
 
         <!-- INVITES — donut (Accepted, Pending, Expired, Registered) -->
-        <article class="card">
+        <article class="card" data-card-key="invites">
           <h3>Invites</h3>
           <div class="donut-wrap" aria-label="Invites donut">
             <div class="donut">
@@ -1303,7 +1465,7 @@ $CAT_PALETTE = [
         </article>
 
         <!-- WORKOUT PLANS — sparkline -->
-        <article class="card">
+        <article class="card" data-card-key="overview-workout-plans">
           <h3>Workout Plans</h3>
 
           <?php if ($HAS_WP_CREATED_AT && $wp_bars): ?>
@@ -1336,7 +1498,7 @@ $CAT_PALETTE = [
         </article>
 
         <!-- EXERCISES — sparkline (admin/trainer overview) -->
-        <article class="card">
+        <article class="card" data-card-key="overview-exercises">
           <h3>Exercises</h3>
 
           <?php if ($HAS_EX_CREATED_AT && $ex_bars): ?>
@@ -1371,7 +1533,7 @@ $CAT_PALETTE = [
         <?php if ($is_admin): ?>
   			<?php $SYS = read_sys_stats_snapshot(); ?>
         <!-- System Resources — vertical bar graph + LIVE Network -->
-        <article class="card span-2">
+        <article class="card span-2" data-card-key="system-resources">
           <h3>System Resources</h3>
           <p class="muted" style="margin:0 0 6px;">Server: <?php echo h((string)$SYS['os']); ?></p>
 
@@ -1418,9 +1580,9 @@ $CAT_PALETTE = [
     <!-- For You (always rendered). Order: News, Exercises donut, My Workout Plans -->
     <div class="section">
       <h2>For You</h2>
-      <section class="cards">
+      <section class="cards cols-4">
         <!-- NEWS -->
-        <article class="card">
+        <article class="card" data-card-key="news" data-lock-visibility="true">
           <h3>News</h3>
           <p class="muted" style="margin:0 0 8px;">Latest updates from your trainer.</p>
           <div class="actions">
@@ -1429,7 +1591,7 @@ $CAT_PALETTE = [
         </article>
 
         <!-- EXERCISES (BY CATEGORY) — responsive donut (centered pack) -->
-        <article class="card">
+        <article class="card" data-card-key="exercise-categories">
           <h3>Exercises by Category</h3>
           <div class="center-pack">
             <div class="donut-wrap" aria-label="Exercises by Category">
@@ -1509,7 +1671,7 @@ $CAT_PALETTE = [
 
         <?php if ($is_client): ?>
         <!-- MY WORKOUT PLANS — clickable + shows assigned date -->
-        <article class="card">
+        <article class="card" data-card-key="my-workout-plans" data-lock-visibility="true">
           <h3>My Workout Plans</h3>
 
           <?php if ($plans_assigned_count === null): ?>
@@ -1565,10 +1727,62 @@ $CAT_PALETTE = [
 
   </main>
 
+  <div class="dash-settings-overlay" data-settings-overlay hidden></div>
+  <aside class="dash-settings" id="dashboard-settings" aria-hidden="true">
+    <div class="dash-settings__inner">
+      <div class="dash-settings__header">
+        <h2>Dashboard Options</h2>
+        <button type="button" class="dash-settings__close" data-close-settings>Close</button>
+      </div>
+      <div class="dash-settings__section">
+        <h3>Cards per row</h3>
+        <div class="dash-settings__columns">
+          <label>
+            <input type="radio" name="dash-columns" value="2">
+            <span>2 per row</span>
+          </label>
+          <label>
+            <input type="radio" name="dash-columns" value="3">
+            <span>3 per row</span>
+          </label>
+          <label>
+            <input type="radio" name="dash-columns" value="4">
+            <span>4 per row</span>
+          </label>
+        </div>
+      </div>
+      <div class="dash-settings__section">
+        <h3>Visible cards</h3>
+        <div class="dash-settings__groups" data-settings-card-list></div>
+        <div class="dash-settings__empty" data-settings-empty hidden>No cards available.</div>
+      </div>
+    </div>
+  </aside>
+
     <script>
     (function(){
       const userScope = <?php echo json_encode('uid-' . ($USER_ID ?? 'guest')); ?>;
       const containers = Array.from(document.querySelectorAll('.cards'));
+      if (!containers.length) return;
+
+      const layoutKey = `ppf-dashboard-layout::${userScope}`;
+      const layoutState = loadLayoutState();
+      const cardsMetadata = [];
+      const containerLabels = new Map();
+      let stateDirty = false;
+      let overlayHideTimer = null;
+
+      const settingsToggle = document.querySelector('.dash-settings-toggle');
+      const settingsPanel = document.getElementById('dashboard-settings');
+      const settingsOverlay = document.querySelector('[data-settings-overlay]');
+      const settingsClose = settingsPanel ? settingsPanel.querySelector('[data-close-settings]') : null;
+      const cardListEl = settingsPanel ? settingsPanel.querySelector('[data-settings-card-list]') : null;
+      const emptyStateEl = settingsPanel ? settingsPanel.querySelector('[data-settings-empty]') : null;
+      const columnRadios = settingsPanel ? Array.from(settingsPanel.querySelectorAll('input[name="dash-columns"]')) : [];
+
+      const initialColumns = clampColumns(layoutState.columns);
+      layoutState.columns = initialColumns;
+      applyColumnClass(initialColumns);
 
       containers.forEach((container, containerIndex) => {
         const cards = Array.from(container.querySelectorAll(':scope > .card'));
@@ -1579,14 +1793,47 @@ $CAT_PALETTE = [
           const key = ensureCardKey(card, idx, seenKeys);
           seenKeys.add(key);
           card.setAttribute('draggable', 'true');
+          cardsMetadata.push({
+            containerIndex,
+            key,
+            element: card,
+            locked: card.hasAttribute('data-lock-visibility'),
+            title: extractCardTitle(card)
+          });
         });
 
-        const storageKey = `ppf-dashboard-order::${userScope}::${containerIndex}`;
-        applySavedOrder(container, storageKey);
+        containerLabels.set(containerIndex, deriveContainerLabel(container, containerIndex));
 
-        setupNativeDrag(container, storageKey);
-        setupTouchDrag(container, storageKey);
+        const state = ensureContainerState(containerIndex, cards);
+        const migrated = migrateLegacyOrder(containerIndex, container, state);
+        if (migrated) stateDirty = true;
+
+        const currentOrder = captureDomOrder(container);
+        if (!arraysEqual(currentOrder, state.order)) {
+          applyOrder(container, state.order);
+          stateDirty = true;
+        }
+        const actualOrder = captureDomOrder(container);
+        if (!arraysEqual(state.order, actualOrder)) {
+          state.order = actualOrder;
+          stateDirty = true;
+        }
+
+        const actualHidden = applyVisibility(container, state.hidden);
+        if (!arraysEqual(state.hidden, actualHidden)) {
+          state.hidden = actualHidden;
+          stateDirty = true;
+        }
+
+        setupNativeDrag(container, containerIndex);
+        setupTouchDrag(container, containerIndex);
       });
+
+      if (stateDirty) saveLayoutState();
+
+      renderCardOptions();
+      bindSettingsPanel();
+      syncVisibilityControls();
 
       function ensureCardKey(card, idx, seenKeys){
         let key = (card.getAttribute('data-card-key') || card.dataset.cardKey || '').trim();
@@ -1594,72 +1841,157 @@ $CAT_PALETTE = [
           card.dataset.cardKey = key;
           return key;
         }
-
         const heading = card.querySelector('h1, h2, h3, h4, h5, h6');
         const raw = heading ? heading.textContent.trim().toLowerCase() : '';
         const base = raw ? raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : 'card';
         let candidate = base || `card-${idx}`;
         let attempt = 1;
-        while (seenKeys.has(candidate)) {
+        while (seenKeys.has(candidate) || !candidate) {
           attempt += 1;
-          candidate = `${base}-${attempt}`;
+          candidate = `${base || 'card'}-${attempt}`;
         }
         card.dataset.cardKey = candidate;
         return candidate;
       }
 
-      function applySavedOrder(container, storageKey){
-        let stored;
-        try {
-          stored = window.localStorage ? window.localStorage.getItem(storageKey) : null;
-        } catch (err) {
-          stored = null;
-        }
-        if (!stored) return;
-        let parsed;
-        try {
-          parsed = JSON.parse(stored);
-        } catch (err) {
-          return;
-        }
-        if (!Array.isArray(parsed) || !parsed.length) return;
-
-        const map = new Map();
-        Array.from(container.querySelectorAll(':scope > .card')).forEach(card => {
-          if (card.dataset.cardKey) map.set(card.dataset.cardKey, card);
-        });
-
-        let reordered = false;
-        parsed.forEach(key => {
-          const card = map.get(key);
-          if (card) {
-            container.appendChild(card);
-            map.delete(key);
-            reordered = true;
-          }
-        });
-        map.forEach(card => container.appendChild(card));
-
-        if (reordered) persistOrder(container, storageKey);
+      function extractCardTitle(card){
+        const heading = card.querySelector('h1, h2, h3, h4, h5, h6');
+        return heading ? heading.textContent.trim() : (card.dataset.cardKey || 'Card');
       }
 
-      function persistOrder(container, storageKey){
-        const order = Array.from(container.querySelectorAll(':scope > .card'))
-          .map(card => card.dataset.cardKey)
-          .filter(Boolean);
+      function deriveContainerLabel(container, idx){
+        const aria = (container.getAttribute('aria-label') || '').trim();
+        if (aria) return aria;
+        const section = container.closest('.section');
+        if (section) {
+          const heading = section.querySelector('h1, h2, h3, h4, h5, h6');
+          if (heading) return heading.textContent.trim();
+        }
+        return `Section ${idx + 1}`;
+      }
+
+      function clampColumns(value){
+        const num = Number(value);
+        if (!isFinite(num)) return 4;
+        return Math.min(4, Math.max(2, Math.round(num)));
+      }
+
+      function loadLayoutState(){
+        let raw = null;
         try {
-          if (window.localStorage) {
-            window.localStorage.setItem(storageKey, JSON.stringify(order));
+          raw = window.localStorage ? window.localStorage.getItem(layoutKey) : null;
+        } catch (err) {
+          raw = null;
+        }
+        if (!raw) return { columns: 4, containers: {} };
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object') return { columns: 4, containers: {} };
+          const state = {
+            columns: clampColumns(parsed.columns),
+            containers: {}
+          };
+          if (parsed.containers && typeof parsed.containers === 'object') {
+            Object.keys(parsed.containers).forEach(key => {
+              const entry = parsed.containers[key];
+              if (!entry || typeof entry !== 'object') return;
+              const order = Array.isArray(entry.order) ? entry.order.filter(Boolean) : [];
+              const hidden = Array.isArray(entry.hidden) ? entry.hidden.filter(Boolean) : [];
+              state.containers[key] = { order, hidden };
+            });
           }
+          return state;
+        } catch (err) {
+          return { columns: 4, containers: {} };
+        }
+      }
+
+      function saveLayoutState(){
+        try {
+          if (!window.localStorage) return;
+          const payload = JSON.stringify(layoutState);
+          window.localStorage.setItem(layoutKey, payload);
         } catch (err) {
           /* non-fatal */
         }
       }
 
-      function setupNativeDrag(container, storageKey){
+      function ensureContainerState(index, cards){
+        const key = String(index);
+        if (!layoutState.containers || typeof layoutState.containers !== 'object') {
+          layoutState.containers = {};
+        }
+        let record = layoutState.containers[key];
+        if (!record || typeof record !== 'object') {
+          record = { order: [], hidden: [] };
+          layoutState.containers[key] = record;
+        }
+        if (cards) {
+          const keys = cards.map(card => card.dataset.cardKey).filter(Boolean);
+          const keySet = new Set(keys);
+          if (!Array.isArray(record.order)) record.order = [];
+          record.order = record.order.filter(k => keySet.has(k));
+          keys.forEach(k => {
+            if (!record.order.includes(k)) record.order.push(k);
+          });
+          if (!Array.isArray(record.hidden)) record.hidden = [];
+          record.hidden = record.hidden.filter(k => keySet.has(k));
+        } else {
+          if (!Array.isArray(record.order)) record.order = [];
+          if (!Array.isArray(record.hidden)) record.hidden = [];
+        }
+        return record;
+      }
+
+      function applyOrder(container, order){
+        if (!Array.isArray(order) || !order.length) return;
+        const map = new Map();
+        Array.from(container.querySelectorAll(':scope > .card')).forEach(card => {
+          const key = card.dataset.cardKey;
+          if (key) map.set(key, card);
+        });
+        order.forEach(key => {
+          const card = map.get(key);
+          if (card) {
+            container.appendChild(card);
+            map.delete(key);
+          }
+        });
+        map.forEach(card => container.appendChild(card));
+      }
+
+      function captureDomOrder(container){
+        return Array.from(container.querySelectorAll(':scope > .card'))
+          .map(card => card.dataset.cardKey)
+          .filter(Boolean);
+      }
+
+      function applyVisibility(container, hiddenList){
+        const hiddenSet = new Set(Array.isArray(hiddenList) ? hiddenList : []);
+        const actualHidden = [];
+        Array.from(container.querySelectorAll(':scope > .card')).forEach(card => {
+          const key = card.dataset.cardKey;
+          if (!key) return;
+          const locked = card.hasAttribute('data-lock-visibility');
+          const shouldHide = hiddenSet.has(key) && !locked;
+          if (shouldHide){
+            card.classList.add('is-hidden');
+            card.setAttribute('aria-hidden', 'true');
+            card.hidden = true;
+            actualHidden.push(key);
+          } else {
+            card.classList.remove('is-hidden');
+            card.removeAttribute('aria-hidden');
+            if (card.hidden) card.hidden = false;
+          }
+        });
+        return actualHidden;
+      }
+
+      function setupNativeDrag(container, containerIndex){
         container.addEventListener('dragstart', evt => {
           const card = evt.target && evt.target.closest('.card');
-          if (!card || !container.contains(card)) return;
+          if (!card || !container.contains(card) || card.classList.contains('is-hidden')) return;
           card.classList.add('is-dragging');
           container.classList.add('drag-active');
           if (evt.dataTransfer) {
@@ -1669,12 +2001,11 @@ $CAT_PALETTE = [
         });
 
         container.addEventListener('dragover', evt => {
-          if (!evt.target || !container.classList.contains('drag-active')) return;
+          if (!container.classList.contains('drag-active')) return;
           evt.preventDefault();
           const dragging = container.querySelector('.card.is-dragging');
           if (!dragging) return;
-          const after = findCardAfter(container, evt.clientY);
-          if (after) container.insertBefore(dragging, after); else container.appendChild(dragging);
+          repositionCard(container, dragging, evt.clientX, evt.clientY);
         });
 
         container.addEventListener('dragend', evt => {
@@ -1682,7 +2013,7 @@ $CAT_PALETTE = [
           if (!card || !container.contains(card)) return;
           card.classList.remove('is-dragging');
           container.classList.remove('drag-active');
-          persistOrder(container, storageKey);
+          persistOrder(container, containerIndex);
         });
 
         container.addEventListener('drop', evt => {
@@ -1690,13 +2021,13 @@ $CAT_PALETTE = [
         });
       }
 
-      function setupTouchDrag(container, storageKey){
+      function setupTouchDrag(container, containerIndex){
         let state = null;
 
         container.addEventListener('pointerdown', evt => {
           if (evt.pointerType !== 'touch') return;
           const card = evt.target && evt.target.closest('.card');
-          if (!card || !container.contains(card)) return;
+          if (!card || !container.contains(card) || card.classList.contains('is-hidden')) return;
           if (shouldIgnoreInteractive(evt.target)) return;
           state = {
             card,
@@ -1712,7 +2043,7 @@ $CAT_PALETTE = [
           if (!state || evt.pointerId !== state.pointerId) return;
           const { card } = state;
           const moved = Math.abs(evt.clientX - state.startX) + Math.abs(evt.clientY - state.startY);
-          if (!state.started){
+          if (!state.started) {
             if (moved < 12) return;
             state.started = true;
             try {
@@ -1723,8 +2054,7 @@ $CAT_PALETTE = [
             container.classList.add('drag-active');
           }
           evt.preventDefault();
-          const after = findCardAfter(container, evt.clientY);
-          if (after) container.insertBefore(card, after); else container.appendChild(card);
+          repositionCard(container, card, evt.clientX, evt.clientY);
         }, { passive: false });
 
         function finishTouchDrag(evt){
@@ -1737,7 +2067,7 @@ $CAT_PALETTE = [
             evt.preventDefault();
             card.classList.remove('is-dragging');
             container.classList.remove('drag-active');
-            persistOrder(container, storageKey);
+            persistOrder(container, containerIndex);
           }
           state = null;
         }
@@ -1750,23 +2080,291 @@ $CAT_PALETTE = [
         return !!(target && target.closest('a, button, input, textarea, select, label'));
       }
 
-      function findCardAfter(container, clientY){
-        const cards = Array.from(container.querySelectorAll(':scope > .card:not(.is-dragging)'));
+      function repositionCard(container, card, clientX, clientY){
+        const reference = findInsertionReference(container, card, clientX, clientY);
+        if (reference && reference !== card) {
+          container.insertBefore(card, reference);
+        } else if (!reference) {
+          container.appendChild(card);
+        }
+      }
+
+      function findInsertionReference(container, dragging, clientX, clientY){
+        const cards = Array.from(container.querySelectorAll(':scope > .card:not(.is-dragging):not(.is-hidden)'));
+        if (!cards.length) return null;
+
+        const originalPointer = dragging.style.pointerEvents;
+        dragging.style.pointerEvents = 'none';
+        const hovered = document.elementFromPoint(clientX, clientY);
+        dragging.style.pointerEvents = originalPointer || '';
+        const hoverCard = hovered ? hovered.closest('.card') : null;
+        if (hoverCard && hoverCard !== dragging && container.contains(hoverCard) && !hoverCard.classList.contains('is-hidden')) {
+          const rect = hoverCard.getBoundingClientRect();
+          const before = clientX < rect.left + rect.width / 2;
+          return before ? hoverCard : hoverCard.nextElementSibling;
+        }
+
         let closest = null;
-        let closestOffset = Number.NEGATIVE_INFINITY;
+        let closestDistance = Infinity;
         cards.forEach(card => {
           const rect = card.getBoundingClientRect();
-          const offset = clientY - (rect.top + rect.height / 2);
-          if (offset < 0 && offset > closestOffset) {
-            closestOffset = offset;
+          const dx = clientX - (rect.left + rect.width / 2);
+          const dy = clientY - (rect.top + rect.height / 2);
+          const distance = Math.hypot(dx, dy);
+          if (distance < closestDistance) {
+            closestDistance = distance;
             closest = card;
           }
         });
-        return closest;
+        if (!closest) return null;
+        const rect = closest.getBoundingClientRect();
+        const before = clientX < rect.left + rect.width / 2;
+        return before ? closest : closest.nextElementSibling;
+      }
+
+      function persistOrder(container, containerIndex){
+        const state = ensureContainerState(containerIndex);
+        const order = captureDomOrder(container);
+        if (!arraysEqual(state.order, order)) {
+          state.order = order;
+          saveLayoutState();
+        }
+      }
+
+      function renderCardOptions(){
+        if (!cardListEl) return;
+        cardListEl.innerHTML = '';
+        if (!cardsMetadata.length) {
+          if (emptyStateEl) emptyStateEl.hidden = false;
+          return;
+        }
+        const groups = new Map();
+        cardsMetadata.forEach(meta => {
+          if (!groups.has(meta.containerIndex)) {
+            groups.set(meta.containerIndex, []);
+          }
+          groups.get(meta.containerIndex).push(meta);
+        });
+
+        const fragment = document.createDocumentFragment();
+        Array.from(groups.keys()).sort((a, b) => a - b).forEach(idx => {
+          const group = document.createElement('div');
+          group.className = 'dash-settings__group';
+
+          const heading = document.createElement('h4');
+          heading.textContent = containerLabels.get(idx) || `Section ${idx + 1}`;
+          group.appendChild(heading);
+
+          groups.get(idx).forEach(meta => {
+            const option = document.createElement('label');
+            option.className = 'dash-settings__option';
+            if (meta.locked) option.classList.add('is-locked');
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.dataset.containerIndex = String(meta.containerIndex);
+            checkbox.dataset.cardKey = meta.key;
+            checkbox.checked = !isCardHidden(meta.containerIndex, meta.key);
+            checkbox.disabled = meta.locked;
+            option.appendChild(checkbox);
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = meta.title || meta.key;
+            option.appendChild(nameSpan);
+
+            if (meta.locked){
+              const tag = document.createElement('span');
+              tag.className = 'dash-settings__tag';
+              tag.textContent = 'Always visible';
+              option.appendChild(tag);
+            }
+
+            checkbox.addEventListener('change', onCardToggle);
+            group.appendChild(option);
+          });
+
+          fragment.appendChild(group);
+        });
+
+        cardListEl.appendChild(fragment);
+        if (emptyStateEl) emptyStateEl.hidden = cardListEl.children.length > 0;
+      }
+
+      function onCardToggle(evt){
+        const checkbox = evt.currentTarget;
+        const index = Number(checkbox.dataset.containerIndex);
+        const key = checkbox.dataset.cardKey;
+        if (!key) return;
+        const state = ensureContainerState(index);
+        const hiddenSet = new Set(state.hidden);
+        if (checkbox.checked) {
+          hiddenSet.delete(key);
+        } else {
+          hiddenSet.add(key);
+        }
+        state.hidden = Array.from(hiddenSet);
+        const container = containers[index];
+        if (container) {
+          const actualHidden = applyVisibility(container, state.hidden);
+          if (!arraysEqual(state.hidden, actualHidden)) {
+            state.hidden = actualHidden;
+          }
+        }
+        saveLayoutState();
+        syncVisibilityControls();
+      }
+
+      function bindSettingsPanel(){
+        if (!settingsToggle || !settingsPanel) return;
+        settingsToggle.addEventListener('click', () => {
+          if (settingsPanel.classList.contains('is-open')) {
+            closeSettings();
+          } else {
+            openSettings();
+          }
+        });
+        if (settingsClose) settingsClose.addEventListener('click', closeSettings);
+        if (settingsOverlay) settingsOverlay.addEventListener('click', closeSettings);
+        document.addEventListener('keydown', evt => {
+          if (evt.key === 'Escape' && settingsPanel.classList.contains('is-open')) {
+            closeSettings();
+          }
+        });
+        columnRadios.forEach(radio => {
+          radio.checked = Number(radio.value) === layoutState.columns;
+          radio.addEventListener('change', () => {
+            if (radio.checked) updateColumns(Number(radio.value));
+          });
+        });
+      }
+
+      function openSettings(){
+        if (!settingsPanel || !settingsToggle) return;
+        if (overlayHideTimer) {
+          clearTimeout(overlayHideTimer);
+          overlayHideTimer = null;
+        }
+        settingsPanel.classList.add('is-open');
+        settingsPanel.setAttribute('aria-hidden', 'false');
+        settingsToggle.classList.add('is-active');
+        settingsToggle.setAttribute('aria-expanded', 'true');
+        if (settingsOverlay) {
+          settingsOverlay.hidden = false;
+          settingsOverlay.classList.add('is-visible');
+        }
+      }
+
+      function closeSettings(){
+        if (!settingsPanel || !settingsToggle) return;
+        settingsPanel.classList.remove('is-open');
+        settingsPanel.setAttribute('aria-hidden', 'true');
+        settingsToggle.classList.remove('is-active');
+        settingsToggle.setAttribute('aria-expanded', 'false');
+        if (settingsOverlay) {
+          settingsOverlay.classList.remove('is-visible');
+          overlayHideTimer = window.setTimeout(() => {
+            if (settingsOverlay) settingsOverlay.hidden = true;
+            overlayHideTimer = null;
+          }, 200);
+        }
+      }
+
+      function updateColumns(value){
+        const columns = clampColumns(value);
+        if (layoutState.columns === columns) return;
+        layoutState.columns = columns;
+        applyColumnClass(columns);
+        saveLayoutState();
+      }
+
+      function applyColumnClass(columns){
+        containers.forEach(container => {
+          container.classList.remove('cols-2', 'cols-3', 'cols-4');
+          container.classList.add(`cols-${columns}`);
+        });
+        columnRadios.forEach(radio => {
+          radio.checked = Number(radio.value) === columns;
+        });
+      }
+
+      function isCardHidden(containerIndex, key){
+        const state = layoutState.containers && layoutState.containers[String(containerIndex)];
+        if (!state || !Array.isArray(state.hidden)) return false;
+        return state.hidden.includes(key);
+      }
+
+      function syncVisibilityControls(){
+        if (!cardListEl) return;
+        const checkboxes = cardListEl.querySelectorAll('input[type="checkbox"][data-card-key]');
+        checkboxes.forEach(box => {
+          const index = Number(box.dataset.containerIndex);
+          const key = box.dataset.cardKey;
+          box.checked = !isCardHidden(index, key);
+        });
+        if (emptyStateEl) {
+          emptyStateEl.hidden = cardListEl.children.length > 0;
+        }
+      }
+
+      function arraysEqual(a, b){
+        if (!Array.isArray(a) || !Array.isArray(b)) return false;
+        if (a.length != b.length) return false;
+        for (let i = 0; i < a.length; i++) {
+          if (a[i] !== b[i]) return false;
+        }
+        return true;
+      }
+
+      function migrateLegacyOrder(containerIndex, container, state){
+        const legacyKey = buildLegacyStorageKey(containerIndex);
+        let raw = null;
+        try {
+          raw = window.localStorage ? window.localStorage.getItem(legacyKey) : null;
+        } catch (err) {
+          raw = null;
+        }
+        if (raw != null) {
+          try {
+            if (window.localStorage) window.localStorage.removeItem(legacyKey);
+          } catch (err) {}
+        }
+        if (!raw) return false;
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch (err) {
+          return false;
+        }
+        if (!Array.isArray(parsed) || !parsed.length) return false;
+        const merged = mergeOrders(parsed, state.order, container);
+        if (!arraysEqual(state.order, merged)) {
+          state.order = merged;
+          applyOrder(container, state.order);
+          return true;
+        }
+        return false;
+      }
+
+      function buildLegacyStorageKey(index){
+        return `ppf-dashboard-order::${userScope}::${index}`;
+      }
+
+      function mergeOrders(preferred, fallback, container){
+        const keys = captureDomOrder(container);
+        const keySet = new Set(keys);
+        const result = [];
+        preferred.forEach(key => {
+          if (keySet.has(key) && !result.includes(key)) result.push(key);
+        });
+        fallback.forEach(key => {
+          if (keySet.has(key) && !result.includes(key)) result.push(key);
+        });
+        return result;
       }
 
     })();
     </script>
+
 
         <script>
 (function(){
