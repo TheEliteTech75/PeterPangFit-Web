@@ -959,27 +959,57 @@ $CAT_PALETTE = [
     }
 
     .card{
+      --card-span: 1;
       display:flex; flex-direction:column; justify-content:flex-start;
       background:var(--c-card); border:1px solid var(--border); border-radius:var(--radius);
-      padding:14px; min-height:110px; container-type:inline-size;
+      padding:14px; min-height:110px; container-type:inline-size; position:relative;
+      grid-column: span var(--card-span);
     }
     .card[draggable="true"]{ cursor: grab; }
     .card.is-dragging{ opacity:0.65; cursor: grabbing; box-shadow:0 12px 32px rgba(0,0,0,0.35); }
     .card.is-hidden{ display:none !important; }
+    .card.is-resizing{ cursor: ew-resize; }
     .cards.drag-active{ position:relative; }
     .cards.drag-active::after{
       content:""; position:absolute; inset:-6px; border-radius:calc(var(--radius) + 6px);
       border:1px dashed rgba(99, 102, 241, 0.45);
       pointer-events:none;
     }
+    .card[data-default-span="2"],
+    .card[data-card-span="2"]{ --card-span: 2; }
+    .card[data-card-span="3"]{ --card-span: 3; }
+    .card[data-card-span="4"]{ --card-span: 4; }
+
+    .card-resize{
+      position:absolute;
+      right:10px;
+      bottom:10px;
+      width:24px;
+      height:24px;
+      border-radius:50%;
+      border:1px solid var(--border);
+      background:rgba(17,26,44,0.9);
+      color:var(--c-muted);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:ew-resize;
+      padding:0;
+      margin:0;
+      touch-action:none;
+      transition:border-color .2s ease, background .2s ease, color .2s ease, opacity .2s ease;
+      z-index:5;
+    }
+    .card-resize:focus-visible{ outline:2px solid var(--c-accent); outline-offset:2px; }
+    .card-resize svg{ width:12px; height:12px; pointer-events:none; }
+    .card:not(:hover) .card-resize{ opacity:0.6; }
+    .card-resize:is(:hover,:active){ border-color:#2a3650; background:#182338; color:#e5edff; }
+
     .card h3{margin:0 0 6px; font-size:16px}
     .metric{font-size:28px; font-weight:700; line-height:1.2; margin:2px 0 4px}
     .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:auto}
     .btn{ display:inline-block; padding:8px 12px; border-radius:10px; border:1px solid var(--border); background:#121a2b; color:var(--c-text); text-decoration:none; font-size:14px; }
     .btn.primary{ background: linear-gradient(90deg, var(--c-accent), var(--c-accent-2)); border-color: transparent; color: #fff; }
-
-    .span-2{ grid-column: span 1; }
-    @media (min-width: 1200px){ .span-2{ grid-column: span 2; } }
 
     .dashboard-head{
       margin:4px 0 12px;
@@ -1533,7 +1563,7 @@ $CAT_PALETTE = [
         <?php if ($is_admin): ?>
   			<?php $SYS = read_sys_stats_snapshot(); ?>
         <!-- System Resources — vertical bar graph + LIVE Network -->
-        <article class="card span-2" data-card-key="system-resources">
+        <article class="card" data-card-key="system-resources" data-default-span="2">
           <h3>System Resources</h3>
           <p class="muted" style="margin:0 0 6px;">Server: <?php echo h((string)$SYS['os']); ?></p>
 
@@ -1825,6 +1855,12 @@ $CAT_PALETTE = [
           stateDirty = true;
         }
 
+        const actualSizes = applySpans(container, state.sizes, containerIndex);
+        if (!objectsShallowEqual(state.sizes, actualSizes)) {
+          state.sizes = actualSizes;
+          stateDirty = true;
+        }
+
         setupNativeDrag(container, containerIndex);
         setupTouchDrag(container, containerIndex);
       });
@@ -1876,6 +1912,21 @@ $CAT_PALETTE = [
         return Math.min(4, Math.max(2, Math.round(num)));
       }
 
+      function clampSpan(value, limit){
+        const max = typeof limit === 'number' && isFinite(limit) ? limit : layoutState.columns || 4;
+        const num = Number(value);
+        if (!isFinite(num)) return 1;
+        return Math.min(max, Math.max(1, Math.round(num)));
+      }
+
+      function getDefaultSpan(card){
+        const attr = card ? Number(card.getAttribute('data-default-span')) : NaN;
+        if (isFinite(attr) && attr >= 1) {
+          return clampSpan(attr, layoutState.columns || 4);
+        }
+        return 1;
+      }
+
       function loadLayoutState(){
         let raw = null;
         try {
@@ -1897,7 +1948,14 @@ $CAT_PALETTE = [
               if (!entry || typeof entry !== 'object') return;
               const order = Array.isArray(entry.order) ? entry.order.filter(Boolean) : [];
               const hidden = Array.isArray(entry.hidden) ? entry.hidden.filter(Boolean) : [];
-              state.containers[key] = { order, hidden };
+              const sizes = {};
+              if (entry.sizes && typeof entry.sizes === 'object') {
+                Object.keys(entry.sizes).forEach(cardKey => {
+                  const span = clampSpan(entry.sizes[cardKey], clampColumns(state.columns));
+                  if (span >= 1) sizes[cardKey] = span;
+                });
+              }
+              state.containers[key] = { order, hidden, sizes };
             });
           }
           return state;
@@ -1923,22 +1981,49 @@ $CAT_PALETTE = [
         }
         let record = layoutState.containers[key];
         if (!record || typeof record !== 'object') {
-          record = { order: [], hidden: [] };
+          record = { order: [], hidden: [], sizes: {} };
           layoutState.containers[key] = record;
         }
+        if (!Array.isArray(record.order)) record.order = [];
+        if (!Array.isArray(record.hidden)) record.hidden = [];
+        if (!record.sizes || typeof record.sizes !== 'object') record.sizes = {};
         if (cards) {
           const keys = cards.map(card => card.dataset.cardKey).filter(Boolean);
           const keySet = new Set(keys);
-          if (!Array.isArray(record.order)) record.order = [];
           record.order = record.order.filter(k => keySet.has(k));
           keys.forEach(k => {
             if (!record.order.includes(k)) record.order.push(k);
           });
-          if (!Array.isArray(record.hidden)) record.hidden = [];
           record.hidden = record.hidden.filter(k => keySet.has(k));
+          const nextSizes = {};
+          cards.forEach(card => {
+            const keyName = card.dataset.cardKey;
+            if (!keyName) return;
+            const stored = Number(record.sizes[keyName]);
+            const value = isFinite(stored) ? stored : getDefaultSpan(card);
+            nextSizes[keyName] = clampSpan(value);
+          });
+          const currentKeys = Object.keys(record.sizes);
+          currentKeys.forEach(k => {
+            if (!nextSizes.hasOwnProperty(k)) {
+              delete record.sizes[k];
+              stateDirty = true;
+            }
+          });
+          Object.keys(nextSizes).forEach(k => {
+            if (record.sizes[k] !== nextSizes[k]) {
+              record.sizes[k] = nextSizes[k];
+              stateDirty = true;
+            }
+          });
         } else {
-          if (!Array.isArray(record.order)) record.order = [];
-          if (!Array.isArray(record.hidden)) record.hidden = [];
+          Object.keys(record.sizes).forEach(k => {
+            const clamped = clampSpan(record.sizes[k]);
+            if (record.sizes[k] !== clamped) {
+              record.sizes[k] = clamped;
+              stateDirty = true;
+            }
+          });
         }
         return record;
       }
@@ -1986,6 +2071,188 @@ $CAT_PALETTE = [
           }
         });
         return actualHidden;
+      }
+
+      function applySpans(container, sizeMap, containerIndex){
+        const sizes = {};
+        const cards = Array.from(container.querySelectorAll(':scope > .card'));
+        cards.forEach(card => {
+          const key = card.dataset.cardKey;
+          if (!key) return;
+          const stored = sizeMap && typeof sizeMap === 'object' ? Number(sizeMap[key]) : NaN;
+          const span = clampSpan(isFinite(stored) ? stored : getDefaultSpan(card));
+          sizes[key] = span;
+          applySpanToCardElement(card, span);
+          installResizeHandle(card, containerIndex, span);
+        });
+        return sizes;
+      }
+
+      function applySpanToCardElement(card, span){
+        card.dataset.cardSpan = String(span);
+        card.style.setProperty('--card-span', span);
+        const handle = card.querySelector('[data-resize-handle]');
+        if (handle) updateResizeHandleLabel(handle, span);
+      }
+
+      function installResizeHandle(card, containerIndex, span){
+        if (!card) return;
+        let handle = card.querySelector('[data-resize-handle]');
+        if (!handle) {
+          handle = document.createElement('button');
+          handle.type = 'button';
+          handle.className = 'card-resize';
+          handle.setAttribute('data-resize-handle', 'true');
+          handle.setAttribute('aria-label', 'Resize card width');
+          handle.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M5 6h10a1 1 0 000-2H5a1 1 0 100 2zm0 5h10a1 1 0 000-2H5a1 1 0 100 2zm0 5h10a1 1 0 000-2H5a1 1 0 100 2z"/></svg>';
+          handle.addEventListener('pointerdown', evt => startResizePointer(evt, card, containerIndex));
+          handle.addEventListener('click', evt => evt.preventDefault());
+          handle.addEventListener('keydown', evt => handleResizeKey(evt, card, containerIndex));
+          card.appendChild(handle);
+        }
+        handle.dataset.containerIndex = String(containerIndex);
+        handle.dataset.cardKey = card.dataset.cardKey || '';
+        updateResizeHandleLabel(handle, span);
+      }
+
+      function updateResizeHandleLabel(handle, span){
+        if (!handle) return;
+        const max = layoutState.columns || 4;
+        handle.setAttribute('aria-label', `Resize card width (current ${span} of ${max} columns)`);
+        handle.setAttribute('title', `Span ${span} of ${max}`);
+      }
+
+      function startResizePointer(evt, card, containerIndex){
+        if (!card || !containers[containerIndex]) return;
+        if (evt.button !== undefined && evt.button !== 0 && evt.pointerType !== 'touch') return;
+        evt.preventDefault();
+        evt.stopPropagation();
+
+        const container = containers[containerIndex];
+        const key = card.dataset.cardKey;
+        if (!key) return;
+
+        const state = ensureContainerState(containerIndex);
+        const currentSpan = getCardSpanFromState(state, key, card);
+        let activeSpan = currentSpan;
+        const handle = evt.currentTarget;
+        const pointerId = evt.pointerId;
+        const previousDraggable = card.getAttribute('draggable');
+        card.classList.add('is-resizing');
+        card.setAttribute('draggable', 'false');
+
+        if (handle && handle.setPointerCapture) {
+          try { handle.setPointerCapture(pointerId); } catch (err) {}
+        }
+
+        const onMove = moveEvt => {
+          if (pointerId != null && moveEvt.pointerId !== pointerId) return;
+          moveEvt.preventDefault();
+          const nextSpan = computeSpanFromPointer(moveEvt, container, card);
+          if (nextSpan && nextSpan !== activeSpan) {
+            activeSpan = nextSpan;
+            state.sizes[key] = activeSpan;
+            applySpanToCardElement(card, activeSpan);
+          }
+        };
+
+        const finish = endEvt => {
+          if (pointerId != null && endEvt.pointerId !== pointerId) return;
+          endEvt.preventDefault();
+          cleanup();
+        };
+
+        const cleanup = () => {
+          window.removeEventListener('pointermove', onMove, true);
+          window.removeEventListener('pointerup', finish, true);
+          window.removeEventListener('pointercancel', finish, true);
+          card.classList.remove('is-resizing');
+          if (previousDraggable !== null) {
+            card.setAttribute('draggable', previousDraggable);
+          } else {
+            card.removeAttribute('draggable');
+          }
+          if (handle && handle.releasePointerCapture) {
+            try { handle.releasePointerCapture(pointerId); } catch (err) {}
+          }
+          saveLayoutState();
+        };
+
+        window.addEventListener('pointermove', onMove, true);
+        window.addEventListener('pointerup', finish, true);
+        window.addEventListener('pointercancel', finish, true);
+      }
+
+      function handleResizeKey(evt, card, containerIndex){
+        if (!card) return;
+        const key = card.dataset.cardKey;
+        if (!key) return;
+        const state = ensureContainerState(containerIndex);
+        const current = getCardSpanFromState(state, key, card);
+        let next = current;
+        if (evt.key === 'ArrowLeft' || evt.key === 'ArrowDown') {
+          evt.preventDefault();
+          next = clampSpan(current - 1);
+        } else if (evt.key === 'ArrowRight' || evt.key === 'ArrowUp') {
+          evt.preventDefault();
+          next = clampSpan(current + 1);
+        } else if (evt.key === 'Home') {
+          evt.preventDefault();
+          next = clampSpan(1);
+        } else if (evt.key === 'End') {
+          evt.preventDefault();
+          next = clampSpan(layoutState.columns || 4);
+        } else {
+          return;
+        }
+        if (next === current) return;
+        state.sizes[key] = next;
+        applySpanToCardElement(card, next);
+        saveLayoutState();
+      }
+
+      function computeSpanFromPointer(evt, container, card){
+        const columns = layoutState.columns || 4;
+        if (columns <= 0) return 1;
+        const containerRect = container.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const styles = window.getComputedStyle(container);
+        let gap = parseFloat(styles.columnGap);
+        if (!isFinite(gap)) {
+          gap = parseFloat(styles.gap);
+        }
+        if (!isFinite(gap)) gap = 0;
+        const totalGap = gap * (columns - 1);
+        const available = containerRect.width - totalGap;
+        const columnWidth = available > 0 ? available / columns : 0;
+        if (!(columnWidth > 0)) return clampSpan(1, columns);
+        const relative = Math.max(0, evt.clientX - cardRect.left);
+        const unit = columnWidth + gap;
+        if (!(unit > 0)) return clampSpan(1, columns);
+        let span = Math.round((relative + gap * 0.5) / unit);
+        span = clampSpan(span, columns);
+        if (span < 1) span = 1;
+        return span;
+      }
+
+      function getCardSpanFromState(state, key, card){
+        const sizes = state && state.sizes && typeof state.sizes === 'object' ? state.sizes : {};
+        const stored = Number(sizes[key]);
+        if (isFinite(stored)) return clampSpan(stored);
+        return clampSpan(getDefaultSpan(card));
+      }
+
+      function refreshAllSpans(){
+        let changed = false;
+        containers.forEach((container, idx) => {
+          const state = ensureContainerState(idx);
+          const updated = applySpans(container, state.sizes, idx);
+          if (!objectsShallowEqual(state.sizes, updated)) {
+            state.sizes = updated;
+            changed = true;
+          }
+        });
+        return changed;
       }
 
       function setupNativeDrag(container, containerIndex){
@@ -2274,6 +2541,7 @@ $CAT_PALETTE = [
         if (layoutState.columns === columns) return;
         layoutState.columns = columns;
         applyColumnClass(columns);
+        refreshAllSpans();
         saveLayoutState();
       }
 
@@ -2311,6 +2579,17 @@ $CAT_PALETTE = [
         if (a.length != b.length) return false;
         for (let i = 0; i < a.length; i++) {
           if (a[i] !== b[i]) return false;
+        }
+        return true;
+      }
+
+      function objectsShallowEqual(a, b){
+        const keysA = a && typeof a === 'object' ? Object.keys(a) : [];
+        const keysB = b && typeof b === 'object' ? Object.keys(b) : [];
+        if (keysA.length !== keysB.length) return false;
+        for (let i = 0; i < keysA.length; i++) {
+          const key = keysA[i];
+          if (a[key] !== b[key]) return false;
         }
         return true;
       }
