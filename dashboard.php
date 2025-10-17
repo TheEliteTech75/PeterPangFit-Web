@@ -477,6 +477,280 @@ if ($is_client && isset($USER_ID) && is_numeric($USER_ID) && $am['table']) {
   }
 }
 
+/* ---------- Security card metrics ---------- */
+$SEC_MAX = 100;
+$security_score = 0;
+$security_score_pct = 0;
+$security_segments = [];
+$security_donut_segments = [];
+$security_donut_svg = [];
+$security_tips = [];
+$security_summary = '';
+$security_grade = '—';
+$donutS = ['r' => 44, 'sw' => 12];
+$donutS['C'] = 2 * M_PI * $donutS['r'];
+
+if (isset($USER_ID) && is_numeric($USER_ID)) {
+  $has_pwd_hash   = column_exists($conn, 'users', 'password_hash');
+  $has_twofa_app  = column_exists($conn, 'users', 'twofa_app_enabled');
+  $has_twofa_email= column_exists($conn, 'users', 'twofa_email_enabled');
+
+  $selectCols = [];
+  $selectCols[] = $has_pwd_hash ? 'password_hash' : "'' AS password_hash";
+  $selectCols[] = $has_twofa_app ? 'COALESCE(twofa_app_enabled,0) AS twofa_app_enabled' : '0 AS twofa_app_enabled';
+  $selectCols[] = $has_twofa_email ? 'COALESCE(twofa_email_enabled,0) AS twofa_email_enabled' : '0 AS twofa_email_enabled';
+  $selectCols[] = 'NULL AS twofa_secret';
+
+  $security_user_row = safe_row_sql(
+    $conn,
+    'SELECT ' . implode(', ', $selectCols) . ' FROM users WHERE id = ? LIMIT 1',
+    'i',
+    $USER_ID
+  ) ?? [];
+
+  $password_hash = (string)($security_user_row['password_hash'] ?? '');
+  $twofa_app_enabled = $has_twofa_app && ((int)($security_user_row['twofa_app_enabled'] ?? 0) === 1);
+  $twofa_email_enabled = $has_twofa_email && ((int)($security_user_row['twofa_email_enabled'] ?? 0) === 1);
+
+  $passkey_count = 0;
+  if (table_exists($conn, 'passkeys')) {
+    $pkCnt = safe_count_sql($conn, 'SELECT COUNT(*) FROM passkeys WHERE user_id = ?', 'i', $USER_ID);
+    if ($pkCnt !== null) $passkey_count = (int)$pkCnt;
+  }
+
+  $trusted_counts = ['total' => 0, 'recent' => 0, 'expired' => 0];
+  if (table_exists($conn, 'trusted_devices')) {
+    $recentExpr = column_exists($conn, 'trusted_devices', 'last_used_at')
+      ? 'SUM(CASE WHEN last_used_at IS NOT NULL AND last_used_at >= (NOW() - INTERVAL 45 DAY) THEN 1 ELSE 0 END)'
+      : '0';
+    $trusted_row = safe_row_sql(
+      $conn,
+      'SELECT COUNT(*) AS total,
+              SUM(CASE WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 1 ELSE 0 END) AS expired,
+              ' . $recentExpr . ' AS recent
+         FROM trusted_devices
+        WHERE user_id = ?',
+      'i',
+      $USER_ID
+    );
+    if ($trusted_row) {
+      $trusted_counts['total'] = (int)($trusted_row['total'] ?? 0);
+      $trusted_counts['recent'] = (int)($trusted_row['recent'] ?? 0);
+      $trusted_counts['expired'] = (int)($trusted_row['expired'] ?? 0);
+    }
+  }
+
+  $status_labels = ['good' => 'Strong', 'ok' => 'Okay', 'warn' => 'Needs attention'];
+
+  // Password strength contribution (max 30)
+  $pwd_points = 0;
+  $pwd_status = 'warn';
+  $pwd_detail = '';
+  if ($password_hash === '') {
+    if ($passkey_count > 0) {
+      $pwd_points = 12;
+      $pwd_status = 'ok';
+      $pwd_detail = 'Using passkeys without a fallback password';
+      $security_tips[] = 'Add a fallback password in case you ever lose access to your passkeys.';
+    } else {
+      $pwd_points = 5;
+      $pwd_detail = 'No password on file';
+      $security_tips[] = 'Set a strong password to protect your account.';
+    }
+  } elseif (strpos($password_hash, '$argon2') === 0) {
+    $pwd_points = 30;
+    $pwd_status = 'good';
+    $pwd_detail = 'Argon2 hashing in use';
+  } elseif (strpos($password_hash, '$2y$') === 0 || strpos($password_hash, '$2b$') === 0) {
+    $cost_part = substr($password_hash, 4, 2);
+    $cost = ctype_digit($cost_part) ? (int)$cost_part : 0;
+    $pwd_points = ($cost >= 12) ? 28 : 26;
+    $pwd_status = 'good';
+    $pwd_detail = 'Bcrypt hashing (cost ' . ($cost > 0 ? $cost : 'default') . ')';
+  } else {
+    $pwd_points = 20;
+    $pwd_detail = 'Legacy hashing algorithm detected';
+    $security_tips[] = 'Update your password to upgrade the hashing algorithm.';
+  }
+  $security_segments[] = [
+    'key' => 'password',
+    'label' => 'Password',
+    'points' => min(30, max(0, $pwd_points)),
+    'max' => 30,
+    'status' => $pwd_status,
+    'status_label' => $status_labels[$pwd_status] ?? 'Status',
+    'detail' => $pwd_detail,
+    'color' => '#60a5fa',
+  ];
+  $security_score += min(30, max(0, $pwd_points));
+
+  // Authenticator app 2FA (max 30)
+  $app_points = $twofa_app_enabled ? 30 : 0;
+  $app_status = $twofa_app_enabled ? 'good' : 'warn';
+  $app_detail = $twofa_app_enabled ? 'Authenticator app required at login' : 'Not enabled';
+  if (!$twofa_app_enabled) {
+    $security_tips[] = $twofa_email_enabled
+      ? 'Add authenticator app 2FA for stronger protection than email codes.'
+      : 'Turn on authenticator app 2FA to protect your logins.';
+  }
+  $security_segments[] = [
+    'key' => 'twofa_app',
+    'label' => 'Authenticator 2FA',
+    'points' => min(30, max(0, $app_points)),
+    'max' => 30,
+    'status' => $app_status,
+    'status_label' => $status_labels[$app_status] ?? 'Status',
+    'detail' => $app_detail,
+    'color' => '#34d399',
+  ];
+  $security_score += min(30, max(0, $app_points));
+
+  // Email codes 2FA (max 10)
+  $email_points = $twofa_email_enabled ? 10 : 0;
+  $email_status = $twofa_email_enabled ? 'ok' : 'warn';
+  $email_detail = $twofa_email_enabled ? 'Email login codes available as backup' : 'Not enabled';
+  if (!$twofa_email_enabled && !$twofa_app_enabled) {
+    $security_tips[] = 'Enable email login codes so sign-ins require a second step.';
+  }
+  $security_segments[] = [
+    'key' => 'twofa_email',
+    'label' => 'Email 2FA',
+    'points' => min(10, max(0, $email_points)),
+    'max' => 10,
+    'status' => $email_status,
+    'status_label' => $status_labels[$email_status] ?? 'Status',
+    'detail' => $email_detail,
+    'color' => '#fbbf24',
+  ];
+  $security_score += min(10, max(0, $email_points));
+
+  // Passkeys (max 20)
+  if ($passkey_count >= 2) {
+    $pk_points = 20;
+    $pk_status = 'good';
+    $pk_detail = number_format($passkey_count) . ' passkeys saved';
+  } elseif ($passkey_count === 1) {
+    $pk_points = 14;
+    $pk_status = 'ok';
+    $pk_detail = '1 passkey saved';
+    $security_tips[] = 'Add a second passkey so you have a backup device.';
+  } else {
+    $pk_points = 0;
+    $pk_status = 'warn';
+    $pk_detail = 'No passkeys yet';
+    $security_tips[] = 'Add a passkey for fast, phishing-resistant sign-ins.';
+  }
+  $security_segments[] = [
+    'key' => 'passkeys',
+    'label' => 'Passkeys',
+    'points' => min(20, max(0, $pk_points)),
+    'max' => 20,
+    'status' => $pk_status,
+    'status_label' => $status_labels[$pk_status] ?? 'Status',
+    'detail' => $pk_detail,
+    'color' => '#c084fc',
+  ];
+  $security_score += min(20, max(0, $pk_points));
+
+  // Trusted device hygiene (max 10)
+  $trusted_points = 10;
+  $trusted_detail_parts = [];
+  if ($trusted_counts['total'] <= 0) {
+    $trusted_detail = 'No trusted devices';
+    $trusted_status = 'good';
+  } else {
+    $trusted_points = 6;
+    $trusted_detail_parts[] = number_format($trusted_counts['total']) . ' saved';
+    if ($trusted_counts['recent'] > 0) {
+      $trusted_points += 2;
+      $trusted_detail_parts[] = number_format($trusted_counts['recent']) . ' active';
+    }
+    if ($trusted_counts['expired'] > 0) {
+      $trusted_points -= 4;
+      $trusted_detail_parts[] = number_format($trusted_counts['expired']) . ' expired';
+      $security_tips[] = 'Remove expired trusted devices to prevent bypassing 2FA.';
+    }
+    if ($trusted_counts['total'] > 5) {
+      $trusted_points -= 1;
+      $security_tips[] = 'Review trusted devices and prune any you no longer use.';
+    }
+    $trusted_points = max(0, min(10, $trusted_points));
+    $trusted_status = ($trusted_points >= 8) ? 'good' : (($trusted_points >= 5) ? 'ok' : 'warn');
+    $trusted_detail = implode(' · ', $trusted_detail_parts);
+  }
+  $security_segments[] = [
+    'key' => 'trusted',
+    'label' => 'Trusted devices',
+    'points' => $trusted_points,
+    'max' => 10,
+    'status' => $trusted_status,
+    'status_label' => $status_labels[$trusted_status] ?? 'Status',
+    'detail' => $trusted_detail,
+    'color' => '#f472b6',
+  ];
+  $security_score += $trusted_points;
+
+  $security_score = max(0, min($SEC_MAX, $security_score));
+  $security_score_pct = (int)round($security_score);
+
+  if ($security_score_pct >= 90) {
+    $security_grade = 'Excellent';
+  } elseif ($security_score_pct >= 75) {
+    $security_grade = 'Strong';
+  } elseif ($security_score_pct >= 55) {
+    $security_grade = 'Fair';
+  } else {
+    $security_grade = 'Needs attention';
+  }
+
+  if ($twofa_app_enabled && $passkey_count > 0) {
+    $security_summary = 'Passkeys and authenticator 2FA are protecting this account.';
+  } elseif ($twofa_app_enabled) {
+    $security_summary = 'Authenticator 2FA is active. Add a passkey for passwordless access.';
+  } elseif ($twofa_email_enabled) {
+    $security_summary = 'Email codes provide some coverage. Enable an authenticator app next.';
+  } else {
+    $security_summary = 'Set up multi-factor authentication to dramatically boost security.';
+  }
+
+  $security_tips = array_values(array_unique(array_filter($security_tips)));
+
+  $security_donut_segments = $security_segments;
+  $gap_points = max(0, $SEC_MAX - $security_score);
+  if ($gap_points > 0) {
+    $security_donut_segments[] = [
+      'key' => 'opportunity',
+      'label' => 'Opportunity',
+      'points' => $gap_points,
+      'max' => $SEC_MAX,
+      'status' => 'gap',
+      'status_label' => '',
+      'detail' => '',
+      'color' => 'rgba(148,163,184,0.35)',
+      'is_gap' => true,
+    ];
+  }
+
+  $security_donut_svg = [];
+  $accum = 0.0;
+  foreach ($security_donut_segments as $idx => $seg) {
+    $pct = $SEC_MAX > 0 ? max(0, min(1, ($seg['points'] ?? 0) / $SEC_MAX)) : 0;
+    $len = $pct * $donutS['C'];
+    if ($len <= 0.0001) continue;
+    $security_donut_svg[] = [
+      'key' => $seg['key'],
+      'color' => $seg['color'],
+      'dash' => $len,
+      'gap' => max(0.0001, $donutS['C'] - $len),
+      'offset' => ($idx === 0) ? null : ($donutS['C'] - $accum),
+      'is_gap' => !empty($seg['is_gap']),
+    ];
+    $accum += $len;
+  }
+} else {
+  $security_score_pct = 0;
+}
+
 /* ---------- Donut math (clients) ---------- */
 $has_is_active    = column_exists($conn, 'users', 'is_active');
 $has_locked_until = column_exists($conn, 'users', 'locked_until');
@@ -639,6 +913,13 @@ $CAT_PALETTE = [
       --inv-expired-1:#f59e0b;  --inv-expired-2:#ef4444;
       --inv-registered-1:#10b981; --inv-registered-2:#059669;
 
+      --sec-pass:#60a5fa;
+      --sec-twofa-app:#34d399;
+      --sec-twofa-email:#fbbf24;
+      --sec-passkey:#c084fc;
+      --sec-trusted:#f472b6;
+      --sec-gap:rgba(148,163,184,0.35);
+
       --spark-fill:#1a2440;
       --spark-bar:#4f8cf9;
       --spark-bar-2:#8e7df0;
@@ -706,6 +987,25 @@ $CAT_PALETTE = [
     .swatch{ width:12px; height:12px; border-radius:3px; }
     .legend .label{ font-size:12px; color: var(--c-muted); }
     .legend .value{ font-weight:600; }
+
+    .security-card .donut-wrap{ gap:16px; }
+    .security-card .donut .score{ font-size:32px; font-weight:700; color:#fff; }
+    .security-card .donut .grade{ margin-top:4px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--c-muted); }
+    .security-card .legend{ gap:10px; }
+    .security-card .legend .row{ align-items:flex-start; justify-content:space-between; }
+    .security-card .legend-main{ flex:1; min-width:0; }
+    .security-card .legend-title{ font-size:12px; font-weight:600; color:#f8fbff; }
+    .security-card .legend-detail{ font-size:11px; color:var(--c-muted); margin-top:2px; }
+    .security-card .legend-score{ display:flex; flex-direction:column; align-items:flex-end; gap:4px; font-size:11px; }
+    .security-card .legend-score .value{ font-weight:600; color:#e2ecff; }
+    .security-card .status-pill{ display:inline-flex; align-items:center; justify-content:center; padding:2px 6px; border-radius:999px; font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; }
+    .security-card .status-pill.good{ background:rgba(34,197,94,0.18); border:1px solid rgba(34,197,94,0.4); color:#4ade80; }
+    .security-card .status-pill.ok{ background:rgba(250,204,21,0.18); border:1px solid rgba(234,179,8,0.45); color:#facc15; }
+    .security-card .status-pill.warn{ background:rgba(239,68,68,0.18); border:1px solid rgba(239,68,68,0.4); color:#f87171; }
+    .security-card .security-summary{ margin:12px 0 0; font-size:12px; color:var(--c-muted); }
+    .security-card .security-tips{ margin:10px 0 0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px; }
+    .security-card .security-tips li{ position:relative; padding-left:16px; font-size:12px; color:#dbe7ff; line-height:1.4; }
+    .security-card .security-tips li::before{ content:""; position:absolute; left:0; top:6px; width:8px; height:8px; border-radius:50%; background:linear-gradient(90deg, var(--c-accent), var(--violet-2)); box-shadow:0 0 0 2px rgba(60,130,246,0.25); }
 
     /* Spark bars */
     .spark{
@@ -782,6 +1082,71 @@ $CAT_PALETTE = [
     </header>
 
     <section class="cards" aria-label="Overview cards">
+      <article class="card security-card">
+        <h3>Security</h3>
+
+        <div class="donut-wrap" aria-label="Account security status">
+          <div class="donut">
+            <?php $rS = $donutS['r']; $swS = $donutS['sw']; ?>
+            <svg viewBox="0 0 120 120" role="img" aria-labelledby="seclbl">
+              <title id="seclbl">Account security score: <?php echo (int)$security_score_pct; ?> percent</title>
+              <circle cx="60" cy="60" r="<?php echo $rS; ?>"
+                      fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="<?php echo $swS; ?>" />
+              <?php foreach ($security_donut_svg as $seg):
+                $dash = round($seg['dash'], 2);
+                $gap = round($seg['gap'], 2);
+                $offset = $seg['offset'] !== null ? round($seg['offset'], 2) : null;
+                $color = htmlspecialchars($seg['color'], ENT_QUOTES, 'UTF-8');
+                $linecap = $seg['is_gap'] ? 'butt' : 'round';
+              ?>
+                <circle cx="60" cy="60" r="<?php echo $rS; ?>"
+                        fill="none" stroke="<?php echo $color; ?>" stroke-width="<?php echo $swS; ?>"
+                        stroke-dasharray="<?php echo $dash . ' ' . $gap; ?>"<?php if ($offset !== null): ?> stroke-dashoffset="<?php echo $offset; ?>"<?php endif; ?>
+                        stroke-linecap="<?php echo $linecap; ?>" />
+              <?php endforeach; ?>
+            </svg>
+            <div class="center">
+              <div>
+                <div class="score"><?php echo (int)$security_score_pct; ?>%</div>
+                <div class="grade"><?php echo h($security_grade); ?></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="legend">
+            <?php foreach ($security_segments as $seg): ?>
+              <div class="row">
+                <span class="swatch" style="background:<?php echo htmlspecialchars($seg['color'], ENT_QUOTES, 'UTF-8'); ?>"></span>
+                <div class="legend-main">
+                  <div class="legend-title"><?php echo h($seg['label']); ?></div>
+                  <?php if (!empty($seg['detail'])): ?>
+                    <div class="legend-detail"><?php echo h($seg['detail']); ?></div>
+                  <?php endif; ?>
+                </div>
+                <div class="legend-score">
+                  <span class="value"><?php echo (int)round($seg['points']); ?> / <?php echo (int)$seg['max']; ?></span>
+                  <span class="status-pill <?php echo h($seg['status']); ?>"><?php echo h($seg['status_label']); ?></span>
+                </div>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        </div>
+
+        <?php if (!empty($security_summary)): ?>
+          <p class="security-summary"><?php echo h($security_summary); ?></p>
+        <?php endif; ?>
+
+        <?php if (!empty($security_tips)): ?>
+          <ul class="security-tips">
+            <?php foreach ($security_tips as $tip): ?>
+              <li><?php echo h($tip); ?></li>
+            <?php endforeach; ?>
+          </ul>
+        <?php else: ?>
+          <p class="security-summary" style="margin-top:10px;">Everything looks locked down. Great job!</p>
+        <?php endif; ?>
+      </article>
+
       <?php if ($can_admin): ?>
         <!-- Admin/Trainer-only cards -->
 
