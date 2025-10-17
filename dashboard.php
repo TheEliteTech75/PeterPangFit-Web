@@ -940,12 +940,35 @@ $CAT_PALETTE = [
     h1{margin:0 0 6px;font-size:20px}
     .muted{color:var(--c-muted);font-size:13px}
 
-    .cards{ display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; align-items: stretch; }
+    .cards{
+      --card-min: clamp(240px, 25%, 300px);
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(var(--card-min), 1fr));
+      gap: 14px;
+      align-items: stretch;
+    }
+    @media (max-width: 1024px){
+      .cards{ --card-min: clamp(220px, 33.33%, 280px); }
+    }
+    @media (max-width: 768px){
+      .cards{ --card-min: min(100%, 280px); }
+    }
+    @media (max-width: 520px){
+      .cards{ grid-template-columns: repeat(auto-fit, minmax( min(100%, 240px), 1fr)); }
+    }
 
     .card{
       display:flex; flex-direction:column; justify-content:flex-start;
       background:var(--c-card); border:1px solid var(--border); border-radius:var(--radius);
       padding:14px; min-height:110px; container-type:inline-size;
+    }
+    .card[draggable="true"]{ cursor: grab; }
+    .card.is-dragging{ opacity:0.65; cursor: grabbing; box-shadow:0 12px 32px rgba(0,0,0,0.35); }
+    .cards.drag-active{ position:relative; }
+    .cards.drag-active::after{
+      content:""; position:absolute; inset:-6px; border-radius:calc(var(--radius) + 6px);
+      border:1px dashed rgba(99, 102, 241, 0.45);
+      pointer-events:none;
     }
     .card h3{margin:0 0 6px; font-size:16px}
     .metric{font-size:28px; font-weight:700; line-height:1.2; margin:2px 0 4px}
@@ -1541,7 +1564,211 @@ $CAT_PALETTE = [
     </div>
 
   </main>
-	<script>
+
+    <script>
+    (function(){
+      const userScope = <?php echo json_encode('uid-' . ($USER_ID ?? 'guest')); ?>;
+      const containers = Array.from(document.querySelectorAll('.cards'));
+
+      containers.forEach((container, containerIndex) => {
+        const cards = Array.from(container.querySelectorAll(':scope > .card'));
+        if (!cards.length) return;
+
+        const seenKeys = new Set();
+        cards.forEach((card, idx) => {
+          const key = ensureCardKey(card, idx, seenKeys);
+          seenKeys.add(key);
+          card.setAttribute('draggable', 'true');
+        });
+
+        const storageKey = `ppf-dashboard-order::${userScope}::${containerIndex}`;
+        applySavedOrder(container, storageKey);
+
+        setupNativeDrag(container, storageKey);
+        setupTouchDrag(container, storageKey);
+      });
+
+      function ensureCardKey(card, idx, seenKeys){
+        let key = (card.getAttribute('data-card-key') || card.dataset.cardKey || '').trim();
+        if (key && !seenKeys.has(key)) {
+          card.dataset.cardKey = key;
+          return key;
+        }
+
+        const heading = card.querySelector('h1, h2, h3, h4, h5, h6');
+        const raw = heading ? heading.textContent.trim().toLowerCase() : '';
+        const base = raw ? raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : 'card';
+        let candidate = base || `card-${idx}`;
+        let attempt = 1;
+        while (seenKeys.has(candidate)) {
+          attempt += 1;
+          candidate = `${base}-${attempt}`;
+        }
+        card.dataset.cardKey = candidate;
+        return candidate;
+      }
+
+      function applySavedOrder(container, storageKey){
+        let stored;
+        try {
+          stored = window.localStorage ? window.localStorage.getItem(storageKey) : null;
+        } catch (err) {
+          stored = null;
+        }
+        if (!stored) return;
+        let parsed;
+        try {
+          parsed = JSON.parse(stored);
+        } catch (err) {
+          return;
+        }
+        if (!Array.isArray(parsed) || !parsed.length) return;
+
+        const map = new Map();
+        Array.from(container.querySelectorAll(':scope > .card')).forEach(card => {
+          if (card.dataset.cardKey) map.set(card.dataset.cardKey, card);
+        });
+
+        let reordered = false;
+        parsed.forEach(key => {
+          const card = map.get(key);
+          if (card) {
+            container.appendChild(card);
+            map.delete(key);
+            reordered = true;
+          }
+        });
+        map.forEach(card => container.appendChild(card));
+
+        if (reordered) persistOrder(container, storageKey);
+      }
+
+      function persistOrder(container, storageKey){
+        const order = Array.from(container.querySelectorAll(':scope > .card'))
+          .map(card => card.dataset.cardKey)
+          .filter(Boolean);
+        try {
+          if (window.localStorage) {
+            window.localStorage.setItem(storageKey, JSON.stringify(order));
+          }
+        } catch (err) {
+          /* non-fatal */
+        }
+      }
+
+      function setupNativeDrag(container, storageKey){
+        container.addEventListener('dragstart', evt => {
+          const card = evt.target && evt.target.closest('.card');
+          if (!card || !container.contains(card)) return;
+          card.classList.add('is-dragging');
+          container.classList.add('drag-active');
+          if (evt.dataTransfer) {
+            evt.dataTransfer.effectAllowed = 'move';
+            try { evt.dataTransfer.setData('text/plain', card.dataset.cardKey || ''); } catch (err) {}
+          }
+        });
+
+        container.addEventListener('dragover', evt => {
+          if (!evt.target || !container.classList.contains('drag-active')) return;
+          evt.preventDefault();
+          const dragging = container.querySelector('.card.is-dragging');
+          if (!dragging) return;
+          const after = findCardAfter(container, evt.clientY);
+          if (after) container.insertBefore(dragging, after); else container.appendChild(dragging);
+        });
+
+        container.addEventListener('dragend', evt => {
+          const card = evt.target && evt.target.closest('.card');
+          if (!card || !container.contains(card)) return;
+          card.classList.remove('is-dragging');
+          container.classList.remove('drag-active');
+          persistOrder(container, storageKey);
+        });
+
+        container.addEventListener('drop', evt => {
+          if (container.classList.contains('drag-active')) evt.preventDefault();
+        });
+      }
+
+      function setupTouchDrag(container, storageKey){
+        let state = null;
+
+        container.addEventListener('pointerdown', evt => {
+          if (evt.pointerType !== 'touch') return;
+          const card = evt.target && evt.target.closest('.card');
+          if (!card || !container.contains(card)) return;
+          if (shouldIgnoreInteractive(evt.target)) return;
+          state = {
+            card,
+            pointerId: evt.pointerId,
+            startX: evt.clientX,
+            startY: evt.clientY,
+            started: false,
+            capture: false
+          };
+        });
+
+        container.addEventListener('pointermove', evt => {
+          if (!state || evt.pointerId !== state.pointerId) return;
+          const { card } = state;
+          const moved = Math.abs(evt.clientX - state.startX) + Math.abs(evt.clientY - state.startY);
+          if (!state.started){
+            if (moved < 12) return;
+            state.started = true;
+            try {
+              card.setPointerCapture(evt.pointerId);
+              state.capture = true;
+            } catch (err) {}
+            card.classList.add('is-dragging');
+            container.classList.add('drag-active');
+          }
+          evt.preventDefault();
+          const after = findCardAfter(container, evt.clientY);
+          if (after) container.insertBefore(card, after); else container.appendChild(card);
+        }, { passive: false });
+
+        function finishTouchDrag(evt){
+          if (!state || evt.pointerId !== state.pointerId) return;
+          const { card, started, capture } = state;
+          if (capture){
+            try { card.releasePointerCapture(state.pointerId); } catch (err) {}
+          }
+          if (started){
+            evt.preventDefault();
+            card.classList.remove('is-dragging');
+            container.classList.remove('drag-active');
+            persistOrder(container, storageKey);
+          }
+          state = null;
+        }
+
+        container.addEventListener('pointerup', finishTouchDrag);
+        container.addEventListener('pointercancel', finishTouchDrag);
+      }
+
+      function shouldIgnoreInteractive(target){
+        return !!(target && target.closest('a, button, input, textarea, select, label'));
+      }
+
+      function findCardAfter(container, clientY){
+        const cards = Array.from(container.querySelectorAll(':scope > .card:not(.is-dragging)'));
+        let closest = null;
+        let closestOffset = Number.NEGATIVE_INFINITY;
+        cards.forEach(card => {
+          const rect = card.getBoundingClientRect();
+          const offset = clientY - (rect.top + rect.height / 2);
+          if (offset < 0 && offset > closestOffset) {
+            closestOffset = offset;
+            closest = card;
+          }
+        });
+        return closest;
+      }
+
+    })();
+    </script>
+
+        <script>
 (function(){
   const $ = (id) => document.getElementById(id);
 
