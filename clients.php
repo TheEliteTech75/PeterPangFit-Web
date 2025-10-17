@@ -1,0 +1,1827 @@
+<?php
+// clients.php — Active/Inactive tabs, inline edit, invite/resend, deactivate/reactivate, row-expand plans + unassign.
+
+require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/ppf_lockout.php'; // unlock action
+
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+function is_trainer_admin($role){ return in_array($role ?? 'guest', ['trainer','admin'], true); }
+if (!is_trainer_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
+
+// --- Ensure is_active exists ---
+function ensure_is_active_column(mysqli $conn): void {
+  $sql = "SELECT COUNT(*) AS c
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'users'
+            AND COLUMN_NAME = 'is_active'";
+  $res = $conn->query($sql);
+  $row = $res ? $res->fetch_assoc() : null;
+  $exists = (int)($row['c'] ?? 0) > 0;
+
+  if (!$exists) {
+    @$conn->query("ALTER TABLE users
+                  ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1,
+                  ADD INDEX idx_is_active (is_active)");
+  }
+}
+
+// ---------- CSRF ----------
+if (session_status() === PHP_SESSION_NONE) session_start();
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+$csrf = $_SESSION['csrf_token'] ?? null;
+
+// Which tab?
+$tab = ($_GET['tab'] ?? 'active') === 'inactive' ? 'inactive' : 'active';
+
+// ---------- POST Actions ----------
+$flash = null; $flash_type = 'ok';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $t = $_POST['csrf_token'] ?? '';
+  if (!$csrf || !hash_equals($csrf, $t)) {
+    $flash = 'Your session expired or the page did not include a valid session token. Please try again.'; $flash_type = 'err';
+  } else {
+    $action = $_POST['action'] ?? '';
+    $uid    = (int)($_POST['user_id'] ?? 0);
+
+    try {
+      if ($action === 'update_client') {
+        if ($uid <= 0) throw new Exception('Invalid client.');
+        $email      = trim($_POST['email'] ?? '');
+        $phone      = trim($_POST['phone'] ?? '');
+        $birthdate  = trim($_POST['birthdate'] ?? '');
+        $gender     = trim($_POST['gender'] ?? '');
+        $first_name = trim($_POST['first_name'] ?? '');
+        $middle_name= trim($_POST['middle_name'] ?? '');
+        $last_name  = trim($_POST['last_name'] ?? '');
+
+        $height_ft  = isset($_POST['height_ft'])  ? trim($_POST['height_ft'])  : '';
+        $height_in  = isset($_POST['height_in'])  ? trim($_POST['height_in'])  : '';
+        $weight_lbs = isset($_POST['weight_lbs']) ? trim($_POST['weight_lbs']) : '';
+
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new Exception('Valid email required.');
+        if ($birthdate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $birthdate)) throw new Exception('Birthdate must be YYYY-MM-DD.');
+
+        $stmt = $conn->prepare("SELECT id FROM users WHERE email = ? AND id <> ?");
+        $stmt->bind_param("si", $email, $uid);
+        $stmt->execute(); $stmt->store_result();
+        if ($stmt->num_rows > 0) { $stmt->close(); throw new Exception('Email already in use by another user.'); }
+        $stmt->close();
+
+        $hf = ($height_ft === '' ? null : (int)$height_ft);
+        $hi = ($height_in === '' ? null : (int)$height_in);
+        if ($hi !== null) { if ($hi < 0) $hi = 0; if ($hi > 11) $hi = 11; }
+        if ($hf !== null) { if ($hf < 0) $hf = 0; if ($hf > 8) $hf = 8; }
+        $wl = ($weight_lbs === '' ? null : (float)$weight_lbs);
+        if ($wl !== null && $wl <= 0) $wl = null;
+
+        $stmt = $conn->prepare("
+          UPDATE users
+          SET email=?, phone=?, birthdate=?, gender=?, first_name=?, middle_name=?, last_name=?, height_ft=?, height_in=?, weight_lbs=?
+          WHERE id=? AND (role='client' OR is_client=1)
+        ");
+        if (!$stmt) throw new Exception('Failed to prepare update.');
+
+        $bdate = ($birthdate ?: null);
+        $gend  = ($gender ?: null);
+        $fn    = ($first_name ?: null);
+        $mn    = ($middle_name ?: null);
+        $ln    = ($last_name ?: null);
+
+        $stmt->bind_param("sssssssiidi", $email, $phone, $bdate, $gend, $fn, $mn, $ln, $hf, $hi, $wl, $uid);
+        if (!$stmt->execute()) { $stmt->close(); throw new Exception('Failed to update client.'); }
+        $stmt->close();
+
+        $flash = 'Client updated.'; $flash_type = 'ok';
+      }
+
+      // Append one or more exercises to an existing plan (AJAX, no navigation)
+      if ($action === 'add_exercises_to_plan') {
+        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+          throw new Exception('You do not have permission to edit plans.');
+        }
+
+        $plan_id = (int)($_POST['plan_id'] ?? 0);
+        $raw = $_POST['exercise_ids'] ?? [];
+        if (is_string($raw)) {
+          $tmp = json_decode($raw, true);
+          if (is_array($tmp)) $raw = $tmp;
+        }
+        if (!is_array($raw)) $raw = [$raw];
+        $exercise_ids = array_values(array_unique(array_filter(array_map('intval', $raw), fn($n)=>$n>0)));
+
+        if ($plan_id <= 0 || !$exercise_ids) throw new Exception('Invalid input.');
+
+        $maxPos = 0;
+        if ($res = $conn->query("SELECT COALESCE(MAX(position),0) AS m FROM plan_exercises WHERE plan_id = ".(int)$plan_id)) {
+          if ($row = $res->fetch_assoc()) $maxPos = (int)$row['m'];
+        }
+
+        $existing = [];
+        if ($res = $conn->query("SELECT exercise_id FROM plan_exercises WHERE plan_id = ".(int)$plan_id)) {
+          while ($r = $res->fetch_assoc()) $existing[(int)$r['exercise_id']] = true;
+        }
+        $toInsert = array_values(array_filter($exercise_ids, fn($eid)=>empty($existing[$eid])));
+
+        if (!$toInsert) {
+          header('Content-Type: application/json');
+          echo json_encode(['ok'=>true, 'added'=>[]]); exit;
+        }
+
+        $stmt = $conn->prepare("INSERT INTO plan_exercises (plan_id, exercise_id, position) VALUES (?, ?, ?)");
+        $conn->begin_transaction();
+        try {
+          foreach ($toInsert as $eid) {
+            $maxPos++;
+            $stmt->bind_param("iii", $plan_id, $eid, $maxPos);
+            if (!$stmt->execute()) throw new Exception('Failed to insert exercise.');
+          }
+          $conn->commit();
+        } catch (Throwable $e) {
+          $conn->rollback(); $stmt->close(); throw $e;
+        }
+        $stmt->close();
+
+        $idsIn = implode(',', array_map('intval', $toInsert));
+        $newRows = [];
+        if ($idsIn !== '') {
+          $q = "SELECT id AS ex_id, name, notes FROM exercises WHERE id IN ($idsIn)";
+          if ($res = $conn->query($q)) {
+            while ($r = $res->fetch_assoc()) {
+              $newRows[] = [
+                'ex_id' => (int)$r['ex_id'],
+                'name'  => (string)$r['name'],
+                'notes' => (string)($r['notes'] ?? ''),
+                'has_video' => false,
+                'updated_at' => null,
+                'updated_by_name' => '—'
+              ];
+            }
+          }
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode(['ok'=>true, 'added'=>$newRows]);
+        exit;
+      }
+
+      if ($action === 'invite_client' || $action === 'resend_invite') {
+        if ($uid <= 0) throw new Exception('Invalid client.');
+        $stmt = $conn->prepare("SELECT id,email,first_name,last_name,password_hash FROM users WHERE id=?");
+        $stmt->bind_param("i", $uid);
+        $stmt->execute();
+        $rs = $stmt->get_result(); $row = $rs->fetch_assoc();
+        $stmt->close();
+        if (!$row) throw new Exception('Client not found.');
+        if (!empty($row['password_hash'])) throw new Exception('This user already has a password.');
+        $flash = ($action === 'invite_client') ? 'Invite sent.' : 'Invite re-sent.'; $flash_type = 'ok';
+      }
+
+      // Deactivate
+      if ($action === 'deactivate_client') {
+        if ($uid <= 0) throw new Exception('Invalid client.');
+        $stmt = $conn->prepare("UPDATE users SET is_active=0 WHERE id=? AND role='client'");
+        $stmt->bind_param("i", $uid);
+        if (!$stmt->execute()) { $stmt->close(); throw new Exception('Failed to deactivate client.'); }
+        $stmt->close();
+        $flash = 'Client deactivated.'; $flash_type = 'ok';
+      }
+
+      // Reactivate
+      if ($action === 'reactivate_client') {
+        if ($uid <= 0) throw new Exception('Invalid client.');
+        $stmt = $conn->prepare("UPDATE users SET is_active=1 WHERE id=? AND role='client'");
+        $stmt->bind_param("i", $uid);
+        if (!$stmt->execute()) { $stmt->close(); throw new Exception('Failed to reactivate client.'); }
+        $stmt->close();
+        $flash = 'Client reactivated.'; $flash_type = 'ok';
+      }
+
+      // Admin unlock (lockout feature)
+      if ($action === 'unlock_user') {
+        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+          throw new Exception('You do not have permission to unlock accounts.');
+        }
+        if ($uid <= 0) throw new Exception('Invalid client.');
+        if (!ppf_admin_unlock_user($conn, $uid, (int)$USER_ID, (string)$USER_EMAIL)) {
+          throw new Exception('Unable to unlock account (it may already be unlocked).');
+        }
+        $flash = 'Account unlocked.'; $flash_type = 'ok';
+      }
+
+      // Save per-client exercise settings (AJAX) — NOW also supports user_notes
+      if ($action === 'save_user_exercise') {
+        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+          throw new Exception('You do not have permission to edit exercise settings.');
+        }
+
+        $plan_id    = (int)($_POST['plan_id'] ?? 0);
+        $exercise_id= (int)($_POST['exercise_id'] ?? 0);
+        if ($uid <= 0 || $plan_id <= 0 || $exercise_id <= 0) throw new Exception('Invalid input.');
+
+        $sets  = trim($_POST['sets'] ?? '');
+        $reps  = trim($_POST['reps'] ?? '');
+        $weight_lbs = trim($_POST['weight_lbs'] ?? '');
+        $duration_seconds = trim($_POST['duration_seconds'] ?? '');
+        $user_notes = isset($_POST['user_notes']) ? trim($_POST['user_notes']) : '';
+
+        $setsVal  = ($sets === '' ? null : $sets);
+        $repsVal  = ($reps === '' ? null : $reps);
+        $wtVal    = ($weight_lbs === '' ? null : (float)$weight_lbs);
+        $durVal   = ($duration_seconds === '' ? null : (int)$duration_seconds);
+        $notesVal = ($user_notes === '' ? null : $user_notes);
+
+        // Find the user_plans.id for (user, plan)
+        $up_id = null;
+        $q1 = $conn->prepare("SELECT id FROM user_plans WHERE user_id=? AND plan_id=? LIMIT 1");
+        $q1->bind_param("ii", $uid, $plan_id);
+        $q1->execute();
+        $res1 = $q1->get_result();
+        if ($row = $res1->fetch_assoc()) $up_id = (int)$row['id'];
+        $q1->close();
+
+        if (!$up_id) throw new Exception('Plan is not assigned to this user.');
+
+        // Does a row exist for this exercise?
+        $upe_id = null;
+        $q2 = $conn->prepare("SELECT id FROM user_plan_exercises WHERE user_plan_id=? AND exercise_id=? LIMIT 1");
+        $q2->bind_param("ii", $up_id, $exercise_id);
+        $q2->execute();
+        $res2 = $q2->get_result();
+        if ($row = $res2->fetch_assoc()) $upe_id = (int)$row['id'];
+        $q2->close();
+
+        if ($upe_id) {
+          $q3 = $conn->prepare("
+            UPDATE user_plan_exercises
+            SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?
+            WHERE id=?
+          ");
+          // sets(s), reps(s), weight(d), duration(i), user_notes(s), id(i)
+          $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+          if (!$q3->execute()) { $q3->close(); throw new Exception('Failed to update settings.'); }
+          $q3->close();
+        } else {
+          $q4 = $conn->prepare("
+            INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          ");
+          // up_id(i), exercise_id(i), sets(s), reps(s), weight(d), duration(i), user_notes(s)
+          $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+          if (!$q4->execute()) { $q4->close(); throw new Exception('Failed to save settings.'); }
+          $q4->close();
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode([
+          'ok' => true,
+          'data' => [
+            'sets' => $setsVal,
+            'reps' => $repsVal,
+            'weight' => $wtVal,
+            'duration' => $durVal,
+            'notes' => $notesVal
+          ]
+        ]);
+        exit;
+      }
+
+      // Assign a plan to a user (AJAX, no navigation)
+      if ($action === 'assign_plan_to_user') {
+        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+          throw new Exception('You do not have permission to assign plans.');
+        }
+
+        $plan_id = (int)($_POST['plan_id'] ?? 0);
+        if ($uid <= 0 || $plan_id <= 0) throw new Exception('Invalid input.');
+
+        $st = $conn->prepare("SELECT id FROM user_plans WHERE user_id=? AND plan_id=? LIMIT 1");
+        $st->bind_param("ii", $uid, $plan_id);
+        $st->execute();
+        $rs = $st->get_result();
+        if ($rs && $rs->fetch_assoc()) {
+          $st->close();
+          header('Content-Type: application/json');
+          echo json_encode(['ok'=>true, 'already_assigned'=>true]);
+          exit;
+        }
+        $st->close();
+
+        $ins = $conn->prepare("INSERT INTO user_plans (user_id, plan_id) VALUES (?, ?)");
+        $ins->bind_param("ii", $uid, $plan_id);
+        if (!$ins->execute()) { $ins->close(); throw new Exception('Failed to assign plan.'); }
+        $ins->close();
+
+        $pname = 'Plan #'.$plan_id;
+        if ($r = $conn->query("SELECT name FROM workout_plans WHERE id=".(int)$plan_id)) {
+          if ($row = $r->fetch_assoc()) $pname = (string)$row['name'];
+        }
+
+        $exCount = 0;
+        if ($r = $conn->query("SELECT COUNT(*) AS c FROM plan_exercises WHERE plan_id=".(int)$plan_id)) {
+          if ($row = $r->fetch_assoc()) $exCount = (int)$row['c'];
+        }
+
+        $assigned_at_fmt = null;
+        if ($r = $conn->query("SELECT assigned_at FROM user_plans WHERE user_id=".(int)$uid." AND plan_id=".(int)$plan_id." ORDER BY id DESC LIMIT 1")) {
+          if ($row = $r->fetch_assoc()) {
+            $iso = $row['assigned_at'] ?? null;
+            if ($iso) {
+              try {
+                $dt = new DateTime($iso);
+                $assigned_at_fmt = $dt->format('M j, Y g:i A');
+              } catch (Throwable $e) { $assigned_at_fmt = null; }
+            }
+          }
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode([
+          'ok' => true,
+          'plan' => [
+            'id' => $plan_id,
+            'name' => $pname,
+            'assigned_at_fmt' => $assigned_at_fmt,
+            'created_at_fmt' => null,
+            'updated_at_fmt' => null,
+            'created_by_name' => '—',
+            'updated_by_name' => '—',
+            'exercise_count' => $exCount
+          ]
+        ]);
+        exit;
+      }
+
+      // Unassign plan from user
+      if ($action === 'unassign_plan') {
+        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+          throw new Exception('You do not have permission to unassign plans.');
+        }
+        $plan_id = (int)($_POST['plan_id'] ?? 0);
+        if ($uid <= 0 || $plan_id <= 0) throw new Exception('Invalid request.');
+
+        $conn->begin_transaction();
+        try {
+          $sql1 = "
+            DELETE upe
+            FROM user_plan_exercises AS upe
+            INNER JOIN user_plans AS up ON up.id = upe.user_plan_id
+            WHERE up.user_id = ? AND up.plan_id = ?
+          ";
+          $st1 = $conn->prepare($sql1);
+          $st1->bind_param("ii", $uid, $plan_id);
+          $st1->execute();
+          $st1->close();
+
+          $sql2 = "DELETE FROM user_plans WHERE user_id = ? AND plan_id = ?";
+          $st2 = $conn->prepare($sql2);
+          $st2->bind_param("ii", $uid, $plan_id);
+          if (!$st2->execute()) { $st2->close(); throw new Exception('Failed to unassign plan.'); }
+          $affected = $st2->affected_rows;
+          $st2->close();
+
+          if ($affected < 1) {
+            $conn->rollback();
+            throw new Exception('This plan is not assigned to that user.');
+          }
+
+          $conn->commit();
+          $flash = 'Plan unassigned.'; $flash_type = 'ok';
+        } catch (Throwable $e) {
+          $conn->rollback();
+          throw $e;
+        }
+      }
+
+      if (in_array($action, ['update_client','invite_client','resend_invite','deactivate_client','reactivate_client','unlock_user','unassign_plan'], true)) {
+        header('Location: clients.php?tab=' . urlencode($tab));
+        exit;
+      }
+
+    } catch (Throwable $e) {
+      $flash = $e->getMessage(); $flash_type = 'err';
+    }
+  }
+}
+
+// IMPORTANT: include header/nav *after* POST/redirects to avoid "headers already sent"
+require_once __DIR__ . '/ppf_header.php';
+require_once __DIR__ . '/ppf_nav.php';
+
+// Ensure column exists before queries
+ensure_is_active_column($conn);
+
+// ---------- Load clients (split active / inactive) ----------
+$active = []; $inactive = [];
+$q = "
+  SELECT
+    u.id, u.role, u.is_client, u.is_active, u.email, u.phone, u.birthdate, u.gender,
+    u.first_name, u.middle_name, u.last_name,
+    u.height_ft, u.height_in, u.weight_lbs,
+    u.password_hash,
+    u.locked_until,
+    COALESCE((SELECT COUNT(*) FROM user_plans up WHERE up.user_id = u.id), 0) AS plans_count
+  FROM users u
+  WHERE u.role='client' OR u.is_client=1
+  ORDER BY u.last_name, u.first_name, u.id
+";
+$res = $conn->query($q);
+if ($res) {
+  while ($r = $res->fetch_assoc()) {
+    if ((int)($r['is_active'] ?? 1) === 1) $active[] = $r; else $inactive[] = $r;
+  }
+}
+
+// Signed-in meta
+$who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? ''));
+
+// ---------- Helpers ----------
+function calc_age_years(?string $birthdate): ?int {
+  if (!$birthdate) return null;
+  try { $dob = new DateTime($birthdate); } catch (Throwable $e) { return null; }
+  $now = new DateTime('now'); if ($dob > $now) return null; return (int)$dob->diff($now)->y;
+}
+function format_gender_cap(?string $g): string {
+  if ($g === null || $g === '') return '';
+  $g = trim($g); return h(mb_strtoupper(mb_substr($g, 0, 1)) . mb_substr($g, 1));
+}
+function format_phone_display(?string $raw): string {
+  if (!$raw) return '';
+  $digits = preg_replace('/\D+/', '', $raw);
+  if (strlen($digits) >= 11 && $digits[0] === '1') { $digits = substr($digits, -10); }
+  if (strlen($digits) === 10) return sprintf('(%s) %s-%s', substr($digits,0,3), substr($digits,3,3), substr($digits,6,4));
+  return $raw;
+}
+function format_us_date(?string $iso): string {
+  if (!$iso) return '';
+  try { $dt = new DateTime($iso); } catch (Throwable $e) { return (string)$iso; }
+  return $dt->format('m/d/Y');
+}
+
+function format_us_datetime(?string $iso): string {
+  if (!$iso) return '';
+  try { $dt = new DateTime($iso); } catch (Throwable $e) { return (string)$iso; }
+  return $dt->format('M j, Y g:i A'); // e.g., Oct 8, 2025 6:25 PM
+}
+
+function user_display_name(mysqli $conn, ?int $uid): string {
+  if (!$uid) return '—';
+  static $cache = [];
+  if (isset($cache[$uid])) return $cache[$uid];
+  $stmt = $conn->prepare("SELECT first_name, last_name, email FROM users WHERE id=? LIMIT 1");
+  $stmt->bind_param("i", $uid);
+  $stmt->execute();
+  $rs = $stmt->get_result();
+  $name = '—';
+  if ($u = $rs->fetch_assoc()) {
+    $nm = trim(($u['first_name'] ?? '').' '.($u['last_name'] ?? ''));
+    $name = ($nm !== '') ? $nm : ($u['email'] ?? '—');
+  }
+  $stmt->close();
+  return $cache[$uid] = $name;
+}
+
+// Column exists helper (rely on existing helpers.php if available)
+if (!function_exists('column_exists')) {
+  function column_exists(mysqli $conn, string $table, string $column): bool {
+    $sql = "SELECT COUNT(*) AS cnt
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?";
+    if (!$stmt = $conn->prepare($sql)) return false;
+    $stmt->bind_param("ss", $table, $column);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    return (int)($row['cnt'] ?? 0) > 0;
+  }
+}
+
+// ---- Column/plans helpers for expansion ----
+$HAS_PLAN_CREATED_AT = column_exists($conn, 'workout_plans', 'created_at');
+$HAS_PLAN_CREATED_BY = column_exists($conn, 'workout_plans', 'created_by');
+$HAS_PLAN_UPDATED_AT = column_exists($conn, 'workout_plans', 'updated_at');
+$HAS_PLAN_UPDATED_BY = column_exists($conn, 'workout_plans', 'updated_by');
+$HAS_UP_ASSIGNED_AT = column_exists($conn, 'user_plans', 'assigned_at');
+
+// ---- Optional exercise columns (for nested exercise list) ----
+$HAS_EX_CREATED_AT = column_exists($conn, 'exercises', 'created_at');
+$HAS_EX_CREATED_BY = column_exists($conn, 'exercises', 'created_by');
+$HAS_EX_UPDATED_AT = column_exists($conn, 'exercises', 'updated_at');
+$HAS_EX_UPDATED_BY = column_exists($conn, 'exercises', 'updated_by');
+
+$plansByUser = [];
+$sqlPlans = "
+  SELECT
+    up.user_id,
+    p.id   AS plan_id,
+    p.name AS plan_name,
+    " . ($HAS_PLAN_CREATED_AT ? "p.created_at" : "NULL AS created_at") . ",
+    " . ($HAS_PLAN_CREATED_BY ? "p.created_by" : "NULL AS created_by") . ",
+    " . ($HAS_PLAN_UPDATED_AT ? "p.updated_at" : "NULL AS updated_at") . ",
+    " . ($HAS_PLAN_UPDATED_BY ? "p.updated_by" : "NULL AS updated_by") . ",
+    " . ($HAS_UP_ASSIGNED_AT ? "up.assigned_at" : "NULL") . " AS assigned_at,
+    COUNT(DISTINCT pe.exercise_id) AS exercise_count
+  FROM user_plans up
+  JOIN workout_plans p ON p.id = up.plan_id
+  LEFT JOIN plan_exercises pe ON pe.plan_id = p.id
+  GROUP BY
+    up.user_id, p.id, p.name, " .
+    ($HAS_PLAN_CREATED_AT ? "p.created_at" : "created_at") . ", " .
+    ($HAS_PLAN_CREATED_BY ? "p.created_by" : "created_by") . ", " .
+    ($HAS_PLAN_UPDATED_AT ? "p.updated_at" : "updated_at") . ", " .
+    ($HAS_PLAN_UPDATED_BY ? "p.updated_by" : "updated_by") . ",
+    assigned_at
+  ORDER BY up.user_id ASC, p.id DESC
+";
+
+// ---- Exercises by plan ----
+$exByPlan = [];
+$sqlEx = "
+  SELECT
+    pe.plan_id,
+    e.id AS ex_id,
+    e.name,
+    e.notes,
+    e.video_url,
+    " . ($HAS_EX_CREATED_AT ? "e.created_at" : "NULL AS created_at") . ",
+    " . ($HAS_EX_CREATED_BY ? "e.created_by" : "NULL AS created_by") . ",
+    " . ($HAS_EX_UPDATED_AT ? "e.updated_at" : "NULL AS updated_at") . ",
+    " . ($HAS_EX_UPDATED_BY ? "e.updated_by" : "NULL AS updated_by") . ",
+    COUNT(DISTINCT pe2.plan_id) AS used_in_plans
+  FROM plan_exercises pe
+  JOIN exercises e       ON e.id = pe.exercise_id
+  LEFT JOIN plan_exercises pe2 ON pe2.exercise_id = e.id
+  GROUP BY pe.plan_id, e.id
+  ORDER BY pe.plan_id ASC, e.name ASC
+";
+
+// --- Per-client exercise settings (with user notes) ---
+$userExByUserPlan = [];
+$sqlUserEx = "
+  SELECT
+    up.user_id,
+    up.plan_id,
+    upe.exercise_id,
+    upe.sets,
+    upe.reps,
+    upe.weight_lbs AS weight,
+    upe.duration_seconds AS duration,
+    upe.user_notes AS notes
+  FROM user_plans up
+  JOIN user_plan_exercises upe ON upe.user_plan_id = up.id
+";
+
+// All plans
+$allPlans = [];
+if ($res = $conn->query("SELECT id, name FROM workout_plans ORDER BY name ASC")) {
+  while ($r = $res->fetch_assoc()) { $allPlans[] = ['id'=>(int)$r['id'], 'name'=>(string)$r['name']]; }
+}
+// All exercises
+$allExercises = [];
+if ($res = $conn->query("SELECT id, name FROM exercises ORDER BY name ASC")) {
+  while ($r = $res->fetch_assoc()) {
+    $allExercises[] = ['id'=>(int)$r['id'], 'name'=>(string)$r['name']];
+  }
+}
+
+if ($rs = $conn->query($sqlUserEx)) {
+  while ($r = $rs->fetch_assoc()) {
+    $u  = (int)$r['user_id'];
+    $p  = (int)$r['plan_id'];
+    $ex = (int)$r['exercise_id'];
+    if (!isset($userExByUserPlan[$u])) $userExByUserPlan[$u] = [];
+    if (!isset($userExByUserPlan[$u][$p])) $userExByUserPlan[$u][$p] = [];
+    $userExByUserPlan[$u][$p][$ex] = [
+      'sets'     => isset($r['sets'])     ? (string)$r['sets']     : null,
+      'reps'     => isset($r['reps'])     ? (string)$r['reps']     : null,
+      'weight'   => isset($r['weight'])   ? (string)$r['weight']   : null,
+      'duration' => isset($r['duration']) ? (string)$r['duration'] : null,
+      'notes'    => isset($r['notes'])    ? (string)$r['notes']    : null,
+    ];
+  }
+}
+if ($rs = $conn->query($sqlEx)) {
+  while ($r = $rs->fetch_assoc()) {
+    $pid = (int)$r['plan_id'];
+
+    $creator = '—';
+    if ($HAS_EX_CREATED_BY && !empty($r['created_by'])) {
+      $creator = user_display_name($conn, (int)$r['created_by']);
+    }
+    $editor = '—';
+    if ($HAS_EX_UPDATED_BY && !empty($r['updated_by'])) {
+      $editor = user_display_name($conn, (int)$r['updated_by']);
+    }
+
+    $exByPlan[$pid][] = [
+      'ex_id'            => (int)$r['ex_id'],
+      'name'             => (string)$r['name'],
+      'notes'            => (string)($r['notes'] ?? ''),
+      'has_video'        => (string)($r['video_url'] ?? '') !== '',
+      'created_at'       => $r['created_at'] ?? null,
+      'created_by_name'  => $creator,
+      'updated_at'       => $r['updated_at'] ?? null,
+      'updated_by_name'  => $editor,
+      'used_in_plans'    => (int)$r['used_in_plans'],
+    ];
+  }
+}
+
+if ($rs = $conn->query($sqlPlans)) {
+  while ($r = $rs->fetch_assoc()) {
+    $uid2 = (int)$r['user_id'];
+
+    $created_by_name = '—';
+    if ($HAS_PLAN_CREATED_BY && !empty($r['created_by'])) {
+      $created_by_name = user_display_name($conn, (int)$r['created_by']);
+    }
+
+    $updated_by_name = '—';
+    if ($HAS_PLAN_UPDATED_BY && !empty($r['updated_by'])) {
+      $updated_by_name = user_display_name($conn, (int)$r['updated_by']);
+    }
+
+    if (!isset($plansByUser[$uid2])) $plansByUser[$uid2] = [];
+    $plansByUser[$uid2][] = [
+      'id'               => (int)$r['plan_id'],
+      'name'             => (string)$r['plan_name'],
+      'assigned_at'      => $r['assigned_at'] ?? null,
+      'created_at'       => $r['created_at'] ?? null,
+      'updated_at'       => $r['updated_at'] ?? null,
+      'assigned_at_fmt'  => !empty($r['assigned_at']) ? format_us_datetime($r['assigned_at']) : null,
+      'created_at_fmt'   => !empty($r['created_at'])  ? format_us_datetime($r['created_at'])  : null,
+      'updated_at_fmt'   => !empty($r['updated_at'])  ? format_us_datetime($r['updated_at'])  : null,
+      'created_by_name'  => $created_by_name,
+      'updated_by_name'  => $updated_by_name,
+      'exercise_count'   => (int)$r['exercise_count'],
+    ];
+  }
+}
+
+// --- Rendering helpers ---
+function render_clients_table(array $clients, string $csrf, string $whichTab): void {
+  global $USER_ROLE;
+  ?>
+  <div style="overflow:auto">
+    <div style="min-width:900px">
+      <table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>First</th>
+      <th>Middle</th>
+      <th>Last</th>
+      <th>Email</th>
+      <th>Phone</th>
+      <th>Birthdate</th>
+      <th>Age</th>
+      <th>Gender</th>
+      <th>Height</th>
+      <th>Weight</th>
+      <th>Plans</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+        <?php if (!$clients): ?>
+          <tr><td colspan="13" class="muted" style="padding:24px">No clients found.</td></tr>
+        <?php else: foreach ($clients as $c):
+          $id   = (int)$c['id'];
+          $pw   = (string)($c['password_hash'] ?? '');
+          $has_password = ($pw !== null && $pw !== '');
+          $editing = isset($_GET['edit']) && (int)$_GET['edit'] === $id;
+          $is_real_client = ($c['role'] === 'client');
+          $ageYears = calc_age_years($c['birthdate'] ?? null);
+
+          $lockedUntil = $c['locked_until'] ?? null;
+          $isLocked = !empty($lockedUntil) && (strtotime($lockedUntil) > time());
+        ?>
+          <!-- Main row (clickable/expandable) -->
+          <tr class="client-row" data-uid="<?php echo $id; ?>">
+            <td><?php echo $id; ?></td>
+
+            <td>
+              <?php if ($editing): ?>
+                <form method="post">
+                  <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                  <input type="hidden" name="action" value="update_client">
+                  <input type="hidden" name="user_id" value="<?php echo $id; ?>">
+                  <input class="input" type="text" name="first_name" value="<?php echo h($c['first_name']); ?>">
+              <?php else: ?>
+                <?php echo h($c['first_name']); ?>
+              <?php endif; ?>
+            </td>
+
+            <td>
+              <?php if ($editing): ?>
+                <input class="input" type="text" name="middle_name" value="<?php echo h($c['middle_name']); ?>">
+              <?php else: ?>
+                <?php echo h($c['middle_name']); ?>
+              <?php endif; ?>
+            </td>
+
+            <td>
+              <?php if ($editing): ?>
+                <input class="input" type="text" name="last_name" value="<?php echo h($c['last_name']); ?>">
+              <?php else: ?>
+                <?php echo h($c['last_name']); ?>
+              <?php endif; ?>
+            </td>
+
+            <td>
+              <?php if ($editing): ?>
+                <input class="input" type="email" name="email" value="<?php echo h($c['email']); ?>" required>
+              <?php else: ?>
+                <?php
+                  $emailHtml = h($c['email']) . ($isLocked ? ' <span class="badge bg-warning text-dark">Locked</span>' : '');
+                  echo $emailHtml;
+                ?>
+              <?php endif; ?>
+            </td>
+
+            <td>
+              <?php if ($editing): ?>
+                <input class="input" type="text" name="phone" value="<?php echo h($c['phone']); ?>">
+              <?php else: ?>
+                <?php echo h(format_phone_display($c['phone'])); ?>
+              <?php endif; ?>
+            </td>
+
+            <td>
+              <?php if ($editing): ?>
+                <input class="input" type="date" name="birthdate" value="<?php echo h($c['birthdate']); ?>">
+              <?php else: ?>
+                <?php echo h(format_us_date($c['birthdate'])); ?>
+              <?php endif; ?>
+            </td>
+
+            <td><?php echo $ageYears === null ? '—' : (int)$ageYears; ?></td>
+
+            <td>
+              <?php if ($editing): ?>
+                <input class="input" type="text" name="gender" value="<?php echo h($c['gender']); ?>">
+              <?php else: ?>
+                <?php echo format_gender_cap($c['gender']); ?>
+              <?php endif; ?>
+            </td>
+
+            <td>
+              <?php if ($editing): ?>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input class="input" type="number" min="0" max="8" step="1" name="height_ft" value="<?php echo h($c['height_ft']); ?>" style="width:60px"> <span>ft</span>
+                  <input class="input" type="number" min="0" max="11" step="1" name="height_in" value="<?php echo h($c['height_in']); ?>" style="width:70px"> <span>in</span>
+                </div>
+              <?php else: ?>
+                <?php
+                  $ft = $c['height_ft'] ?? null;
+                  $in = $c['height_in'] ?? null;
+                  if (($ft === null || $ft === '') && ($in === null || $in === '')) echo '—';
+                  else echo h((int)$ft . "'" . (int)$in . '"');
+                ?>
+              <?php endif; ?>
+            </td>
+
+            <td>
+              <?php if ($editing): ?>
+                <input class="input" type="number" min="0" step="0.1" name="weight_lbs" value="<?php echo h($c['weight_lbs']); ?>" style="width:110px">
+              <?php else: ?>
+                <?php
+                  $lbs = $c['weight_lbs'] ?? null;
+                  if ($lbs === null || $lbs === '' || (is_numeric($lbs) && (float)$lbs <= 0)) echo '—';
+                  else {
+                    $val = is_numeric($lbs) ? (float)$lbs : null;
+                    echo h(($val === null) ? $lbs : ((floor($val)===$val) ? (intval($val).' lbs') : ($val.' lbs')));
+                  }
+                ?>
+              <?php endif; ?>
+            </td>
+
+            <td><?php echo (int)($c['plans_count'] ?? 0); ?></td>
+
+            <td>
+              <div class="actions">
+                <?php if (in_array(($USER_ROLE ?? ''), ['admin','trainer'], true) && $isLocked): ?>
+                  <form method="post" action="clients.php" style="display:inline"
+                        onsubmit="return confirm('Unlock this account? This will clear failed attempts and remove the lockout.');">
+                    <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                    <input type="hidden" name="action" value="unlock_user">
+                    <input type="hidden" name="user_id" value="<?php echo $id; ?>">
+                    <button class="btn small" type="submit" style="border-color:#f59e0b;color:#f59e0b">Unlock</button>
+                  </form>
+                <?php endif; ?>
+
+                <?php if ($editing): ?>
+                  <button class="btn small brand" type="submit">Save</button>
+                  </form>
+                  <a class="btn small" href="clients.php?tab=<?php echo urlencode($whichTab); ?>">Cancel</a>
+                <?php else: ?>
+                  <a class="btn small" href="clients.php?tab=<?php echo urlencode($whichTab); ?>&edit=<?php echo $id; ?>">Edit</a>
+                <?php endif; ?>
+
+                <?php if (!$has_password): ?>
+                  <form method="post" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                    <input type="hidden" name="action" value="invite_client">
+                    <input type="hidden" name="user_id" value="<?php echo $id; ?>">
+                    <button class="btn small brand" type="submit">Invite</button>
+                  </form>
+                  <form method="post" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                    <input type="hidden" name="action" value="resend_invite">
+                    <input type="hidden" name="user_id" value="<?php echo $id; ?>">
+                    <button class="btn small" type="submit">Resend</button>
+                  </form>
+                <?php endif; ?>
+
+                <?php if ($is_real_client): ?>
+                  <?php if ($whichTab === 'active'): ?>
+                    <form method="post" style="display:inline" onsubmit="return confirm('Deactivate this client? They will be moved to Inactive Clients and will be unable to log in.');">
+                      <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                      <input type="hidden" name="action" value="deactivate_client">
+                      <input type="hidden" name="user_id" value="<?php echo $id; ?>">
+                      <button class="btn small" type="submit" style="border-color:#ef4444;color:#ef4444">Deactivate</button>
+                    </form>
+                  <?php else: ?>
+                    <form method="post" style="display:inline">
+                      <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                      <input type="hidden" name="action" value="reactivate_client">
+                      <input type="hidden" name="user_id" value="<?php echo $id; ?>">
+                      <button class="btn small brand" type="submit">Reactivate</button>
+                    </form>
+                  <?php endif; ?>
+                <?php endif; ?>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Expansion row (hidden until clicked) -->
+          <tr class="client-expand" id="exp-<?php echo $id; ?>" style="display:none">
+            <td colspan="13" style="background:#0f1218">
+              <div class="muted" data-exp-body>Loading plans…</div>
+            </td>
+          </tr>
+
+        <?php endforeach; endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <?php
+}
+?>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clients · Peter Pang Fit</title>
+<style>
+  :root{
+    --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6;
+    --line:#1c212b; --chip:#1f2430;
+    --page-pad: clamp(14px, 3vw, 28px);
+    --support: #7dd3fc;
+  }
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif}
+  a{color:var(--text);text-decoration:none}
+
+  .wrap{width:100%;max-width:100%;margin:24px auto;padding:0 var(--page-pad);box-sizing:border-box}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}
+  .row{display:flex;gap:16px;align-items:center}
+  .btn{ background:#1a2232; border:1px solid var(--line); padding:8px 12px; border-radius:10px; color: var(--text); }
+  .btn.small{padding:6px 10px;font-size:12px}
+  .btn.brand{background:var(--brand);border-color:var(--brand);color:white}
+  .tabs{display:flex;gap:8px;margin-bottom:14px}
+  .tab{padding:8px 12px;border-radius:9999px;border:1px solid var(--line);background:#1a1f2a;color:#cbd5e1}
+  .tab.active{background:#1f2f55;border-color:#284072;color:#fff}
+
+  table thead th { color: var(--support); font-weight: 600; }
+  [data-exp-body] > div > div:first-child,
+  .plan-expand > td > div > div:first-child { color: #ffffff; font-weight: 600; }
+
+  .subheader{
+    position: sticky; top: 0; z-index: 40; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+    margin-bottom: 14px; display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  .subheader .left{display:flex;align-items:center;gap:10px}
+  .brand{font-weight:800;font-size:20px;letter-spacing:.2px}
+  .btnset{display:flex;gap:8px;flex-wrap:wrap}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:middle}
+  thead th{position:sticky;top:0;background:#0f121a;z-index:1}
+  .input{background:#0e1320;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;width:100%}
+  .muted{color:var(--muted)}
+
+  .client-row { cursor: pointer; }
+  .client-row:hover { background:#141a25; }
+  .client-expand td { border-top:1px solid var(--line); }
+
+  .client-row.expanded{ background:#141a25; outline:2px solid var(--brand); outline-offset:-2px; transition: background .2s ease, outline-color .2s ease; }
+
+  @media (max-width:1100px){ th,td{padding:8px} }
+  @media (max-width:900px){ th,td{padding:8px 6px;font-size:13px} .btn.small{font-size:11px} }
+  @media (max-width:700px){
+    th,td{padding:6px 4px;font-size:12px}
+    .brand{font-size:18px}
+    .subheader{padding:8px 10px}
+  }
+  .badge{ display:inline-block; padding:3px 8px; font-size:11px; border-radius:999px; }
+  .bg-warning{ background:#f59e0b; color:#111; }
+
+  .plan-row { cursor:pointer; }
+  .plan-row:hover { background:#141a25; }
+  .plan-row.expanded{ background:#141a25; outline:2px solid var(--brand); outline-offset:-2px; transition: background .2s ease, outline-color .2s ease; }
+  .plan-expand td{ border-top:1px solid var(--line); background:#0e121a; }
+
+  .add-plan-row, .add-ex-row { cursor: pointer; }
+  .add-plan-row > td, .add-ex-row  > td { color:#d4af37; font-weight:600; }
+  .add-plan-row:hover > td, .add-ex-row:hover  > td { background:#141a25; color:#ffd84d; }
+  .add-plan-row .muted, .add-ex-row  .muted { opacity:.9; }
+
+  .section-title { color:#fff; font-weight:600; margin-bottom:6px; }
+  .empty-state { color:#f87171; font-weight:500; }
+
+  .mini-ex-row { cursor:pointer; }
+  .mini-ex-row:hover { background:#141a25; }
+  .mini-ex-row > td { transition: background .15s ease; }
+  .mini-ex-row:hover > td { background:#141a25; }
+
+  .chip{ display:inline-flex;align-items:center;gap:6px; background:var(--chip);border:1px solid var(--line);
+    padding:3px 7px;border-radius:999px;font-size:12px;color:#c3c9d4 }
+
+  /* NEW: show cursor and subtle hint for inline editable cells */
+  td[data-cell="sets"], td[data-cell="reps"], td[data-cell="weight"], td[data-cell="duration"], td[data-cell="notes"] {
+    cursor: text;
+  }
+  td[data-cell].editing { background:#101626; }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <div class="subheader">
+    <div class="left">
+      <div class="brand">Clients</div>
+      <span class="muted">Manage active & inactive clients</span>
+    </div>
+    <div class="btnset">
+      <a class="btn" href="dashboard.php">Back to Dashboard</a>
+      <a class="btn" href="invites.php">Manage Invites</a>
+      <a class="btn" href="workout_plans.php">Workout Plans</a>
+      <a class="btn" href="users.php">All Users</a>
+    </div>
+  </div>
+
+  <?php if ($flash): ?>
+    <div class="panel" style="padding:10px 12px;margin-bottom:14px;border-left:3px solid <?php echo $flash_type==='ok'?'#22c55e':'#ef4444'; ?>">
+      <?php echo h($flash); ?>
+    </div>
+  <?php endif; ?>
+
+  <div class="tabs">
+    <a class="tab <?php echo $tab==='active'?'active':''; ?>" href="clients.php?tab=active">Active Clients</a>
+    <a class="tab <?php echo $tab==='inactive'?'active':''; ?>" href="clients.php?tab=inactive">Inactive Clients</a>
+  </div>
+
+  <div class="panel" style="padding:16px">
+    <?php
+      if ($tab === 'active') render_clients_table($active, $csrf, 'active');
+      else render_clients_table($inactive, $csrf, 'inactive');
+    ?>
+  </div>
+
+</main>
+
+<!-- Pick Plan modal -->
+<div class="backdrop" id="bdPickPlan" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000"></div>
+<div class="modal" id="mdPickPlan" role="dialog" aria-modal="true" aria-labelledby="ppTitle"
+     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,94vw);
+            background:#151923;border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
+  <h3 id="ppTitle" style="margin:0 0 10px 0;font-size:16px">Assign Plan to User</h3>
+  <div class="fine" id="ppUserText" style="margin-bottom:8px;color:#9aa3b2"></div>
+  <div>
+    <label class="fine" for="ppPlanSel" style="display:block;margin-bottom:6px;color:#9aa3b2">Choose a plan</label>
+    <select class="input" id="ppPlanSel"></select>
+  </div>
+  <div class="actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
+    <button class="btn" type="button" id="ppCancel">Cancel</button>
+    <button class="btn brand" type="button" id="ppContinue">Assign Plan</button>
+  </div>
+</div>
+
+<!-- Add Exercises modal -->
+<div class="backdrop" id="bdAddEx" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000"></div>
+<div class="modal" id="mdAddEx" role="dialog" aria-modal="true" aria-labelledby="aeTitle"
+     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,94vw);
+            background:#151923;border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
+  <h3 id="aeTitle" style="margin:0 0 10px 0;font-size:16px">Add Exercises to Plan</h3>
+  <div class="fine" id="aePlanText" style="margin-bottom:8px;color:#9aa3b2"></div>
+  <div class="box" style="border:1px solid var(--line);border-radius:10px;padding:10px;max-height:360px;overflow:auto">
+    <div id="aeList"></div>
+  </div>
+  <div class="actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
+    <button class="btn" type="button" id="aeCancel">Cancel</button>
+    <button class="btn brand" type="button" id="aeAdd">Add Selected</button>
+  </div>
+</div>
+
+<script>
+// phone input formatting (existing)
+document.addEventListener('input', function(e){
+  if (e.target && e.target.name === 'phone') {
+    let v = e.target.value.replace(/\D+/g,'');
+    if (v.length > 10) v = v.slice(-10);
+    if (v.length >= 7) e.target.value = '('+v.slice(0,3)+') '+v.slice(3,6)+'-'+v.slice(6);
+    else if (v.length >= 4) e.target.value = '('+v.slice(0,3)+') '+v.slice(3);
+    else if (v.length >= 1) e.target.value = v;
+    else e.target.value = '';
+  }
+}, {passive:true});
+
+// ---- Plans + Exercises maps to JS ----
+window.__PLANS_BY_USER = <?php echo json_encode($plansByUser, JSON_UNESCAPED_SLASHES); ?>;
+window.__EX_BY_PLAN    = <?php echo json_encode($exByPlan,   JSON_UNESCAPED_SLASHES); ?>;
+window.__USER_EX       = <?php echo json_encode($userExByUserPlan, JSON_UNESCAPED_SLASHES); ?>;
+window.__CSRF = '<?php echo h($csrf); ?>';
+window.__TAB  = '<?php echo h($tab); ?>';
+window.__ALL_PLANS = <?php echo json_encode($allPlans, JSON_UNESCAPED_SLASHES); ?>;
+window.__ALL_EXERCISES = <?php echo json_encode($allExercises, JSON_UNESCAPED_SLASHES); ?>;
+
+// --- Assign Plan modal wiring ---
+(function(){
+  const btn = document.getElementById('ppContinue');
+  const sel = document.getElementById('ppPlanSel');
+  if (!btn || !sel) return;
+  window.__PPick = window.__PPick || { uid: null };
+
+  btn.onclick = async function(){
+    const pid = parseInt(sel.value, 10);
+    const uid = window.__PPick?.uid;
+    if (!pid || !uid) return;
+
+    const prev = btn.textContent;
+    btn.textContent = 'Assigning…';
+    btn.disabled = true;
+
+    try {
+      const fd = new FormData();
+      fd.append('csrf_token', window.__CSRF);
+      fd.append('action', 'assign_plan_to_user');
+      fd.append('user_id', String(uid));
+      fd.append('plan_id', String(pid));
+
+      const res = await fetch('clients.php', { method:'POST', body: fd });
+      const json = await res.json();
+      if (!json || !json.ok) throw new Error((json && json.error) || 'Failed to assign plan');
+
+      window.__PLANS_BY_USER = window.__PLANS_BY_USER || {};
+      const arr = window.__PLANS_BY_USER[uid] || [];
+      if (!json.already_assigned) {
+        arr.push(json.plan);
+        window.__PLANS_BY_USER[uid] = arr;
+      }
+
+      const mainRow = document.querySelector(`tr.client-row[data-uid="${uid}"]`);
+      if (mainRow) {
+        const plansCell = mainRow.querySelector('td:nth-child(12)');
+        if (plansCell) {
+          const n = parseInt(plansCell.textContent.trim(), 10);
+          plansCell.textContent = isNaN(n) ? '1' : String(n + (json.already_assigned ? 0 : 1));
+        }
+      }
+
+      const exp = document.getElementById('exp-'+uid);
+      const body = exp ? exp.querySelector('[data-exp-body]') : null;
+      if (body && body.dataset.rendered === '1') {
+        body.removeAttribute('data-rendered');
+        body.innerHTML = '<div class="muted">Loading plans…</div>';
+        exp.style.display = 'none';
+        const hdr = exp.previousElementSibling;
+        hdr?.classList.remove('expanded');
+        hdr?.dispatchEvent(new MouseEvent('click', { bubbles:true }));
+      }
+
+      document.getElementById('ppCancel')?.click();
+    } catch (err) {
+      alert(err.message || 'Failed to assign plan.');
+    } finally {
+      btn.textContent = 'Assign Plan';
+      btn.disabled = false;
+    }
+  };
+})();
+
+// --- Build a client's expansion (plans + nested exercises) ---
+function renderClientExpansion(uid, body){
+  const plans = (window.__PLANS_BY_USER && window.__PLANS_BY_USER[uid]) || [];
+  const userEx = (window.__USER_EX && window.__USER_EX[uid]) || {};
+  let html = '';
+
+  html += `
+    <div>
+      <div class="section-title">Assigned Plans</div>
+      <table style="width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+        <thead>
+          <tr>
+            <th style="background:#0f1218;padding:8px 10px">Plan ID</th>
+            <th style="background:#0f1218;padding:8px 10px">Name</th>
+            <th style="background:#0f1218;padding:8px 10px">Assigned</th>
+            <th style="background:#0f1218;padding:8px 10px">Created</th>
+            <th style="background:#0f1218;padding:8px 10px">Created By</th>
+            <th style="background:#0f1218;padding:8px 10px">Updated</th>
+            <th style="background:#0f1218;padding:8px 10px">Updated By</th>
+            <th style="background:#0f1218;padding:8px 10px">Exercises</th>
+            <th style="background:#0f1218;padding:8px 10px">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  if (!plans.length) {
+    html += `<tr><td colspan="9" class="muted empty-state" style="padding:10px">No plans assigned.</td></tr>`;
+  } else {
+    plans.forEach(p=>{
+      const assigned = p.assigned_at_fmt || '—';
+      const created  = p.created_at_fmt  || '—';
+      const updated  = p.updated_at_fmt  || '—';
+      const createdBy= p.created_by_name || '—';
+      const updatedBy= p.updated_by_name || '—';
+      const exCount  = p.exercise_count ?? 0;
+
+      html += `
+        <tr class="plan-row" data-plan-id="${p.id}">
+          <td style="padding:8px 10px">${p.id}</td>
+          <td style="padding:8px 10px"><strong>${escapeHtml(p.name||'')}</strong></td>
+          <td class="muted" style="padding:8px 10px">${assigned}</td>
+          <td class="muted" style="padding:8px 10px">${created}</td>
+          <td class="muted" style="padding:8px 10px">${escapeHtml(createdBy)}</td>
+          <td class="muted" style="padding:8px 10px">${updated}</td>
+          <td class="muted" style="padding:8px 10px">${escapeHtml(updatedBy)}</td>
+          <td style="padding:8px 10px">${exCount}</td>
+          <td style="padding:8px 10px">
+            <form method="post" style="display:inline"
+                  onsubmit="return confirm('Unassign this plan from this client? This will remove the plan and any per-exercise settings for this client.');">
+              <input type="hidden" name="csrf_token" value="${window.__CSRF}">
+              <input type="hidden" name="action" value="unassign_plan">
+              <input type="hidden" name="user_id" value="${uid}">
+              <input type="hidden" name="plan_id" value="${p.id}">
+              <button class="btn small" type="submit"
+                      style="border-color:#ef4444;color:#ef4444;background:#1a2232">Unassign</button>
+            </form>
+          </td>
+        </tr>
+      `;
+
+      const exs = (window.__EX_BY_PLAN && window.__EX_BY_PLAN[p.id]) || [];
+      let exHtml = `
+        <div style="padding:8px 4px">
+          <div class="section-title">Exercises in this Plan</div>
+          <table style="width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#0f1218">
+            <thead>
+              <tr>
+                <th style="padding:8px 10px">Ex ID</th>
+                <th style="padding:8px 10px">Name</th>
+                <th style="padding:8px 10px">Notes</th>
+                <th style="padding:8px 10px">Media</th>
+                <th style="padding:8px 10px">Sets</th>
+                <th style="padding:8px 10px">Reps</th>
+                <th style="padding:8px 10px">Weight (lbs)</th>
+                <th style="padding:8px 10px">Duration (sec)</th>
+                <th style="padding:8px 10px">Edited</th>
+                <th style="padding:8px 10px">Edited By</th>
+                <th style="padding:8px 10px">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+      if (!exs.length) {
+        exHtml += `<tr><td colspan="11" class="muted empty-state" style="padding:10px">No exercises in this plan.</td></tr>`;
+      } else {
+        exs.forEach(ex=>{
+          const per = (userEx[p.id] && userEx[p.id][ex.ex_id]) || {};
+          const sets = per?.sets ?? '—';
+          const reps = per?.reps ?? '—';
+          const wt   = per?.weight ?? '—';
+          const dur  = per?.duration ?? '—';
+
+          // ONLY user-specific notes; show dash if empty
+          const userNoteRaw = (per && per.notes != null) ? String(per.notes) : '';
+          const showNotes   = userNoteRaw.replace(/\r\n/g, '\n').trim() || '—';
+
+          exHtml += `
+            <tr class="mini-ex-row" data-ex-id="${ex.ex_id}" data-user-id="${uid}" data-plan-id="${p.id}">
+              <td style="padding:8px 10px">${ex.ex_id}</td>
+              <td style="padding:8px 10px"><strong>${escapeHtml(ex.name||'')}</strong></td>
+              <td class="muted" style="padding:8px 10px" data-cell="notes" class="editable">${escapeHtml(showNotes)}</td>
+              <td style="padding:8px 10px">${ex.has_video ? '<span class="chip">▶ Video</span>' : '<span class="muted">—</span>'}</td>
+              <td style="padding:8px 10px" data-cell="sets"      class="editable">${sets}</td>
+              <td style="padding:8px 10px" data-cell="reps"      class="editable">${reps}</td>
+              <td style="padding:8px 10px" data-cell="weight"    class="editable">${wt}</td>
+              <td style="padding:8px 10px" data-cell="duration"  class="editable">${dur}</td>
+              <td class="muted" style="padding:8px 10px">${ex.updated_at ? escapeHtml(ex.updated_at) : '—'}</td>
+              <td class="muted" style="padding:8px 10px">${escapeHtml(ex.updated_by_name || '—')}</td>
+              <td style="padding:8px 10px" data-cell="actions">
+                <button class="btn small" type="button" data-ex-edit>Edit</button>
+              </td>
+            </tr>
+          `;
+        });
+      }
+      exHtml += `
+            <tr class="add-ex-row" data-plan-id="${p.id}">
+              <td colspan="11" style="padding:10px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="font-size:18px;line-height:1">+</span>
+                  <strong>Add an exercise</strong>
+                  <span class="muted" style="margin-left:6px">Open the plan editor to add an exercise…</span>
+                </div>
+              </td>
+            </tr>
+          </tbody></table>
+        </div>
+      `;
+      html += `<tr class="plan-expand" id="pexp-${p.id}" data-user-id="${uid}" style="display:none"><td colspan="9">${exHtml}</td></tr>`;
+    });
+  }
+
+  html += `
+        <tr class="add-plan-row" data-add-for="${uid}">
+          <td colspan="9" style="padding:10px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:18px;line-height:1">+</span>
+              <strong>Assign a plan</strong>
+              <span class="muted" style="margin-left:6px">Pick an existing plan to assign…</span>
+            </div>
+          </td>
+        </tr>
+      </tbody></table>
+    </div>
+  `;
+
+  body.innerHTML = html;
+  body.dataset.rendered = '1';
+}
+
+// --- Click: toggle a client row and render on first open ---
+document.addEventListener('click', function(e){
+  const row = e.target.closest('tr.client-row');
+  if (!row) return;
+  if (e.target.closest('a,button,input,select,textarea,label,form')) return;
+
+  const uid = row.getAttribute('data-uid');
+  const exp = document.getElementById('exp-'+uid);
+  if (!exp) return;
+
+  const isOpen = (exp.style.display === 'table-row');
+
+  document.querySelectorAll('tr.client-expand').forEach(tr=>{
+    tr.style.display = 'none';
+    const hdr = tr.previousElementSibling;
+    if (hdr && hdr.classList.contains('client-row')) hdr.classList.remove('expanded');
+  });
+
+  if (!isOpen) {
+    const body = exp.querySelector('[data-exp-body]');
+    if (body && !body.dataset.rendered) {
+      renderClientExpansion(parseInt(uid,10), body);
+    }
+    exp.style.display = 'table-row';
+    row.classList.add('expanded');
+  } else {
+    exp.style.display = 'none';
+    row.classList.remove('expanded');
+  }
+});
+
+// Toggle a PLAN row inside a client expansion (ignore controls)
+document.addEventListener('click', function(e){
+  const pr = e.target.closest('tr.plan-row');
+  if (!pr) return;
+  if (e.target.closest('a, button, input, select, textarea, label, form')) return;
+
+  const pid = pr.getAttribute('data-plan-id');
+
+  let pexp = pr.nextElementSibling;
+  if (!pexp || !pexp.classList.contains('plan-expand') || pexp.id !== ('pexp-' + pid)) {
+    pexp = document.getElementById('pexp-' + pid);
+  }
+  if (!pexp) return;
+
+  const tbody = pr.parentElement;
+  const isOpen = (pexp.style.display === 'table-row');
+
+  tbody.querySelectorAll('tr.plan-expand').forEach(row => {
+    row.style.display = 'none';
+    const header = row.previousElementSibling;
+    if (header && header.classList.contains('plan-row')) {
+      header.classList.remove('expanded');
+    }
+  });
+
+  if (!isOpen) {
+    pexp.style.display = 'table-row';
+    pr.classList.add('expanded');
+  } else {
+    pexp.style.display = 'none';
+    pr.classList.remove('expanded');
+  }
+});
+
+// ====== Legacy row-level edit (kept) ======
+function makeInput(value, { type='text', step=null, min=null, placeholder='', width='120px' } = {}) {
+  const input = document.createElement('input');
+  input.className = 'input';
+  input.style.width = width;
+  input.type = type;
+  if (step !== null) input.step = step;
+  if (min !== null) input.min = min;
+  input.placeholder = placeholder;
+  input.value = value ?? '';
+  return input;
+}
+
+function startRowEdit(tr){
+  if (tr.dataset.editing === '1') return;
+  tr.dataset.editing = '1';
+
+  const getCell = name => tr.querySelector(`[data-cell="${name}"]`);
+  const setsCell = getCell('sets');
+  const repsCell = getCell('reps');
+  const weightCell = getCell('weight');
+  const durCell = getCell('duration');
+  const notesCell = getCell('notes');
+  const actionsCell = getCell('actions');
+
+  tr._origValues = {
+    sets: setsCell.textContent.trim() === '—' ? '' : setsCell.textContent.trim(),
+    reps: repsCell.textContent.trim() === '—' ? '' : repsCell.textContent.trim(),
+    weight: weightCell.textContent.trim() === '—' ? '' : weightCell.textContent.trim(),
+    duration: durCell.textContent.trim() === '—' ? '' : durCell.textContent.trim(),
+    notes: notesCell.textContent.trim() === '—' ? '' : notesCell.textContent.trim(),
+    actionsHTML: actionsCell.innerHTML
+  };
+
+  setsCell.innerHTML = '';
+  repsCell.innerHTML = '';
+  weightCell.innerHTML = '';
+  durCell.innerHTML = '';
+  notesCell.innerHTML = '';
+
+  const iSets = makeInput(tr._origValues.sets,   { type:'text',    placeholder:'e.g. 3 or 3x' });
+  const iReps = makeInput(tr._origValues.reps,   { type:'text',    placeholder:'e.g. 8-10' });
+  const iWeight = makeInput(tr._origValues.weight,{ type:'number',  step:'0.1', min:'0', placeholder:'lbs' });
+  const iDur = makeInput(tr._origValues.duration,{ type:'number',  step:'1', min:'0', placeholder:'sec' });
+  const iNotes = makeInput(tr._origValues.notes, { type:'text',    placeholder:'user notes', width:'240px' });
+
+  iSets.name = 'sets';
+  iReps.name = 'reps';
+  iWeight.name = 'weight_lbs';
+  iDur.name = 'duration_seconds';
+  iNotes.name = 'user_notes';
+
+  setsCell.appendChild(iSets);
+  repsCell.appendChild(iReps);
+  weightCell.appendChild(iWeight);
+  durCell.appendChild(iDur);
+  notesCell.appendChild(iNotes);
+
+  actionsCell.innerHTML = '';
+  const btnSave = document.createElement('button');
+  btnSave.className = 'btn small brand';
+  btnSave.type = 'button';
+  btnSave.textContent = 'Save';
+  btnSave.addEventListener('click', () => saveRowEdit(tr));
+
+  const btnCancel = document.createElement('button');
+  btnCancel.className = 'btn small';
+  btnCancel.type = 'button';
+  btnCancel.style.marginLeft = '6px';
+  btnCancel.textContent = 'Cancel';
+  btnCancel.addEventListener('click', () => cancelRowEdit(tr));
+
+  actionsCell.appendChild(btnSave);
+  actionsCell.appendChild(btnCancel);
+}
+
+function cancelRowEdit(tr){
+  if (!tr._origValues) return;
+  const setText = (cellName, val) => {
+    const c = tr.querySelector(`[data-cell="${cellName}"]`);
+    c.textContent = val ? val : '—';
+  };
+  setText('sets', tr._origValues.sets);
+  setText('reps', tr._origValues.reps);
+  setText('weight', tr._origValues.weight);
+  setText('duration', tr._origValues.duration);
+  setText('notes', tr._origValues.notes);
+  const actionsCell = tr.querySelector('[data-cell="actions"]');
+  actionsCell.innerHTML = tr._origValues.actionsHTML;
+  tr.dataset.editing = '0';
+  delete tr._origValues;
+}
+
+async function saveRowEdit(tr){
+  const uid = parseInt(tr.dataset.userId, 10);
+  const planId = parseInt(tr.dataset.planId, 10);
+  const exId = parseInt(tr.dataset.exId, 10);
+  const sets = tr.querySelector('input[name="sets"]').value.trim();
+  const reps = tr.querySelector('input[name="reps"]').value.trim();
+  const weight = tr.querySelector('input[name="weight_lbs"]').value.trim();
+  const duration = tr.querySelector('input[name="duration_seconds"]').value.trim();
+  const notes = tr.querySelector('input[name="user_notes"]').value.trim();
+
+  const fd = new FormData();
+  fd.append('csrf_token', window.__CSRF);
+  fd.append('action', 'save_user_exercise');
+  fd.append('user_id', String(uid));
+  fd.append('plan_id', String(planId));
+  fd.append('exercise_id', String(exId));
+  fd.append('sets', sets);
+  fd.append('reps', reps);
+  fd.append('weight_lbs', weight);
+  fd.append('duration_seconds', duration);
+  fd.append('user_notes', notes);
+
+  const actionsCell = tr.querySelector('[data-cell="actions"]');
+  const prevHTML = actionsCell.innerHTML;
+  actionsCell.innerHTML = '<span class="muted">Saving…</span>';
+
+  try {
+    const res = await fetch('clients.php', { method:'POST', body: fd });
+    const json = await res.json();
+    if (!json || !json.ok) throw new Error((json && json.error) || 'Save failed');
+
+    const setDisp = v => (v === null || v === undefined || v === '' ? '—' : String(v));
+    tr.querySelector('[data-cell="sets"]').textContent = setDisp(json.data.sets);
+    tr.querySelector('[data-cell="reps"]').textContent = setDisp(json.data.reps);
+    tr.querySelector('[data-cell="weight"]').textContent = setDisp(json.data.weight);
+    tr.querySelector('[data-cell="duration"]').textContent = setDisp(json.data.duration);
+    tr.querySelector('[data-cell="notes"]').textContent = setDisp(json.data.notes);
+
+    actionsCell.innerHTML = '<button class="btn small" type="button" data-ex-edit>Edit</button>';
+    tr.dataset.editing = '0';
+    delete tr._origValues;
+  } catch (err) {
+    alert(err.message || 'Failed to save.');
+    actionsCell.innerHTML = prevHTML;
+  }
+}
+
+// Start editing when clicking Edit (legacy)
+document.addEventListener('click', function(e){
+  const btn = e.target.closest('[data-ex-edit]');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const tr = btn.closest('tr.mini-ex-row');
+  if (!tr) return;
+  startRowEdit(tr);
+});
+
+// Click an EXERCISE row -> navigate to exercises.php (but NOT when interacting with editable cells)
+document.addEventListener('click', function(e){
+  if (e.target.closest('.add-ex-row')) return;
+
+  // Block navigation if clicking inside editable cells/inputs/buttons (including NOTES)
+  if (e.target.closest('[data-cell="sets"],[data-cell="reps"],[data-cell="weight"],[data-cell="duration"],[data-cell="notes"], input, textarea, select, button, .btn')) {
+    return;
+  }
+
+  const xr = e.target.closest('.mini-ex-row');
+  if (!xr) return;
+
+  const exId = xr.dataset.exId;
+  if (exId) {
+    location.href = `exercises.php?focus_exercise=${encodeURIComponent(exId)}#ex-${encodeURIComponent(exId)}`;
+  }
+});
+
+// --- Add Exercises modal logic (unchanged except notes cell in new rows) ---
+let __AddEx = { planId: null, userId: null };
+function aeOpen(planId, userId){
+  __AddEx.planId = parseInt(planId,10);
+  __AddEx.userId = parseInt(userId||0,10) || null;
+  const existing = new Set(((window.__EX_BY_PLAN && window.__EX_BY_PLAN[planId]) || []).map(x=>x.ex_id));
+  const box = document.getElementById('aeList');
+  box.innerHTML = '';
+  const all = window.__ALL_EXERCISES || [];
+  let any = false;
+  all.forEach(ex=>{
+    if (!existing.has(ex.id)) {
+      any = true;
+      const id = `ae_${planId}_${ex.id}`;
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:6px';
+      row.innerHTML = `
+        <input type="checkbox" value="${ex.id}" id="${id}">
+        <span><strong>${escapeHtml(ex.name||('Exercise #'+ex.id))}</strong> <span class="fine">(ID ${ex.id})</span></span>
+      `;
+      box.appendChild(row);
+    }
+  });
+  if (!any) box.innerHTML = '<div class="muted">All exercises are already in this plan.</div>';
+
+  document.getElementById('aePlanText').textContent = `Plan ID: ${planId}`;
+  document.getElementById('mdAddEx').style.display = 'block';
+  document.getElementById('bdAddEx').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+function aeClose(){
+  document.getElementById('mdAddEx').style.display = 'none';
+  document.getElementById('bdAddEx').style.display = 'none';
+  document.body.style.overflow = '';
+  __AddEx = { planId:null, userId:null };
+}
+document.getElementById('aeCancel')?.addEventListener('click', aeClose);
+document.getElementById('bdAddEx')?.addEventListener('click', aeClose);
+document.addEventListener('click', function(e){
+  const addEx = e.target.closest('.add-ex-row');
+  if (!addEx) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  e.stopPropagation();
+  const pid = addEx.getAttribute('data-plan-id');
+  const expandTr = addEx.closest('tr.plan-expand');
+  const planId = parseInt(pid, 10);
+  aeOpen(planId, null);
+});
+document.getElementById('aeAdd')?.addEventListener('click', async ()=>{
+  const planId = __AddEx.planId;
+  if (!planId) return;
+
+  const ids = Array.from(document.querySelectorAll('#aeList input[type="checkbox"]:checked'))
+    .map(i=>parseInt(i.value,10)).filter(n=>!isNaN(n) && n>0);
+
+  if (!ids.length) { aeClose(); return; }
+
+  const fd = new FormData();
+  fd.append('csrf_token', window.__CSRF);
+  fd.append('action', 'add_exercises_to_plan');
+  fd.append('plan_id', String(planId));
+  fd.append('exercise_ids', JSON.stringify(ids));
+
+  const btn = document.getElementById('aeAdd');
+  const prev = btn.textContent;
+  btn.textContent = 'Adding…'; btn.disabled = true;
+
+  try {
+    const res = await fetch('clients.php', { method:'POST', body: fd });
+    const json = await res.json();
+    if (!json || !json.ok) throw new Error((json && json.error) || 'Failed to add exercises.');
+
+    window.__EX_BY_PLAN = window.__EX_BY_PLAN || {};
+    const arr = window.__EX_BY_PLAN[planId] || [];
+    (json.added || []).forEach(ex=>{
+      arr.push({
+        ex_id: ex.ex_id,
+        name: ex.name,
+        notes: ex.notes || '',
+        has_video: !!ex.has_video,
+        updated_at: ex.updated_at || null,
+        updated_by_name: ex.updated_by_name || '—'
+      });
+    });
+    window.__EX_BY_PLAN[planId] = arr;
+
+    const exp = document.getElementById('pexp-'+planId);
+    if (exp) {
+      const tbody = exp.querySelector('tbody');
+      const addRow = exp.querySelector('.add-ex-row');
+      (json.added || []).forEach(ex=>{
+        const tr = document.createElement('tr');
+        tr.className = 'mini-ex-row';
+        tr.setAttribute('data-ex-id', String(ex.ex_id));
+        tr.setAttribute('data-user-id', __AddEx.userId ? String(__AddEx.userId) : '');
+        tr.setAttribute('data-plan-id', String(planId));
+        tr.innerHTML = `
+          <td style="padding:8px 10px">${ex.ex_id}</td>
+          <td style="padding:8px 10px"><strong>${escapeHtml(ex.name||'')}</strong></td>
+          <td style="padding:8px 10px" class="muted" data-cell="notes">—</td>
+          <td style="padding:8px 10px"><span class="muted">—</span></td>
+          <td style="padding:8px 10px" data-cell="sets"     class="editable">—</td>
+          <td style="padding:8px 10px" data-cell="reps"     class="editable">—</td>
+          <td style="padding:8px 10px" data-cell="weight"   class="editable">—</td>
+          <td style="padding:8px 10px" data-cell="duration" class="editable">—</td>
+          <td style="padding:8px 10px" class="muted">—</td>
+          <td style="padding:8px 10px" class="muted">—</td>
+          <td style="padding:8px 10px" data-cell="actions">
+            <button class="btn small" type="button" data-ex-edit>Edit</button>
+          </td>
+        `;
+        if (addRow && addRow.parentNode) {
+          addRow.parentNode.insertBefore(tr, addRow);
+        } else if (tbody) {
+          tbody.appendChild(tr);
+        }
+      });
+    }
+
+    aeClose();
+  } catch (err) {
+    alert(err.message || 'Failed to add exercises.');
+  } finally {
+    btn.textContent = prev; btn.disabled = false;
+  }
+});
+
+// --- Add-plan picker open/close ---
+function ppOpen(uid){
+  window.__PPick = window.__PPick || { uid:null };
+  window.__PPick.uid = parseInt(uid,10);
+  const sel = document.getElementById('ppPlanSel');
+  const txt = document.getElementById('ppUserText');
+  sel.innerHTML = '';
+  (window.__ALL_PLANS || []).forEach(p=>{
+    const opt = document.createElement('option');
+    opt.value = String(p.id);
+    opt.textContent = `${p.name} (ID ${p.id})`;
+    sel.appendChild(opt);
+  });
+  txt.textContent = `User ID: ${uid}`;
+  document.getElementById('mdPickPlan').style.display = 'block';
+  document.getElementById('bdPickPlan').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+function ppClose(){
+  document.getElementById('mdPickPlan').style.display = 'none';
+  document.getElementById('bdPickPlan').style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.addEventListener('click', function(e){
+  const addRow = e.target.closest('.add-plan-row');
+  if (!addRow) return;
+  const uid = addRow.getAttribute('data-add-for');
+  if (uid) ppOpen(uid);
+});
+document.getElementById('ppCancel')?.addEventListener('click', ppClose);
+document.getElementById('bdPickPlan')?.addEventListener('click', ppClose);
+
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
+
+// ==== INLINE CELL EDIT (NEW) ====
+// Only one cell editor active at a time
+let __ActiveCell = null;
+
+function openCellEditor(td){
+  if (!td) return;
+  // If another cell is active, try to save it first if changed; otherwise close it
+  if (__ActiveCell && __ActiveCell !== td) {
+    closeCellEditor(__ActiveCell, {saveIfChanged:true});
+  }
+  if (td.classList.contains('editing')) return;
+
+  const tr = td.closest('tr.mini-ex-row');
+  if (!tr) return;
+
+  const col = td.getAttribute('data-cell'); // sets|reps|weight|duration|notes
+  if (!['sets','reps','weight','duration','notes'].includes(col)) return;
+
+  const originalText = td.textContent.trim();
+  td.dataset.original = originalText === '—' ? '' : originalText;
+  td.classList.add('editing');
+
+  const input = document.createElement('input');
+  input.className = 'input';
+  input.style.width = (col === 'notes') ? '240px' : '120px';
+  input.placeholder = (col === 'sets' ? 'e.g. 3 or 3x'
+                     : col === 'reps' ? 'e.g. 8-10'
+                     : col === 'weight' ? 'lbs'
+                     : col === 'duration' ? 'sec'
+                     : 'user notes');
+
+  if (col === 'weight') { input.type = 'number'; input.step = '0.1'; input.min = '0'; }
+  else if (col === 'duration') { input.type = 'number'; input.step = '1'; input.min = '0'; }
+  else { input.type = 'text'; }
+
+  input.value = td.dataset.original || '';
+  td.innerHTML = '';
+  td.appendChild(input);
+  input.focus();
+  input.select();
+
+  // Enter saves, Esc cancels
+  input.addEventListener('keydown', (ev)=>{
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      closeCellEditor(td, {saveIfChanged:true});
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      closeCellEditor(td, {save:false});
+    }
+  }, {capture:true});
+
+  // Blur saves if changed
+  input.addEventListener('blur', ()=>{
+    // small timeout to allow click to move elsewhere without double-handling
+    setTimeout(()=>closeCellEditor(td, {saveIfChanged:true}), 0);
+  });
+
+  __ActiveCell = td;
+}
+
+function getCellsPayload(tr){
+  const get = name => {
+    const cell = tr.querySelector(`[data-cell="${name}"]`);
+    if (!cell) return '';
+    // If cell is currently editing, read from input, else from text
+    const inp = cell.querySelector('input');
+    const val = inp ? inp.value.trim() : cell.textContent.trim();
+    return (val === '—') ? '' : val;
+  };
+  return {
+    sets: get('sets'),
+    reps: get('reps'),
+    weight_lbs: get('weight'),
+    duration_seconds: get('duration'),
+    user_notes: get('notes')
+  };
+}
+
+async function saveCell(tr){
+  const uid = parseInt(tr.dataset.userId, 10);
+  const planId = parseInt(tr.dataset.planId, 10);
+  const exId = parseInt(tr.dataset.exId, 10);
+  const payload = getCellsPayload(tr);
+
+  const fd = new FormData();
+  fd.append('csrf_token', window.__CSRF);
+  fd.append('action', 'save_user_exercise');
+  fd.append('user_id', String(uid));
+  fd.append('plan_id', String(planId));
+  fd.append('exercise_id', String(exId));
+  fd.append('sets', payload.sets);
+  fd.append('reps', payload.reps);
+  fd.append('weight_lbs', payload.weight_lbs);
+  fd.append('duration_seconds', payload.duration_seconds);
+  fd.append('user_notes', payload.user_notes);
+
+  // Temporary inline "Saving…" chip in Actions
+  const actionsCell = tr.querySelector('[data-cell="actions"]');
+  const prevHTML = actionsCell ? actionsCell.innerHTML : '';
+  if (actionsCell) actionsCell.innerHTML = '<span class="muted">Saving…</span>';
+
+  try {
+    const res = await fetch('clients.php', { method:'POST', body: fd });
+    const json = await res.json();
+    if (!json || !json.ok) throw new Error((json && json.error) || 'Save failed');
+
+    const setDisp = v => (v === null || v === undefined || v === '' ? '—' : String(v));
+    tr.querySelector('[data-cell="sets"]').textContent = setDisp(json.data.sets);
+    tr.querySelector('[data-cell="reps"]').textContent = setDisp(json.data.reps);
+    tr.querySelector('[data-cell="weight"]').textContent = setDisp(json.data.weight);
+    tr.querySelector('[data-cell="duration"]').textContent = setDisp(json.data.duration);
+    tr.querySelector('[data-cell="notes"]').textContent = setDisp(json.data.notes);
+  } catch (e) {
+    alert(e.message || 'Failed to save.');
+  } finally {
+    if (actionsCell) actionsCell.innerHTML = prevHTML || '<button class="btn small" type="button" data-ex-edit>Edit</button>';
+  }
+}
+
+function closeCellEditor(td, {save=true, saveIfChanged=false}={}){
+  if (!td || !td.classList.contains('editing')) return;
+  const tr = td.closest('tr.mini-ex-row');
+  const input = td.querySelector('input');
+  const original = td.dataset.original ?? '';
+  const curr = input ? input.value.trim() : '';
+  const changed = (curr !== original);
+
+  // Decide whether to save
+  const shouldSave = save ? (saveIfChanged ? changed : true) : false;
+
+  // Restore display first
+  td.classList.remove('editing');
+  td.innerHTML = (curr === '' ? '—' : escapeHtml(curr));
+
+  __ActiveCell = null;
+
+  if (shouldSave && tr) {
+    // Save entire row payload so we don't wipe other fields
+    saveCell(tr);
+  }
+}
+
+// Activate cell editor on click
+document.addEventListener('click', function(e){
+  const td = e.target.closest('td[data-cell]');
+  if (!td) return;
+  const col = td.getAttribute('data-cell');
+  if (!['sets','reps','weight','duration','notes'].includes(col)) return;
+
+  // Prevent row navigation
+  e.preventDefault();
+  e.stopPropagation();
+
+  openCellEditor(td);
+});
+
+// If user clicks anywhere outside current input, it will blur and trigger saveIfChanged via the blur handler
+
+</script>
+</body>
+</html>
