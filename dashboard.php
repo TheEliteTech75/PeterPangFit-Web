@@ -947,6 +947,7 @@ $CAT_PALETTE = [
       grid-template-columns: repeat(auto-fit, minmax(var(--card-min), 1fr));
       gap: var(--card-gap);
       align-items: stretch;
+      position:relative;
     }
     .cards.cols-2{ --card-min: min(100%, calc((100% - var(--card-gap)) / 2)); }
     .cards.cols-3{ --card-min: min(100%, calc((100% - (var(--card-gap) * 2)) / 3)); }
@@ -965,10 +966,11 @@ $CAT_PALETTE = [
       padding:14px; min-height:110px; container-type:inline-size; position:relative;
       grid-column: span var(--card-span);
     }
-    .card[draggable="true"]{ cursor: grab; }
+    .card.is-draggable{ cursor: grab; }
     .card.is-dragging{ opacity:0.65; cursor: grabbing; box-shadow:0 12px 32px rgba(0,0,0,0.35); }
     .card.is-hidden{ display:none !important; }
     .card.is-resizing{ cursor: ew-resize; }
+    .card.is-floating{ pointer-events:none; }
     .cards.drag-active{ position:relative; }
     .cards.drag-active::after{
       content:""; position:absolute; inset:-6px; border-radius:calc(var(--radius) + 6px);
@@ -979,6 +981,34 @@ $CAT_PALETTE = [
     .card[data-card-span="2"]{ --card-span: 2; }
     .card[data-card-span="3"]{ --card-span: 3; }
     .card[data-card-span="4"]{ --card-span: 4; }
+
+    .card-placeholder{
+      border:1px dashed rgba(99,102,241,0.55);
+      border-radius:var(--radius);
+      background:rgba(60,130,246,0.08);
+      min-height:60px;
+      grid-column: span var(--card-span);
+      transition:border-color .2s ease, background .2s ease;
+    }
+
+    .card-resize-ghost{
+      position:absolute;
+      top:6px;
+      right:6px;
+      bottom:6px;
+      left:6px;
+      border-radius:calc(var(--radius) - 6px);
+      background:linear-gradient(90deg, rgba(60,130,246,0.28), rgba(108,91,214,0.2));
+      transform-origin:left center;
+      transform:scaleX(var(--card-resize-preview, 0));
+      opacity:0;
+      pointer-events:none;
+      transition:transform .08s ease, opacity .12s ease;
+    }
+
+    .card.show-resize-preview .card-resize-ghost{
+      opacity:1;
+    }
 
     .card-resize{
       position:absolute;
@@ -1822,7 +1852,7 @@ $CAT_PALETTE = [
         cards.forEach((card, idx) => {
           const key = ensureCardKey(card, idx, seenKeys);
           seenKeys.add(key);
-          card.setAttribute('draggable', 'true');
+          card.classList.add('is-draggable');
           cardsMetadata.push({
             containerIndex,
             key,
@@ -1861,8 +1891,7 @@ $CAT_PALETTE = [
           stateDirty = true;
         }
 
-        setupNativeDrag(container, containerIndex);
-        setupTouchDrag(container, containerIndex);
+        setupPointerDrag(container, containerIndex);
       });
 
       if (stateDirty) saveLayoutState();
@@ -2122,6 +2151,26 @@ $CAT_PALETTE = [
         handle.setAttribute('title', `Span ${span} of ${max}`);
       }
 
+      function ensureResizeGhost(card){
+        if (!card) return null;
+        let ghost = card.querySelector('[data-resize-ghost]');
+        if (!ghost) {
+          ghost = document.createElement('div');
+          ghost.className = 'card-resize-ghost';
+          ghost.setAttribute('data-resize-ghost', '');
+          card.appendChild(ghost);
+        }
+        return ghost;
+      }
+
+      function updateResizeGhost(card, rawSpan){
+        if (!card) return;
+        const columns = layoutState.columns || 4;
+        ensureResizeGhost(card);
+        const ratio = columns > 0 ? Math.max(0, Math.min(1, rawSpan / columns)) : 0;
+        card.style.setProperty('--card-resize-preview', String(ratio));
+      }
+
       function startResizePointer(evt, card, containerIndex){
         if (!card || !containers[containerIndex]) return;
         if (evt.button !== undefined && evt.button !== 0 && evt.pointerType !== 'touch') return;
@@ -2137,9 +2186,9 @@ $CAT_PALETTE = [
         let activeSpan = currentSpan;
         const handle = evt.currentTarget;
         const pointerId = evt.pointerId;
-        const previousDraggable = card.getAttribute('draggable');
         card.classList.add('is-resizing');
-        card.setAttribute('draggable', 'false');
+        card.classList.add('show-resize-preview');
+        updateResizeGhost(card, currentSpan);
 
         if (handle && handle.setPointerCapture) {
           try { handle.setPointerCapture(pointerId); } catch (err) {}
@@ -2148,7 +2197,10 @@ $CAT_PALETTE = [
         const onMove = moveEvt => {
           if (pointerId != null && moveEvt.pointerId !== pointerId) return;
           moveEvt.preventDefault();
-          const nextSpan = computeSpanFromPointer(moveEvt, container, card);
+          const metrics = computeSpanFromPointer(moveEvt, container, card);
+          if (!metrics) return;
+          updateResizeGhost(card, metrics.rawSpan);
+          const nextSpan = metrics.span;
           if (nextSpan && nextSpan !== activeSpan) {
             activeSpan = nextSpan;
             state.sizes[key] = activeSpan;
@@ -2167,11 +2219,8 @@ $CAT_PALETTE = [
           window.removeEventListener('pointerup', finish, true);
           window.removeEventListener('pointercancel', finish, true);
           card.classList.remove('is-resizing');
-          if (previousDraggable !== null) {
-            card.setAttribute('draggable', previousDraggable);
-          } else {
-            card.removeAttribute('draggable');
-          }
+          card.classList.remove('show-resize-preview');
+          card.style.removeProperty('--card-resize-preview');
           if (handle && handle.releasePointerCapture) {
             try { handle.releasePointerCapture(pointerId); } catch (err) {}
           }
@@ -2213,7 +2262,7 @@ $CAT_PALETTE = [
 
       function computeSpanFromPointer(evt, container, card){
         const columns = layoutState.columns || 4;
-        if (columns <= 0) return 1;
+        if (columns <= 0) return null;
         const containerRect = container.getBoundingClientRect();
         const cardRect = card.getBoundingClientRect();
         const styles = window.getComputedStyle(container);
@@ -2225,14 +2274,19 @@ $CAT_PALETTE = [
         const totalGap = gap * (columns - 1);
         const available = containerRect.width - totalGap;
         const columnWidth = available > 0 ? available / columns : 0;
-        if (!(columnWidth > 0)) return clampSpan(1, columns);
-        const relative = Math.max(0, evt.clientX - cardRect.left);
+        if (!(columnWidth > 0)) {
+          return { span: clampSpan(1, columns), rawSpan: 1, columnWidth, gap };
+        }
         const unit = columnWidth + gap;
-        if (!(unit > 0)) return clampSpan(1, columns);
-        let span = Math.round((relative + gap * 0.5) / unit);
-        span = clampSpan(span, columns);
-        if (span < 1) span = 1;
-        return span;
+        if (!(unit > 0)) {
+          return { span: clampSpan(1, columns), rawSpan: 1, columnWidth, gap };
+        }
+        const relative = evt.clientX - cardRect.left;
+        let rawSpan = (relative / unit) + 1;
+        if (!isFinite(rawSpan)) rawSpan = 1;
+        rawSpan = Math.max(1, Math.min(columns, rawSpan));
+        const span = clampSpan(Math.round(rawSpan), columns);
+        return { span, rawSpan, columnWidth, gap };
       }
 
       function getCardSpanFromState(state, key, card){
@@ -2255,120 +2309,191 @@ $CAT_PALETTE = [
         return changed;
       }
 
-      function setupNativeDrag(container, containerIndex){
-        container.addEventListener('dragstart', evt => {
-          const card = evt.target && evt.target.closest('.card');
-          if (!card || !container.contains(card) || card.classList.contains('is-hidden')) return;
-          card.classList.add('is-dragging');
-          container.classList.add('drag-active');
-          if (evt.dataTransfer) {
-            evt.dataTransfer.effectAllowed = 'move';
-            try { evt.dataTransfer.setData('text/plain', card.dataset.cardKey || ''); } catch (err) {}
-          }
-        });
+      function setupPointerDrag(container, containerIndex){
+        const placeholder = document.createElement('div');
+        placeholder.className = 'card-placeholder';
+        placeholder.setAttribute('aria-hidden', 'true');
 
-        container.addEventListener('dragover', evt => {
-          if (!container.classList.contains('drag-active')) return;
-          evt.preventDefault();
-          const dragging = container.querySelector('.card.is-dragging');
-          if (!dragging) return;
-          repositionCard(container, dragging, evt.clientX, evt.clientY);
-        });
-
-        container.addEventListener('dragend', evt => {
-          const card = evt.target && evt.target.closest('.card');
-          if (!card || !container.contains(card)) return;
-          card.classList.remove('is-dragging');
-          container.classList.remove('drag-active');
-          persistOrder(container, containerIndex);
-        });
-
-        container.addEventListener('drop', evt => {
-          if (container.classList.contains('drag-active')) evt.preventDefault();
-        });
-      }
-
-      function setupTouchDrag(container, containerIndex){
-        let state = null;
+        let dragState = null;
 
         container.addEventListener('pointerdown', evt => {
-          if (evt.pointerType !== 'touch') return;
+          if (evt.button !== undefined && evt.button !== 0) return;
+          if (!evt.isPrimary && evt.pointerType !== 'touch' && evt.pointerType !== 'pen') return;
+          if (evt.target && evt.target.closest('[data-resize-handle]')) return;
           const card = evt.target && evt.target.closest('.card');
           if (!card || !container.contains(card) || card.classList.contains('is-hidden')) return;
           if (shouldIgnoreInteractive(evt.target)) return;
-          state = {
+
+          dragState = {
             card,
             pointerId: evt.pointerId,
             startX: evt.clientX,
             startY: evt.clientY,
             started: false,
-            capture: false
+            container,
+            containerIndex,
+            offsetX: 0,
+            offsetY: 0,
+            originalStyles: {},
+            placeholderActive: false
           };
+
+          placeholder.style.setProperty('--card-span', card.dataset.cardSpan || card.getAttribute('data-card-span') || '1');
+          placeholder.style.height = card.getBoundingClientRect().height + 'px';
+
+          window.addEventListener('pointermove', onPointerMove, true);
+          window.addEventListener('pointerup', onPointerUp, true);
+          window.addEventListener('pointercancel', onPointerUp, true);
         });
 
-        container.addEventListener('pointermove', evt => {
-          if (!state || evt.pointerId !== state.pointerId) return;
-          const { card } = state;
-          const moved = Math.abs(evt.clientX - state.startX) + Math.abs(evt.clientY - state.startY);
-          if (!state.started) {
-            if (moved < 12) return;
-            state.started = true;
-            try {
-              card.setPointerCapture(evt.pointerId);
-              state.capture = true;
-            } catch (err) {}
-            card.classList.add('is-dragging');
-            container.classList.add('drag-active');
+        const onPointerMove = evt => {
+          if (!dragState || evt.pointerId !== dragState.pointerId) return;
+          const { card } = dragState;
+          const moved = Math.hypot(evt.clientX - dragState.startX, evt.clientY - dragState.startY);
+          if (!dragState.started) {
+            if (moved < 6) return;
+            startDrag(evt);
           }
+          if (!dragState.started) return;
           evt.preventDefault();
-          repositionCard(container, card, evt.clientX, evt.clientY);
-        }, { passive: false });
+          updateDrag(evt);
+        };
 
-        function finishTouchDrag(evt){
-          if (!state || evt.pointerId !== state.pointerId) return;
-          const { card, started, capture } = state;
-          if (capture){
-            try { card.releasePointerCapture(state.pointerId); } catch (err) {}
-          }
-          if (started){
+        const onPointerUp = evt => {
+          if (!dragState || evt.pointerId !== dragState.pointerId) return;
+          if (dragState.started) {
             evt.preventDefault();
-            card.classList.remove('is-dragging');
-            container.classList.remove('drag-active');
-            persistOrder(container, containerIndex);
+            finishDrag();
           }
-          state = null;
+          cleanup();
+        };
+
+        function startDrag(evt){
+          const { card, container } = dragState;
+          dragState.started = true;
+          const rect = card.getBoundingClientRect();
+          dragState.offsetX = evt.clientX - rect.left;
+          dragState.offsetY = evt.clientY - rect.top;
+          placeholder.style.height = rect.height + 'px';
+          placeholder.style.setProperty('--card-span', card.dataset.cardSpan || card.getAttribute('data-card-span') || '1');
+          if (!placeholder.parentNode) {
+            container.insertBefore(placeholder, card);
+          } else {
+            container.insertBefore(placeholder, card);
+          }
+          dragState.placeholderActive = true;
+
+          dragState.originalStyles = {
+            position: card.style.position,
+            left: card.style.left,
+            top: card.style.top,
+            width: card.style.width,
+            height: card.style.height,
+            zIndex: card.style.zIndex,
+            pointerEvents: card.style.pointerEvents,
+            transition: card.style.transition
+          };
+
+          card.classList.add('is-dragging', 'is-floating');
+          container.classList.add('drag-active');
+
+          card.style.position = 'fixed';
+          card.style.left = rect.left + 'px';
+          card.style.top = rect.top + 'px';
+          card.style.width = rect.width + 'px';
+          card.style.height = rect.height + 'px';
+          card.style.zIndex = '1200';
+          card.style.pointerEvents = 'none';
+          card.style.transition = 'none';
+
+          try { card.setPointerCapture(dragState.pointerId); } catch (err) {}
+          document.body.appendChild(card);
+          updateDrag(evt);
         }
 
-        container.addEventListener('pointerup', finishTouchDrag);
-        container.addEventListener('pointercancel', finishTouchDrag);
+        function updateDrag(evt){
+          const { card, offsetX, offsetY, container } = dragState;
+          card.style.left = `${evt.clientX - offsetX}px`;
+          card.style.top = `${evt.clientY - offsetY}px`;
+          movePlaceholder(container, placeholder, evt.clientX, evt.clientY, card);
+        }
+
+        function finishDrag(){
+          const { card, container, containerIndex } = dragState;
+          if (card.hasPointerCapture && dragState.pointerId != null) {
+            try { card.releasePointerCapture(dragState.pointerId); } catch (err) {}
+          }
+          restoreCard(card);
+          const targetParent = placeholder.parentNode || container;
+          if (targetParent) {
+            targetParent.insertBefore(card, placeholder);
+          }
+          placeholder.remove();
+          card.classList.remove('is-dragging', 'is-floating');
+          container.classList.remove('drag-active');
+          persistOrder(container, containerIndex);
+        }
+
+        function restoreCard(card){
+          const styles = dragState.originalStyles || {};
+          card.style.position = styles.position || '';
+          card.style.left = styles.left || '';
+          card.style.top = styles.top || '';
+          card.style.width = styles.width || '';
+          card.style.height = styles.height || '';
+          card.style.zIndex = styles.zIndex || '';
+          card.style.pointerEvents = styles.pointerEvents || '';
+          card.style.transition = styles.transition || '';
+        }
+
+        function cleanup(){
+          window.removeEventListener('pointermove', onPointerMove, true);
+          window.removeEventListener('pointerup', onPointerUp, true);
+          window.removeEventListener('pointercancel', onPointerUp, true);
+          if (dragState && dragState.started) {
+            const { card } = dragState;
+            if (card && card.hasPointerCapture && dragState.pointerId != null) {
+              try { card.releasePointerCapture(dragState.pointerId); } catch (err) {}
+            }
+          }
+          if (dragState && dragState.placeholderActive && placeholder.parentNode === null) {
+            // ensure placeholder removed if drag aborted
+            placeholder.remove();
+          }
+          dragState = null;
+        }
+
+      }
+
+      function movePlaceholder(container, placeholder, clientX, clientY, floatingCard){
+        if (!container || !placeholder) return;
+        const reference = findInsertionReference(container, floatingCard, clientX, clientY);
+        if (reference && reference !== placeholder) {
+          container.insertBefore(placeholder, reference);
+        } else if (!reference) {
+          container.appendChild(placeholder);
+        }
       }
 
       function shouldIgnoreInteractive(target){
         return !!(target && target.closest('a, button, input, textarea, select, label'));
       }
 
-      function repositionCard(container, card, clientX, clientY){
-        const reference = findInsertionReference(container, card, clientX, clientY);
-        if (reference && reference !== card) {
-          container.insertBefore(card, reference);
-        } else if (!reference) {
-          container.appendChild(card);
-        }
-      }
-
       function findInsertionReference(container, dragging, clientX, clientY){
         const cards = Array.from(container.querySelectorAll(':scope > .card:not(.is-dragging):not(.is-hidden)'));
         if (!cards.length) return null;
 
-        const originalPointer = dragging.style.pointerEvents;
-        dragging.style.pointerEvents = 'none';
         const hovered = document.elementFromPoint(clientX, clientY);
-        dragging.style.pointerEvents = originalPointer || '';
-        const hoverCard = hovered ? hovered.closest('.card') : null;
-        if (hoverCard && hoverCard !== dragging && container.contains(hoverCard) && !hoverCard.classList.contains('is-hidden')) {
-          const rect = hoverCard.getBoundingClientRect();
-          const before = clientX < rect.left + rect.width / 2;
-          return before ? hoverCard : hoverCard.nextElementSibling;
+        const hoverItem = hovered ? hovered.closest('.card, .card-placeholder') : null;
+        if (hoverItem && hoverItem !== dragging && container.contains(hoverItem)){
+          if (hoverItem.classList.contains('card-placeholder')) {
+            return hoverItem;
+          }
+          if (!hoverItem.classList.contains('is-hidden')) {
+            const rect = hoverItem.getBoundingClientRect();
+            const before = clientX < rect.left + rect.width / 2;
+            return before ? hoverItem : hoverItem.nextElementSibling;
+          }
         }
 
         let closest = null;
