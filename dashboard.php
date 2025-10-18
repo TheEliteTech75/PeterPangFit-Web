@@ -58,6 +58,36 @@ function safe_row_sql(mysqli $conn, string $sql, string $types = '', ...$params)
 }
 
 /* ---------- Small sys JSON endpoint (CPU/RAM/Disk + NET RX/TX cumulative) ---------- */
+function parse_linux_cpu_totals(?string $contents): ?array {
+  if (!$contents) return null;
+  foreach (explode("\n", $contents) as $line) {
+    $line = trim($line);
+    if (strpos($line, 'cpu ') !== 0) continue;
+    $parts = preg_split('/\s+/', trim(substr($line, 3)));
+    if (!$parts || count($parts) < 4) return null;
+    $values = array_map('floatval', $parts);
+    $idle = $values[3] + ($values[4] ?? 0.0);
+    $total = array_sum($values);
+    if (!is_finite($idle) || !is_finite($total) || $total <= 0) return null;
+    return ['idle' => $idle, 'total' => $total];
+  }
+  return null;
+}
+
+function linux_cpu_usage_ratio(): ?float {
+  $first = parse_linux_cpu_totals(@file_get_contents('/proc/stat'));
+  if (!$first) return null;
+  if (function_exists('usleep')) usleep(100000); // ~0.1s sample window
+  $second = parse_linux_cpu_totals(@file_get_contents('/proc/stat'));
+  if (!$second) return null;
+  $totalDiff = $second['total'] - $first['total'];
+  if (!($totalDiff > 0)) return null;
+  $idleDiff = $second['idle'] - $first['idle'];
+  $usage = 1 - ($idleDiff / $totalDiff);
+  if (!is_finite($usage)) return null;
+  return max(0.0, min(1.0, $usage));
+}
+
 function read_sys_stats_snapshot(): array {
   $os = PHP_OS_FAMILY ?? php_uname('s');
   $cpu_pct = null; $ram_used_pct = null; $disk_used_pct = null;
@@ -121,17 +151,22 @@ if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
     if (!empty($tot) && isset($avail)) $ram_used_pct = max(0, min(100, round((1 - ($avail / $tot)) * 100)));
   }
 
-  // CPU approx via loadavg/cores
-  $loads = @sys_getloadavg();
-  $cores = null;
-  $nproc = @trim((string)@shell_exec('nproc 2>/dev/null'));
-  if (ctype_digit($nproc)) $cores = (int)$nproc;
-  if (!$cores) {
-    $cpuinfo = @file_get_contents('/proc/cpuinfo');
-    if ($cpuinfo) $cores = substr_count($cpuinfo, "processor\t:");
-  }
-  if ($loads && $cores && $cores > 0) {
-    $cpu_pct = max(0, min(100, round(($loads[0] / $cores) * 100)));
+  $ratio = linux_cpu_usage_ratio();
+  if ($ratio !== null) {
+    $cpu_pct = max(0, min(100, round($ratio * 100)));
+  } else {
+    // Fallback to load average per core
+    $loads = @sys_getloadavg();
+    $cores = null;
+    $nproc = @trim((string)@shell_exec('nproc 2>/dev/null'));
+    if (ctype_digit($nproc)) $cores = (int)$nproc;
+    if (!$cores) {
+      $cpuinfo = @file_get_contents('/proc/cpuinfo');
+      if ($cpuinfo) $cores = substr_count($cpuinfo, "processor\t:");
+    }
+    if ($loads && $cores && $cores > 0) {
+      $cpu_pct = max(0, min(100, round(($loads[0] / $cores) * 100)));
+    }
   }
 }
 
@@ -1948,6 +1983,21 @@ $CAT_PALETTE = [
         return Math.min(max, Math.max(1, Math.round(num)));
       }
 
+      function getColumnMetrics(container){
+        const columns = clampColumns(layoutState.columns);
+        const rect = container ? container.getBoundingClientRect() : null;
+        const styles = container ? window.getComputedStyle(container) : null;
+        let gap = styles ? parseFloat(styles.columnGap) : NaN;
+        if (!isFinite(gap) && styles) gap = parseFloat(styles.gap);
+        if (!isFinite(gap)) gap = 0;
+        const totalGap = gap * Math.max(0, columns - 1);
+        const width = rect ? rect.width : 0;
+        const available = width - totalGap;
+        const columnWidth = columns > 0 && available > 0 ? available / columns : 0;
+        const unit = columnWidth + gap;
+        return { columns, gap, columnWidth, unit };
+      }
+
       function getDefaultSpan(card){
         const attr = card ? Number(card.getAttribute('data-default-span')) : NaN;
         if (isFinite(attr) && attr >= 1) {
@@ -2163,9 +2213,9 @@ $CAT_PALETTE = [
         return ghost;
       }
 
-      function updateResizeGhost(card, rawSpan){
+      function updateResizeGhost(card, rawSpan, columnsOverride){
         if (!card) return;
-        const columns = layoutState.columns || 4;
+        const columns = clampColumns(columnsOverride != null ? columnsOverride : layoutState.columns);
         ensureResizeGhost(card);
         const ratio = columns > 0 ? Math.max(0, Math.min(1, rawSpan / columns)) : 0;
         card.style.setProperty('--card-resize-preview', String(ratio));
@@ -2183,24 +2233,78 @@ $CAT_PALETTE = [
 
         const state = ensureContainerState(containerIndex);
         const currentSpan = getCardSpanFromState(state, key, card);
-        let activeSpan = currentSpan;
         const handle = evt.currentTarget;
         const pointerId = evt.pointerId;
-        card.classList.add('is-resizing');
-        card.classList.add('show-resize-preview');
-        updateResizeGhost(card, currentSpan);
+        const baseMetrics = getColumnMetrics(container);
+        const rect = card.getBoundingClientRect();
+        const baseHeight = rect.height;
+        const baseWidth = rect.width;
+        const placeholder = document.createElement('div');
+        placeholder.className = 'card-placeholder card-placeholder--resize';
+        placeholder.setAttribute('aria-hidden', 'true');
+        placeholder.style.height = baseHeight + 'px';
+        placeholder.style.setProperty('--card-span', card.dataset.cardSpan || card.getAttribute('data-card-span') || '1');
+
+        const originalStyles = {
+          position: card.style.position,
+          left: card.style.left,
+          top: card.style.top,
+          width: card.style.width,
+          height: card.style.height,
+          zIndex: card.style.zIndex,
+          pointerEvents: card.style.pointerEvents,
+          transition: card.style.transition
+        };
+
+        const initialSpan = currentSpan;
+        let activeSpan = currentSpan;
+        let finished = false;
+
+        card.classList.add('is-resizing', 'show-resize-preview', 'is-floating');
+        updateResizeGhost(card, currentSpan, baseMetrics.columns);
+
+        container.insertBefore(placeholder, card);
+        container.removeChild(card);
+        document.body.appendChild(card);
+
+        card.style.position = 'fixed';
+        const placeholderRect = placeholder.getBoundingClientRect();
+        card.style.left = placeholderRect.left + 'px';
+        card.style.top = placeholderRect.top + 'px';
+        card.style.width = baseWidth + 'px';
+        card.style.height = baseHeight + 'px';
+        card.style.zIndex = '1300';
+        card.style.pointerEvents = 'none';
+        card.style.transition = 'none';
 
         if (handle && handle.setPointerCapture) {
           try { handle.setPointerCapture(pointerId); } catch (err) {}
         }
 
+        const restoreOriginalStyles = () => {
+          ['position','left','top','width','height','zIndex','pointerEvents','transition'].forEach(prop => {
+            const val = originalStyles[prop];
+            if (val) {
+              card.style[prop] = val;
+            } else {
+              card.style[prop] = '';
+            }
+          });
+        };
+
         const onMove = moveEvt => {
           if (pointerId != null && moveEvt.pointerId !== pointerId) return;
           moveEvt.preventDefault();
-          const metrics = computeSpanFromPointer(moveEvt, container, card);
-          if (!metrics) return;
-          updateResizeGhost(card, metrics.rawSpan);
-          const nextSpan = metrics.span;
+          const liveRect = placeholder.getBoundingClientRect();
+          const liveMetrics = getColumnMetrics(container);
+          const metricsResult = computeSpanFromPointer(moveEvt, liveMetrics, liveRect.left, baseWidth);
+          if (!metricsResult) return;
+          card.style.left = liveRect.left + 'px';
+          card.style.top = liveRect.top + 'px';
+          card.style.width = metricsResult.pixelWidth + 'px';
+          updateResizeGhost(card, metricsResult.rawSpan, liveMetrics.columns);
+          placeholder.style.setProperty('--card-span', String(metricsResult.span));
+          const nextSpan = metricsResult.span;
           if (nextSpan && nextSpan !== activeSpan) {
             activeSpan = nextSpan;
             state.sizes[key] = activeSpan;
@@ -2211,19 +2315,34 @@ $CAT_PALETTE = [
         const finish = endEvt => {
           if (pointerId != null && endEvt.pointerId !== pointerId) return;
           endEvt.preventDefault();
-          cleanup();
+          cleanup(true);
         };
 
-        const cleanup = () => {
+        const cleanup = (commit = false) => {
+          if (finished) return;
+          finished = true;
           window.removeEventListener('pointermove', onMove, true);
           window.removeEventListener('pointerup', finish, true);
           window.removeEventListener('pointercancel', finish, true);
-          card.classList.remove('is-resizing');
-          card.classList.remove('show-resize-preview');
+          card.classList.remove('is-resizing', 'show-resize-preview');
           card.style.removeProperty('--card-resize-preview');
           if (handle && handle.releasePointerCapture) {
             try { handle.releasePointerCapture(pointerId); } catch (err) {}
           }
+
+          const targetSpan = commit ? activeSpan : initialSpan;
+          state.sizes[key] = targetSpan;
+          applySpanToCardElement(card, targetSpan);
+
+          restoreOriginalStyles();
+          if (placeholder.parentNode) {
+            placeholder.parentNode.insertBefore(card, placeholder);
+            placeholder.remove();
+          } else if (card.parentNode === document.body) {
+            container.appendChild(card);
+          }
+
+          card.classList.remove('is-floating');
           saveLayoutState();
         };
 
@@ -2260,33 +2379,28 @@ $CAT_PALETTE = [
         saveLayoutState();
       }
 
-      function computeSpanFromPointer(evt, container, card){
-        const columns = layoutState.columns || 4;
-        if (columns <= 0) return null;
-        const containerRect = container.getBoundingClientRect();
-        const cardRect = card.getBoundingClientRect();
-        const styles = window.getComputedStyle(container);
-        let gap = parseFloat(styles.columnGap);
-        if (!isFinite(gap)) {
-          gap = parseFloat(styles.gap);
+      function computeSpanFromPointer(evt, metrics, baseLeft, fallbackWidth){
+        const meta = metrics || {};
+        const columns = meta.columns && meta.columns > 0 ? meta.columns : clampColumns(layoutState.columns);
+        if (!(columns > 0)) return null;
+        const unit = meta.unit;
+        let rawSpan;
+        if (unit && unit > 0) {
+          rawSpan = (evt.clientX - baseLeft) / unit + 1;
+        } else {
+          rawSpan = 1;
         }
-        if (!isFinite(gap)) gap = 0;
-        const totalGap = gap * (columns - 1);
-        const available = containerRect.width - totalGap;
-        const columnWidth = available > 0 ? available / columns : 0;
-        if (!(columnWidth > 0)) {
-          return { span: clampSpan(1, columns), rawSpan: 1, columnWidth, gap };
-        }
-        const unit = columnWidth + gap;
-        if (!(unit > 0)) {
-          return { span: clampSpan(1, columns), rawSpan: 1, columnWidth, gap };
-        }
-        const relative = evt.clientX - cardRect.left;
-        let rawSpan = (relative / unit) + 1;
         if (!isFinite(rawSpan)) rawSpan = 1;
         rawSpan = Math.max(1, Math.min(columns, rawSpan));
         const span = clampSpan(Math.round(rawSpan), columns);
-        return { span, rawSpan, columnWidth, gap };
+        let width = fallbackWidth;
+        if (meta.columnWidth && meta.columnWidth > 0) {
+          const cw = meta.columnWidth;
+          const gap = meta.gap || 0;
+          width = (cw * rawSpan) + gap * Math.max(0, rawSpan - 1);
+        }
+        if (!(width > 0)) width = fallbackWidth;
+        return { span, rawSpan, pixelWidth: width };
       }
 
       function getCardSpanFromState(state, key, card){

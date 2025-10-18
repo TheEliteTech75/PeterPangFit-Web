@@ -6,6 +6,36 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 
+function parse_linux_cpu_totals(?string $contents): ?array {
+  if (!$contents) return null;
+  foreach (explode("\n", $contents) as $line) {
+    $line = trim($line);
+    if (strpos($line, 'cpu ') !== 0) continue;
+    $parts = preg_split('/\s+/', trim(substr($line, 3)));
+    if (!$parts || count($parts) < 4) return null;
+    $values = array_map('floatval', $parts);
+    $idle = $values[3] + ($values[4] ?? 0.0);
+    $total = array_sum($values);
+    if (!is_finite($idle) || !is_finite($total) || $total <= 0) return null;
+    return ['idle' => $idle, 'total' => $total];
+  }
+  return null;
+}
+
+function linux_cpu_usage_ratio(): ?float {
+  $first = parse_linux_cpu_totals(@file_get_contents('/proc/stat'));
+  if (!$first) return null;
+  if (function_exists('usleep')) usleep(100000);
+  $second = parse_linux_cpu_totals(@file_get_contents('/proc/stat'));
+  if (!$second) return null;
+  $totalDiff = $second['total'] - $first['total'];
+  if (!($totalDiff > 0)) return null;
+  $idleDiff = $second['idle'] - $first['idle'];
+  $usage = 1 - ($idleDiff / $totalDiff);
+  if (!is_finite($usage)) return null;
+  return max(0.0, min(1.0, $usage));
+}
+
 function read_sys_stats_snapshot(): array {
   $os = PHP_OS_FAMILY ?? php_uname('s');
   $cpu_pct = null; $ram_used_pct = null; $disk_used_pct = null;
@@ -71,16 +101,21 @@ function read_sys_stats_snapshot(): array {
       if (preg_match('/MemAvailable:\s+(\d+)\s+kB/i', $meminfo, $a)) $avail = (int)$a[1] * 1024;
       if (!empty($tot) && isset($avail)) $ram_used_pct = max(0, min(100, round((1 - ($avail / $tot)) * 100)));
     }
-    // CPU via loadavg/cores
-    $loads = @sys_getloadavg();
-    $cores = null;
-    $nproc = @trim((string)@shell_exec('nproc 2>/dev/null'));
-    if (ctype_digit($nproc)) $cores = (int)$nproc;
-    if (!$cores) {
-      $cpuinfo = @file_get_contents('/proc/cpuinfo');
-      if ($cpuinfo) $cores = substr_count($cpuinfo, "processor\t:");
+    $ratio = linux_cpu_usage_ratio();
+    if ($ratio !== null) {
+      $cpu_pct = max(0, min(100, round($ratio * 100)));
+    } else {
+      // CPU via loadavg/cores fallback
+      $loads = @sys_getloadavg();
+      $cores = null;
+      $nproc = @trim((string)@shell_exec('nproc 2>/dev/null'));
+      if (ctype_digit($nproc)) $cores = (int)$nproc;
+      if (!$cores) {
+        $cpuinfo = @file_get_contents('/proc/cpuinfo');
+        if ($cpuinfo) $cores = substr_count($cpuinfo, "processor\t:");
+      }
+      if ($loads && $cores && $cores > 0) $cpu_pct = max(0, min(100, round(($loads[0] / $cores) * 100)));
     }
-    if ($loads && $cores && $cores > 0) $cpu_pct = max(0, min(100, round(($loads[0] / $cores) * 100)));
 
     // NET cumulative
     $rx = null; $tx = null;
