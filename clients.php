@@ -359,6 +359,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           }
         }
 
+        if (!$updatedAtRaw) {
+          $updatedAtRaw = date('Y-m-d H:i:s');
+          $updatedAtFmt = format_us_datetime($updatedAtRaw);
+        } elseif (!$updatedAtFmt && $updatedAtRaw) {
+          $updatedAtFmt = format_us_datetime($updatedAtRaw);
+        }
+
+        if (!$updatedById && $updatedByUser) {
+          $updatedById = $updatedByUser;
+        }
+
+        if (!$updatedByName && $updatedById) {
+          $updatedByName = user_display_name($conn, $updatedById);
+        }
+
         header('Content-Type: application/json');
         echo json_encode([
           'ok' => true,
@@ -1532,6 +1547,53 @@ function cancelRowEdit(tr){
   delete tr._origValues;
 }
 
+function applyExerciseRowView(tr, payload = {}) {
+  const setDisp = (val) => {
+    if (val === null || val === undefined) return '—';
+    const str = String(val);
+    return str === '' ? '—' : str;
+  };
+
+  const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  const updateCell = (name, value) => {
+    const cell = tr.querySelector(`[data-cell="${name}"]`);
+    if (!cell) return;
+    if (name === 'notes') {
+      const raw = value == null ? '' : String(value).replace(/\r\n/g, '\n');
+      const display = raw.trim() || '—';
+      cell.textContent = display;
+      return;
+    }
+    cell.textContent = setDisp(value);
+  };
+
+  updateCell('sets', hasOwn(payload, 'sets') ? payload.sets : null);
+  updateCell('reps', hasOwn(payload, 'reps') ? payload.reps : null);
+  updateCell('weight', hasOwn(payload, 'weight') ? payload.weight : null);
+  updateCell('duration', hasOwn(payload, 'duration') ? payload.duration : null);
+  updateCell('notes', hasOwn(payload, 'notes') ? payload.notes : '');
+
+  const editedCell = tr.querySelector('[data-cell="edited"]');
+  if (editedCell) {
+    const editedText = payload.updated_at_fmt || payload.updated_at || '—';
+    editedCell.textContent = editedText && editedText !== '' ? String(editedText) : '—';
+  }
+
+  const editedByCell = tr.querySelector('[data-cell="edited_by"]');
+  if (editedByCell) {
+    const name = payload.updated_by_name || '—';
+    editedByCell.textContent = name && name !== '' ? String(name) : '—';
+  }
+
+  const actionsCell = tr.querySelector('[data-cell="actions"]');
+  if (actionsCell) {
+    actionsCell.innerHTML = '<button class="btn small" type="button" data-ex-edit>Edit</button>';
+  }
+
+  tr.dataset.editing = '0';
+  delete tr._origValues;
+}
+
 async function saveRowEdit(tr){
   const uid = parseInt(tr.dataset.userId, 10);
   const planId = parseInt(tr.dataset.planId, 10);
@@ -1563,23 +1625,7 @@ async function saveRowEdit(tr){
     const json = await res.json();
     if (!json || !json.ok) throw new Error((json && json.error) || 'Save failed');
 
-    const setDisp = v => (v === null || v === undefined || v === '' ? '—' : String(v));
-    tr.querySelector('[data-cell="sets"]').textContent = setDisp(json.data.sets);
-    tr.querySelector('[data-cell="reps"]').textContent = setDisp(json.data.reps);
-    tr.querySelector('[data-cell="weight"]').textContent = setDisp(json.data.weight);
-    tr.querySelector('[data-cell="duration"]').textContent = setDisp(json.data.duration);
-    tr.querySelector('[data-cell="notes"]').textContent = setDisp(json.data.notes);
-
-    const editedCell = tr.querySelector('[data-cell="edited"]');
-    const editedByCell = tr.querySelector('[data-cell="edited_by"]');
-    if (editedCell) {
-      const editedText = json.data.updated_at_fmt || json.data.updated_at || '—';
-      editedCell.textContent = editedText ? editedText : '—';
-    }
-    if (editedByCell) {
-      const editorText = json.data.updated_by_name || '—';
-      editedByCell.textContent = editorText ? editorText : '—';
-    }
+    applyExerciseRowView(tr, json.data || {});
 
     window.__USER_EX = window.__USER_EX || {};
     const userEntry = window.__USER_EX[uid] = window.__USER_EX[uid] || {};
@@ -1596,9 +1642,6 @@ async function saveRowEdit(tr){
       updated_by_name: json.data.updated_by_name ?? null
     };
 
-    actionsCell.innerHTML = '<button class="btn small" type="button" data-ex-edit>Edit</button>';
-    tr.dataset.editing = '0';
-    delete tr._origValues;
   } catch (err) {
     alert(err.message || 'Failed to save.');
     actionsCell.innerHTML = prevHTML;
