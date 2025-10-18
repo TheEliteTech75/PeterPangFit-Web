@@ -139,31 +139,107 @@ function windows_memory_info_via_com(): ?array {
 function windows_cpu_usage_via_com(): ?float {
   $service = windows_wmi_service();
   if (!$service) return null;
+
+  $readFormatted = function($items) {
+    if (!$items) return null;
+    $total = null; $sum = 0.0; $count = 0;
+    foreach ($items as $item) {
+      $name = isset($item->Name) ? (string)$item->Name : '';
+      $val = isset($item->PercentProcessorTime) ? (float)$item->PercentProcessorTime : null;
+      if ($val === null) continue;
+      if ($name === '_Total') {
+        $total = $val;
+      } else {
+        $sum += $val;
+        $count++;
+      }
+    }
+    if ($total === null && $count > 0) {
+      $total = $sum / $count;
+    }
+    if ($total !== null && is_finite($total)) {
+      return max(0.0, min(100.0, $total));
+    }
+    return null;
+  };
+
+  try {
+    $refresher = new COM('WbemScripting.SWbemRefresher');
+    $enum = $refresher->AddEnum($service, 'Win32_PerfFormattedData_PerfOS_Processor');
+    $refresher->Refresh();
+    if (function_exists('usleep')) usleep(150000);
+    $refresher->Refresh();
+    $value = $readFormatted($enum?->ObjectSet ?? null);
+    if ($value !== null) {
+      unset($refresher);
+      return $value;
+    }
+    unset($refresher);
+  } catch (Throwable $e) {
+    // ignore and fall through
+  }
+
   try {
     $items = $service->ExecQuery("SELECT Name, PercentProcessorTime FROM Win32_PerfFormattedData_PerfOS_Processor");
-    $total = null; $sum = 0.0; $count = 0;
+    $value = $readFormatted($items);
+    if ($value !== null) return $value;
+  } catch (Throwable $e) {
+    // ignore and fall through
+  }
+
+  try {
+    $first = [];
+    $items = $service->ExecQuery('SELECT Name, PercentProcessorTime, TimeStamp_Sys100NS FROM Win32_PerfRawData_PerfOS_Processor');
     if ($items) {
       foreach ($items as $item) {
         $name = isset($item->Name) ? (string)$item->Name : '';
         $val = isset($item->PercentProcessorTime) ? (float)$item->PercentProcessorTime : null;
-        if ($val === null) continue;
-        if ($name === '_Total') {
-          $total = $val;
-        } else {
-          $sum += $val;
-          $count++;
+        $ts  = isset($item->TimeStamp_Sys100NS) ? (float)$item->TimeStamp_Sys100NS : null;
+        if ($val === null || $ts === null) continue;
+        $first[$name] = ['value' => $val, 'ts' => $ts];
+      }
+    }
+    if ($first) {
+      if (function_exists('usleep')) usleep(150000);
+      $second = [];
+      $items = $service->ExecQuery('SELECT Name, PercentProcessorTime, TimeStamp_Sys100NS FROM Win32_PerfRawData_PerfOS_Processor');
+      if ($items) {
+        foreach ($items as $item) {
+          $name = isset($item->Name) ? (string)$item->Name : '';
+          $val = isset($item->PercentProcessorTime) ? (float)$item->PercentProcessorTime : null;
+          $ts  = isset($item->TimeStamp_Sys100NS) ? (float)$item->TimeStamp_Sys100NS : null;
+          if ($val === null || $ts === null) continue;
+          $second[$name] = ['value' => $val, 'ts' => $ts];
         }
+      }
+      $total = null; $sum = 0.0; $count = 0;
+      foreach ($first as $name => $a) {
+        if (!isset($second[$name])) continue;
+        $b = $second[$name];
+        $delta = (float)$b['value'] - (float)$a['value'];
+        $time = (float)$b['ts'] - (float)$a['ts'];
+        if (!($time > 0)) continue;
+        $usage = ($delta / $time) * 100.0;
+        if (!is_finite($usage)) continue;
+        $usage = max(0.0, min(100.0, $usage));
+        if ($name === '_Total') {
+          $total = $usage;
+          break;
+        }
+        $sum += $usage;
+        $count++;
       }
       if ($total === null && $count > 0) {
         $total = $sum / $count;
       }
-      if ($total !== null && is_finite($total)) {
+      if ($total !== null) {
         return max(0.0, min(100.0, $total));
       }
     }
   } catch (Throwable $e) {
-    // ignore and fallback
+    // ignore and fall through
   }
+
   try {
     $items = $service->ExecQuery('SELECT LoadPercentage FROM Win32_Processor');
     if ($items) {
@@ -1977,6 +2053,7 @@ $CAT_PALETTE = [
       const containerLabels = new Map();
       let stateDirty = false;
       let overlayHideTimer = null;
+      const isNumberFinite = typeof Number.isFinite === 'function' ? Number.isFinite : function(value){ return isFinite(value); };
 
       const settingsToggle = document.querySelector('.dash-settings-toggle');
       const settingsPanel = document.getElementById('dashboard-settings');
@@ -2348,9 +2425,9 @@ $CAT_PALETTE = [
         const pointerId = evt.pointerId;
         const baseMetrics = getColumnMetrics(container);
         const rect = card.getBoundingClientRect();
-        const pointerOffset = rect.right - evt.clientX;
         const baseHeight = rect.height;
         const baseWidth = rect.width;
+        const startX = isNumberFinite(evt.clientX) ? evt.clientX : (typeof evt.pageX === 'number' ? evt.pageX : rect.right);
         const placeholder = document.createElement('div');
         placeholder.className = 'card-placeholder card-placeholder--resize';
         placeholder.setAttribute('aria-hidden', 'true');
@@ -2409,7 +2486,9 @@ $CAT_PALETTE = [
           moveEvt.preventDefault();
           const liveRect = placeholder.getBoundingClientRect();
           const liveMetrics = getColumnMetrics(container);
-          const metricsResult = computeSpanFromPointer(moveEvt, liveMetrics, liveRect.left, baseWidth, pointerOffset);
+          const moveX = isNumberFinite(moveEvt.clientX) ? moveEvt.clientX : (typeof moveEvt.pageX === 'number' ? moveEvt.pageX : startX);
+          const deltaX = moveX - startX;
+          const metricsResult = computeSpanFromDelta(deltaX, liveMetrics, baseWidth);
           if (!metricsResult) return;
           card.style.left = liveRect.left + 'px';
           card.style.top = liveRect.top + 'px';
@@ -2491,43 +2570,37 @@ $CAT_PALETTE = [
         saveLayoutState();
       }
 
-      function computeSpanFromPointer(evt, metrics, baseLeft, fallbackWidth, pointerOffset){
+      function computeSpanFromDelta(deltaX, metrics, baseWidth){
         const meta = metrics || {};
         const columns = meta.columns && meta.columns > 0 ? meta.columns : clampColumns(layoutState.columns);
         if (!(columns > 0)) return null;
-        const unit = meta.unit;
         const gap = meta.gap || 0;
         const columnWidth = meta.columnWidth || 0;
-        const maxWidth = columnWidth > 0 ? (columnWidth * columns) + gap * Math.max(0, columns - 1) : NaN;
-        const minWidth = columnWidth > 0 ? columnWidth : (fallbackWidth > 0 ? fallbackWidth : 1);
-        const offset = Number(pointerOffset);
-        const pointerX = evt.clientX + (isFinite(offset) ? offset : 0);
+        const unit = columnWidth + gap;
+        let targetWidth = (baseWidth > 0 ? baseWidth : 0) + deltaX;
+        if (!(targetWidth > 0)) targetWidth = baseWidth > 0 ? baseWidth : 1;
+        if (columnWidth > 0) {
+          const minWidth = columnWidth;
+          const maxWidth = (columnWidth * columns) + gap * Math.max(0, columns - 1);
+          if (isFinite(maxWidth) && maxWidth > 0) {
+            targetWidth = Math.min(targetWidth, maxWidth);
+          }
+          targetWidth = Math.max(targetWidth, minWidth);
+        } else {
+          targetWidth = Math.max(targetWidth, 1);
+        }
         let rawSpan;
-        if (unit && unit > 0) {
-          rawSpan = (pointerX - baseLeft) / unit + 1;
+        if (unit > 0) {
+          rawSpan = (targetWidth + gap) / unit;
+        } else if (baseWidth > 0) {
+          rawSpan = targetWidth / baseWidth;
         } else {
           rawSpan = 1;
         }
         if (!isFinite(rawSpan)) rawSpan = 1;
         rawSpan = Math.max(1, Math.min(columns, rawSpan));
         const span = clampSpan(Math.round(rawSpan), columns);
-        let pointerWidth = pointerX - baseLeft;
-        if (!(pointerWidth > 0)) pointerWidth = fallbackWidth;
-        if (isFinite(maxWidth) && maxWidth > 0) pointerWidth = Math.min(pointerWidth, maxWidth);
-        if (minWidth > 0) pointerWidth = Math.max(pointerWidth, minWidth);
-        let snappedWidth = fallbackWidth;
-        if (meta.columnWidth && meta.columnWidth > 0) {
-          const cw = meta.columnWidth;
-          const spanWidth = (cw * rawSpan) + gap * Math.max(0, rawSpan - 1);
-          snappedWidth = spanWidth;
-          if (isFinite(maxWidth) && maxWidth > 0) {
-            pointerWidth = Math.min(pointerWidth, maxWidth);
-          }
-          pointerWidth = Math.max(minWidth, pointerWidth);
-        }
-        if (!(snappedWidth > 0)) snappedWidth = pointerWidth;
-        if (!(pointerWidth > 0)) pointerWidth = snappedWidth;
-        return { span, rawSpan, pixelWidth: pointerWidth, snappedWidth };
+        return { span, rawSpan, pixelWidth: targetWidth };
       }
 
       function getCardSpanFromState(state, key, card){

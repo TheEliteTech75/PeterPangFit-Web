@@ -87,31 +87,107 @@ function windows_memory_info_via_com(): ?array {
 function windows_cpu_usage_via_com(): ?float {
   $service = windows_wmi_service();
   if (!$service) return null;
+
+  $readFormatted = function($items) {
+    if (!$items) return null;
+    $total = null; $sum = 0.0; $count = 0;
+    foreach ($items as $item) {
+      $name = isset($item->Name) ? (string)$item->Name : '';
+      $val = isset($item->PercentProcessorTime) ? (float)$item->PercentProcessorTime : null;
+      if ($val === null) continue;
+      if ($name === '_Total') {
+        $total = $val;
+      } else {
+        $sum += $val;
+        $count++;
+      }
+    }
+    if ($total === null && $count > 0) {
+      $total = $sum / $count;
+    }
+    if ($total !== null && is_finite($total)) {
+      return max(0.0, min(100.0, $total));
+    }
+    return null;
+  };
+
+  try {
+    $refresher = new COM('WbemScripting.SWbemRefresher');
+    $enum = $refresher->AddEnum($service, 'Win32_PerfFormattedData_PerfOS_Processor');
+    $refresher->Refresh();
+    if (function_exists('usleep')) usleep(150000);
+    $refresher->Refresh();
+    $value = $readFormatted($enum?->ObjectSet ?? null);
+    if ($value !== null) {
+      unset($refresher);
+      return $value;
+    }
+    unset($refresher);
+  } catch (Throwable $e) {
+    // ignore and fall through
+  }
+
   try {
     $items = $service->ExecQuery("SELECT Name, PercentProcessorTime FROM Win32_PerfFormattedData_PerfOS_Processor");
-    $total = null; $sum = 0.0; $count = 0;
+    $value = $readFormatted($items);
+    if ($value !== null) return $value;
+  } catch (Throwable $e) {
+    // ignore and fall through
+  }
+
+  try {
+    $first = [];
+    $items = $service->ExecQuery('SELECT Name, PercentProcessorTime, TimeStamp_Sys100NS FROM Win32_PerfRawData_PerfOS_Processor');
     if ($items) {
       foreach ($items as $item) {
         $name = isset($item->Name) ? (string)$item->Name : '';
         $val = isset($item->PercentProcessorTime) ? (float)$item->PercentProcessorTime : null;
-        if ($val === null) continue;
-        if ($name === '_Total') {
-          $total = $val;
-        } else {
-          $sum += $val;
-          $count++;
+        $ts  = isset($item->TimeStamp_Sys100NS) ? (float)$item->TimeStamp_Sys100NS : null;
+        if ($val === null || $ts === null) continue;
+        $first[$name] = ['value' => $val, 'ts' => $ts];
+      }
+    }
+    if ($first) {
+      if (function_exists('usleep')) usleep(150000);
+      $second = [];
+      $items = $service->ExecQuery('SELECT Name, PercentProcessorTime, TimeStamp_Sys100NS FROM Win32_PerfRawData_PerfOS_Processor');
+      if ($items) {
+        foreach ($items as $item) {
+          $name = isset($item->Name) ? (string)$item->Name : '';
+          $val = isset($item->PercentProcessorTime) ? (float)$item->PercentProcessorTime : null;
+          $ts  = isset($item->TimeStamp_Sys100NS) ? (float)$item->TimeStamp_Sys100NS : null;
+          if ($val === null || $ts === null) continue;
+          $second[$name] = ['value' => $val, 'ts' => $ts];
         }
+      }
+      $total = null; $sum = 0.0; $count = 0;
+      foreach ($first as $name => $a) {
+        if (!isset($second[$name])) continue;
+        $b = $second[$name];
+        $delta = (float)$b['value'] - (float)$a['value'];
+        $time = (float)$b['ts'] - (float)$a['ts'];
+        if (!($time > 0)) continue;
+        $usage = ($delta / $time) * 100.0;
+        if (!is_finite($usage)) continue;
+        $usage = max(0.0, min(100.0, $usage));
+        if ($name === '_Total') {
+          $total = $usage;
+          break;
+        }
+        $sum += $usage;
+        $count++;
       }
       if ($total === null && $count > 0) {
         $total = $sum / $count;
       }
-      if ($total !== null && is_finite($total)) {
+      if ($total !== null) {
         return max(0.0, min(100.0, $total));
       }
     }
   } catch (Throwable $e) {
-    // ignore and fallback
+    // ignore and fall through
   }
+
   try {
     $items = $service->ExecQuery('SELECT LoadPercentage FROM Win32_Processor');
     if ($items) {
