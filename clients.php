@@ -28,14 +28,46 @@ function ensure_is_active_column(mysqli $conn): void {
   }
 }
 
+function ppf_column_exists_uncached(mysqli $conn, string $table, string $column): bool {
+  $sql = "SELECT COUNT(*) AS cnt
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = ?
+            AND COLUMN_NAME = ?";
+  if (!$stmt = $conn->prepare($sql)) return false;
+  $stmt->bind_param("ss", $table, $column);
+  $stmt->execute();
+  $res = $stmt->get_result();
+  $row = $res ? $res->fetch_assoc() : null;
+  $stmt->close();
+  return (int)($row['cnt'] ?? 0) > 0;
+}
+
 function ensure_user_plan_exercise_tracking_columns(mysqli $conn): void {
-  if (!function_exists('column_exists')) return;
-  if (!column_exists($conn, 'user_plan_exercises', 'updated_at')) {
+  if (!ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_at')) {
     @$conn->query("ALTER TABLE user_plan_exercises ADD COLUMN updated_at DATETIME NULL");
   }
-  if (!column_exists($conn, 'user_plan_exercises', 'updated_by')) {
+  if (!ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_by')) {
     @$conn->query("ALTER TABLE user_plan_exercises ADD COLUMN updated_by INT NULL");
   }
+}
+
+function ppf_parse_duration_to_seconds($input): ?int {
+  $s = trim((string)$input);
+  if ($s === '') return null;
+  if (preg_match('/^\d+:\d{1,2}$/', $s)) {
+    [$m, $sec] = array_map('intval', explode(':', $s, 2));
+    return ($m * 60) + $sec;
+  }
+  if (ctype_digit($s)) return (int)$s;
+  return null;
+}
+
+function ppf_parse_weight_to_float($input): ?float {
+  $s = trim((string)$input);
+  if ($s === '') return null;
+  if (!preg_match('/^\d+(\.\d+)?$/', $s)) return null;
+  return (float)$s;
 }
 
 // ---------- CSRF ----------
@@ -45,6 +77,12 @@ $csrf = $_SESSION['csrf_token'] ?? null;
 
 // Which tab?
 $tab = ($_GET['tab'] ?? 'active') === 'inactive' ? 'inactive' : 'active';
+
+ensure_is_active_column($conn);
+ensure_user_plan_exercise_tracking_columns($conn);
+
+$HAS_UPE_UPDATED_AT = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_at');
+$HAS_UPE_UPDATED_BY = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_by');
 
 // ---------- POST Actions ----------
 $flash = null; $flash_type = 'ok';
@@ -221,184 +259,226 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flash = 'Account unlocked.'; $flash_type = 'ok';
       }
 
-      // Save per-client exercise settings (AJAX) — NOW also supports user_notes
-      if ($action === 'save_user_exercise') {
-        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
-          throw new Exception('You do not have permission to edit exercise settings.');
-        }
-
-        $plan_id    = (int)($_POST['plan_id'] ?? 0);
-        $exercise_id= (int)($_POST['exercise_id'] ?? 0);
-        if ($uid <= 0 || $plan_id <= 0 || $exercise_id <= 0) throw new Exception('Invalid input.');
-
-        $sets  = trim($_POST['sets'] ?? '');
-        $reps  = trim($_POST['reps'] ?? '');
-        $weight_lbs = trim($_POST['weight_lbs'] ?? '');
-        $duration_seconds = trim($_POST['duration_seconds'] ?? '');
-        $user_notes = isset($_POST['user_notes']) ? trim($_POST['user_notes']) : '';
-
-        $setsVal  = ($sets === '' ? null : $sets);
-        $repsVal  = ($reps === '' ? null : $reps);
-        $wtVal    = ($weight_lbs === '' ? null : (float)$weight_lbs);
-        $durVal   = ($duration_seconds === '' ? null : (int)$duration_seconds);
-        $notesVal = ($user_notes === '' ? null : $user_notes);
-
-        // Find the user_plans.id for (user, plan)
-        $up_id = null;
-        $q1 = $conn->prepare("SELECT id FROM user_plans WHERE user_id=? AND plan_id=? LIMIT 1");
-        $q1->bind_param("ii", $uid, $plan_id);
-        $q1->execute();
-        $res1 = $q1->get_result();
-        if ($row = $res1->fetch_assoc()) $up_id = (int)$row['id'];
-        $q1->close();
-
-        if (!$up_id) throw new Exception('Plan is not assigned to this user.');
-
-        // Does a row exist for this exercise?
-        $upe_id = null;
-        $q2 = $conn->prepare("SELECT id FROM user_plan_exercises WHERE user_plan_id=? AND exercise_id=? LIMIT 1");
-        $q2->bind_param("ii", $up_id, $exercise_id);
-        $q2->execute();
-        $res2 = $q2->get_result();
-        if ($row = $res2->fetch_assoc()) $upe_id = (int)$row['id'];
-        $q2->close();
-
-        $updaterId = isset($USER_ID) ? (int)$USER_ID : null;
-
-        if ($upe_id) {
-          if ($HAS_UPE_UPDATED_AT && $HAS_UPE_UPDATED_BY) {
-            if ($updaterId) {
-              $q3 = $conn->prepare("
-                UPDATE user_plan_exercises
-                SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW(), updated_by=?
-                WHERE id=?
-              ");
-              $q3->bind_param("ssdisii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId, $upe_id);
-            } else {
-              $q3 = $conn->prepare("
-                UPDATE user_plan_exercises
-                SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW(), updated_by=NULL
-                WHERE id=?
-              ");
-              $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+        // Save per-client exercise settings (AJAX) — NOW also supports user_notes
+        if ($action === 'save_user_exercise') {
+          try {
+            if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+              throw new Exception('You do not have permission to edit exercise settings.');
             }
-          } elseif ($HAS_UPE_UPDATED_AT) {
-            $q3 = $conn->prepare("
-              UPDATE user_plan_exercises
-              SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW()
-              WHERE id=?
-            ");
-            $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
-          } elseif ($HAS_UPE_UPDATED_BY) {
-            if ($updaterId) {
-              $q3 = $conn->prepare("
-                UPDATE user_plan_exercises
-                SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_by=?
-                WHERE id=?
-              ");
-              $q3->bind_param("ssdisii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId, $upe_id);
-            } else {
-              $q3 = $conn->prepare("
-                UPDATE user_plan_exercises
-                SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_by=NULL
-                WHERE id=?
-              ");
-              $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
-            }
-          } else {
-            $q3 = $conn->prepare("
-              UPDATE user_plan_exercises
-              SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?
-              WHERE id=?
-            ");
-            $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
-          }
-          if (!$q3) throw new Exception('Failed to prepare update.');
-          if (!$q3->execute()) { $err = $q3->error; $q3->close(); throw new Exception('Failed to update settings. '.$err); }
-          $q3->close();
-        } else {
-          if ($HAS_UPE_UPDATED_AT && $HAS_UPE_UPDATED_BY) {
-            if ($updaterId) {
-              $q4 = $conn->prepare("
-                INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
-              ");
-              $q4->bind_param("iissdisi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId);
-            } else {
-              $q4 = $conn->prepare("
-                INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NULL)
-              ");
-              $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
-            }
-          } elseif ($HAS_UPE_UPDATED_AT) {
-            $q4 = $conn->prepare("
-              INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-            ");
-            $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
-          } elseif ($HAS_UPE_UPDATED_BY) {
-            if ($updaterId) {
-              $q4 = $conn->prepare("
-                INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-              ");
-              $q4->bind_param("iissdisi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId);
-            } else {
-              $q4 = $conn->prepare("
-                INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-              ");
-              $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
-            }
-          } else {
-            $q4 = $conn->prepare("
-              INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            ");
-            $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
-          }
-          if (!$q4) throw new Exception('Failed to prepare save.');
-          if (!$q4->execute()) { $err = $q4->error; $q4->close(); throw new Exception('Failed to save settings. '.$err); }
-          $upe_id = (int)$q4->insert_id;
-          $q4->close();
-        }
 
-        $metaUpdatedAt = null;
-        $metaUpdatedById = null;
-        if (($HAS_UPE_UPDATED_AT || $HAS_UPE_UPDATED_BY) && $upe_id) {
-          $metaStmt = $conn->prepare("SELECT updated_at, updated_by FROM user_plan_exercises WHERE id=? LIMIT 1");
-          if ($metaStmt) {
-            $metaStmt->bind_param("i", $upe_id);
-            if ($metaStmt->execute()) {
-              $metaRes = $metaStmt->get_result();
-              if ($metaRes && ($metaRow = $metaRes->fetch_assoc())) {
-                if ($HAS_UPE_UPDATED_AT) $metaUpdatedAt = $metaRow['updated_at'] ?? null;
-                if ($HAS_UPE_UPDATED_BY) $metaUpdatedById = isset($metaRow['updated_by']) ? (int)$metaRow['updated_by'] : null;
+            $plan_id     = (int)($_POST['plan_id'] ?? 0);
+            $exercise_id = (int)($_POST['exercise_id'] ?? 0);
+            if ($uid <= 0 || $plan_id <= 0 || $exercise_id <= 0) {
+              throw new Exception('Invalid input.');
+            }
+
+            $sets  = trim($_POST['sets'] ?? '');
+            $reps  = trim($_POST['reps'] ?? '');
+            $weight_lbs = trim($_POST['weight_lbs'] ?? '');
+            $duration_seconds = trim($_POST['duration_seconds'] ?? '');
+            $user_notes = isset($_POST['user_notes']) ? trim($_POST['user_notes']) : '';
+
+            $setsVal = ($sets === '' ? null : $sets);
+            $repsVal = ($reps === '' ? null : $reps);
+
+            $wtVal = null;
+            if ($weight_lbs !== '') {
+              $wtVal = ppf_parse_weight_to_float($weight_lbs);
+              if ($wtVal === null) {
+                throw new Exception('Weight must be numeric (digits with optional decimal).');
               }
             }
-            $metaStmt->close();
+
+            $durVal = null;
+            if ($duration_seconds !== '') {
+              $durVal = ppf_parse_duration_to_seconds($duration_seconds);
+              if ($durVal === null) {
+                throw new Exception('Duration must be seconds or mm:ss (for example 90 or 1:30).');
+              }
+            }
+
+            $notesVal = ($user_notes === '' ? null : $user_notes);
+
+            // Find the user_plans.id for (user, plan)
+            $up_id = null;
+            $q1 = $conn->prepare("SELECT id FROM user_plans WHERE user_id=? AND plan_id=? LIMIT 1");
+            $q1->bind_param("ii", $uid, $plan_id);
+            $q1->execute();
+            $res1 = $q1->get_result();
+            if ($row = $res1->fetch_assoc()) $up_id = (int)$row['id'];
+            $q1->close();
+
+            if (!$up_id) throw new Exception('Plan is not assigned to this user.');
+
+            // Does a row exist for this exercise?
+            $upe_id = null;
+            $q2 = $conn->prepare("SELECT id FROM user_plan_exercises WHERE user_plan_id=? AND exercise_id=? LIMIT 1");
+            $q2->bind_param("ii", $up_id, $exercise_id);
+            $q2->execute();
+            $res2 = $q2->get_result();
+            if ($row = $res2->fetch_assoc()) $upe_id = (int)$row['id'];
+            $q2->close();
+
+            $updaterId = isset($USER_ID) ? (int)$USER_ID : null;
+
+            if ($upe_id) {
+              if ($HAS_UPE_UPDATED_AT && $HAS_UPE_UPDATED_BY) {
+                if ($updaterId) {
+                  $q3 = $conn->prepare("
+                    UPDATE user_plan_exercises
+                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW(), updated_by=?
+                    WHERE id=?
+                  ");
+                  $q3->bind_param("ssdisii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId, $upe_id);
+                } else {
+                  $q3 = $conn->prepare("
+                    UPDATE user_plan_exercises
+                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW(), updated_by=NULL
+                    WHERE id=?
+                  ");
+                  $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+                }
+              } elseif ($HAS_UPE_UPDATED_AT) {
+                $q3 = $conn->prepare("
+                  UPDATE user_plan_exercises
+                  SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW()
+                  WHERE id=?
+                ");
+                $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+              } elseif ($HAS_UPE_UPDATED_BY) {
+                if ($updaterId) {
+                  $q3 = $conn->prepare("
+                    UPDATE user_plan_exercises
+                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_by=?
+                    WHERE id=?
+                  ");
+                  $q3->bind_param("ssdisii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId, $upe_id);
+                } else {
+                  $q3 = $conn->prepare("
+                    UPDATE user_plan_exercises
+                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_by=NULL
+                    WHERE id=?
+                  ");
+                  $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+                }
+              } else {
+                $q3 = $conn->prepare("
+                  UPDATE user_plan_exercises
+                  SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?
+                  WHERE id=?
+                ");
+                $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+              }
+              if (!$q3) throw new Exception('Failed to prepare update.');
+              if (!$q3->execute()) {
+                $err = $q3->error;
+                $q3->close();
+                throw new Exception('Failed to update settings. '.$err);
+              }
+              $q3->close();
+            } else {
+              if ($HAS_UPE_UPDATED_AT && $HAS_UPE_UPDATED_BY) {
+                if ($updaterId) {
+                  $q4 = $conn->prepare("
+                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+                  ");
+                  $q4->bind_param("iissdisi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId);
+                } else {
+                  $q4 = $conn->prepare("
+                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NULL)
+                  ");
+                  $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+                }
+              } elseif ($HAS_UPE_UPDATED_AT) {
+                $q4 = $conn->prepare("
+                  INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                ");
+                $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+              } elseif ($HAS_UPE_UPDATED_BY) {
+                if ($updaterId) {
+                  $q4 = $conn->prepare("
+                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  ");
+                  $q4->bind_param("iissdisi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId);
+                } else {
+                  $q4 = $conn->prepare("
+                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+                  ");
+                  $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+                }
+              } else {
+                $q4 = $conn->prepare("
+                  INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                ");
+                $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+              }
+              if (!$q4) throw new Exception('Failed to prepare save.');
+              if (!$q4->execute()) {
+                $err = $q4->error;
+                $q4->close();
+                throw new Exception('Failed to save settings. '.$err);
+              }
+              $upe_id = (int)$q4->insert_id;
+              $q4->close();
+            }
+
+            $metaUpdatedAt = null;
+            $metaUpdatedById = null;
+            if ($upe_id && ($HAS_UPE_UPDATED_AT || $HAS_UPE_UPDATED_BY)) {
+              $cols = [];
+              if ($HAS_UPE_UPDATED_AT) $cols[] = 'updated_at';
+              if ($HAS_UPE_UPDATED_BY) $cols[] = 'updated_by';
+              $selectCols = implode(', ', $cols);
+              if ($selectCols !== '') {
+                $metaStmt = $conn->prepare("SELECT {$selectCols} FROM user_plan_exercises WHERE id=? LIMIT 1");
+                if ($metaStmt) {
+                  $metaStmt->bind_param("i", $upe_id);
+                  if ($metaStmt->execute()) {
+                    $metaRes = $metaStmt->get_result();
+                    if ($metaRes && ($metaRow = $metaRes->fetch_assoc())) {
+                      if ($HAS_UPE_UPDATED_AT && array_key_exists('updated_at', $metaRow)) {
+                        $metaUpdatedAt = $metaRow['updated_at'] ?? null;
+                      }
+                      if ($HAS_UPE_UPDATED_BY && array_key_exists('updated_by', $metaRow)) {
+                        $metaUpdatedById = isset($metaRow['updated_by']) ? (int)$metaRow['updated_by'] : null;
+                      }
+                    }
+                  }
+                  $metaStmt->close();
+                }
+              }
+            }
+
+            $editedAtDisp = ($HAS_UPE_UPDATED_AT && $metaUpdatedAt) ? format_us_datetime($metaUpdatedAt) : null;
+            $editedByName = ($HAS_UPE_UPDATED_BY && $metaUpdatedById) ? user_display_name($conn, $metaUpdatedById) : null;
+
+            header('Content-Type: application/json');
+            echo json_encode([
+              'ok' => true,
+              'data' => [
+                'sets' => $setsVal,
+                'reps' => $repsVal,
+                'weight' => $wtVal,
+                'duration' => $durVal,
+                'notes' => $notesVal,
+                'updated_at' => $editedAtDisp,
+                'updated_by_name' => $editedByName
+              ]
+            ]);
+            exit;
+          } catch (Throwable $e) {
+            header('Content-Type: application/json');
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+            exit;
           }
         }
-
-        $editedAtDisp = ($HAS_UPE_UPDATED_AT && $metaUpdatedAt) ? format_us_datetime($metaUpdatedAt) : null;
-        $editedByName = ($HAS_UPE_UPDATED_BY && $metaUpdatedById) ? user_display_name($conn, $metaUpdatedById) : null;
-
-        header('Content-Type: application/json');
-        echo json_encode([
-          'ok' => true,
-          'data' => [
-            'sets' => $setsVal,
-            'reps' => $repsVal,
-            'weight' => $wtVal,
-            'duration' => $durVal,
-            'notes' => $notesVal,
-            'updated_at' => $editedAtDisp,
-            'updated_by_name' => $editedByName
-          ]
-        ]);
-        exit;
-      }
 
       // Assign a plan to a user (AJAX, no navigation)
       if ($action === 'assign_plan_to_user') {
@@ -522,10 +602,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
 
-// Ensure column exists before queries
-ensure_is_active_column($conn);
-ensure_user_plan_exercise_tracking_columns($conn);
-
 // ---------- Load clients (split active / inactive) ----------
 $active = []; $inactive = [];
 $q = "
@@ -624,9 +700,6 @@ $HAS_EX_CREATED_AT = column_exists($conn, 'exercises', 'created_at');
 $HAS_EX_CREATED_BY = column_exists($conn, 'exercises', 'created_by');
 $HAS_EX_UPDATED_AT = column_exists($conn, 'exercises', 'updated_at');
 $HAS_EX_UPDATED_BY = column_exists($conn, 'exercises', 'updated_by');
-$HAS_UPE_UPDATED_AT = column_exists($conn, 'user_plan_exercises', 'updated_at');
-$HAS_UPE_UPDATED_BY = column_exists($conn, 'user_plan_exercises', 'updated_by');
-
 $plansByUser = [];
 $sqlPlans = "
   SELECT
