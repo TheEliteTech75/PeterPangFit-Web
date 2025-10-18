@@ -10,6 +10,17 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function is_trainer_admin($role){ return in_array($role ?? 'guest', ['trainer','admin'], true); }
 if (!is_trainer_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
 
+$HAS_UPE_UPDATED_AT = false;
+$HAS_UPE_UPDATED_BY = false;
+if ($resCols = $conn->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_plan_exercises' AND COLUMN_NAME IN ('updated_at','updated_by')")) {
+  while ($col = $resCols->fetch_assoc()) {
+    $name = strtolower((string)($col['COLUMN_NAME'] ?? ''));
+    if ($name === 'updated_at') $HAS_UPE_UPDATED_AT = true;
+    if ($name === 'updated_by') $HAS_UPE_UPDATED_BY = true;
+  }
+  $resCols->close();
+}
+
 // --- Ensure is_active exists ---
 function ensure_is_active_column(mysqli $conn): void {
   $sql = "SELECT COUNT(*) AS c
@@ -213,6 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       // Save per-client exercise settings (AJAX) — NOW also supports user_notes
       if ($action === 'save_user_exercise') {
+        global $HAS_UPE_UPDATED_AT, $HAS_UPE_UPDATED_BY, $USER_ID;
         if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
           throw new Exception('You do not have permission to edit exercise settings.');
         }
@@ -253,25 +265,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($row = $res2->fetch_assoc()) $upe_id = (int)$row['id'];
         $q2->close();
 
+        $updatedByUser = (int)($USER_ID ?? 0);
+
         if ($upe_id) {
-          $q3 = $conn->prepare("
-            UPDATE user_plan_exercises
-            SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?
-            WHERE id=?
-          ");
-          // sets(s), reps(s), weight(d), duration(i), user_notes(s), id(i)
-          $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
-          if (!$q3->execute()) { $q3->close(); throw new Exception('Failed to update settings.'); }
+          if ($HAS_UPE_UPDATED_AT && $HAS_UPE_UPDATED_BY) {
+            $q3 = $conn->prepare("
+              UPDATE user_plan_exercises
+              SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW(), updated_by=?
+              WHERE id=?
+            ");
+            $q3->bind_param("ssdisii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updatedByUser, $upe_id);
+          } elseif ($HAS_UPE_UPDATED_AT) {
+            $q3 = $conn->prepare("
+              UPDATE user_plan_exercises
+              SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW()
+              WHERE id=?
+            ");
+            $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+          } elseif ($HAS_UPE_UPDATED_BY) {
+            $q3 = $conn->prepare("
+              UPDATE user_plan_exercises
+              SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_by=?
+              WHERE id=?
+            ");
+            $q3->bind_param("ssdisii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updatedByUser, $upe_id);
+          } else {
+            $q3 = $conn->prepare("
+              UPDATE user_plan_exercises
+              SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?
+              WHERE id=?
+            ");
+            $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+          }
+          if (!$q3 || !$q3->execute()) { $q3?->close(); throw new Exception('Failed to update settings.'); }
           $q3->close();
         } else {
-          $q4 = $conn->prepare("
-            INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          ");
-          // up_id(i), exercise_id(i), sets(s), reps(s), weight(d), duration(i), user_notes(s)
-          $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
-          if (!$q4->execute()) { $q4->close(); throw new Exception('Failed to save settings.'); }
+          if ($HAS_UPE_UPDATED_AT && $HAS_UPE_UPDATED_BY) {
+            $q4 = $conn->prepare("
+              INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at, updated_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+            ");
+            $q4->bind_param("iissdisi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updatedByUser);
+          } elseif ($HAS_UPE_UPDATED_AT) {
+            $q4 = $conn->prepare("
+              INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+            ");
+            $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+          } elseif ($HAS_UPE_UPDATED_BY) {
+            $q4 = $conn->prepare("
+              INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $q4->bind_param("iissdisi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updatedByUser);
+          } else {
+            $q4 = $conn->prepare("
+              INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+            $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+          }
+          if (!$q4 || !$q4->execute()) { $q4?->close(); throw new Exception('Failed to save settings.'); }
+          $upe_id = (int)$conn->insert_id;
           $q4->close();
+        }
+
+        $updatedAtRaw = null;
+        $updatedAtFmt = null;
+        $updatedById = null;
+        $updatedByName = null;
+
+        if (($HAS_UPE_UPDATED_AT || $HAS_UPE_UPDATED_BY) && $upe_id) {
+          $selSql = "SELECT "
+            . ($HAS_UPE_UPDATED_AT ? "updated_at" : "NULL AS updated_at")
+            . ", "
+            . ($HAS_UPE_UPDATED_BY ? "updated_by" : "NULL AS updated_by")
+            . " FROM user_plan_exercises WHERE id=? LIMIT 1";
+          if ($sel = $conn->prepare($selSql)) {
+            $sel->bind_param("i", $upe_id);
+            $sel->execute();
+            $selRes = $sel->get_result();
+            if ($meta = $selRes?->fetch_assoc()) {
+              if ($HAS_UPE_UPDATED_AT && !empty($meta['updated_at'])) {
+                $updatedAtRaw = (string)$meta['updated_at'];
+                $updatedAtFmt = format_us_datetime($updatedAtRaw);
+              }
+              if ($HAS_UPE_UPDATED_BY && !empty($meta['updated_by'])) {
+                $updatedById = (int)$meta['updated_by'];
+                $updatedByName = user_display_name($conn, $updatedById);
+              }
+            }
+            $sel->close();
+          }
         }
 
         header('Content-Type: application/json');
@@ -282,7 +367,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'reps' => $repsVal,
             'weight' => $wtVal,
             'duration' => $durVal,
-            'notes' => $notesVal
+            'notes' => $notesVal,
+            'updated_at' => $updatedAtRaw,
+            'updated_at_fmt' => $updatedAtFmt,
+            'updated_by_id' => $updatedById,
+            'updated_by_name' => $updatedByName
           ]
         ]);
         exit;
@@ -569,7 +658,9 @@ $sqlUserEx = "
     upe.reps,
     upe.weight_lbs AS weight,
     upe.duration_seconds AS duration,
-    upe.user_notes AS notes
+    upe.user_notes AS notes,
+    " . ($HAS_UPE_UPDATED_AT ? "upe.updated_at" : "NULL AS updated_at") . ",
+    " . ($HAS_UPE_UPDATED_BY ? "upe.updated_by" : "NULL AS updated_by") . "
   FROM user_plans up
   JOIN user_plan_exercises upe ON upe.user_plan_id = up.id
 ";
@@ -594,12 +685,24 @@ if ($rs = $conn->query($sqlUserEx)) {
     $ex = (int)$r['exercise_id'];
     if (!isset($userExByUserPlan[$u])) $userExByUserPlan[$u] = [];
     if (!isset($userExByUserPlan[$u][$p])) $userExByUserPlan[$u][$p] = [];
+    $updatedAtRaw = $HAS_UPE_UPDATED_AT ? ($r['updated_at'] ?? null) : null;
+    $updatedAtFmt = (!empty($updatedAtRaw)) ? format_us_datetime($updatedAtRaw) : null;
+    $updatedById  = $HAS_UPE_UPDATED_BY ? (int)($r['updated_by'] ?? 0) : 0;
+    $updatedByName = null;
+    if ($HAS_UPE_UPDATED_BY && $updatedById > 0) {
+      $updatedByName = user_display_name($conn, $updatedById);
+    }
+
     $userExByUserPlan[$u][$p][$ex] = [
-      'sets'     => isset($r['sets'])     ? (string)$r['sets']     : null,
-      'reps'     => isset($r['reps'])     ? (string)$r['reps']     : null,
-      'weight'   => isset($r['weight'])   ? (string)$r['weight']   : null,
-      'duration' => isset($r['duration']) ? (string)$r['duration'] : null,
-      'notes'    => isset($r['notes'])    ? (string)$r['notes']    : null,
+      'sets'            => isset($r['sets'])     ? (string)$r['sets']     : null,
+      'reps'            => isset($r['reps'])     ? (string)$r['reps']     : null,
+      'weight'          => isset($r['weight'])   ? (string)$r['weight']   : null,
+      'duration'        => isset($r['duration']) ? (string)$r['duration'] : null,
+      'notes'           => isset($r['notes'])    ? (string)$r['notes']    : null,
+      'updated_at'      => $updatedAtRaw ? (string)$updatedAtRaw : null,
+      'updated_at_fmt'  => $updatedAtFmt,
+      'updated_by_id'   => $updatedById ?: null,
+      'updated_by_name' => $updatedByName
     ];
   }
 }
@@ -1213,6 +1316,10 @@ function renderClientExpansion(uid, body){
           const userNoteRaw = (per && per.notes != null) ? String(per.notes) : '';
           const showNotes   = userNoteRaw.replace(/\r\n/g, '\n').trim() || '—';
 
+          const editedRaw = per?.updated_at_fmt || per?.updated_at || '';
+          const editedDisplay = editedRaw ? escapeHtml(String(editedRaw)) : '—';
+          const editedByDisplay = per?.updated_by_name ? escapeHtml(String(per.updated_by_name)) : '—';
+
           exHtml += `
             <tr class="mini-ex-row" data-ex-id="${ex.ex_id}" data-user-id="${uid}" data-plan-id="${p.id}">
               <td style="padding:8px 10px">${ex.ex_id}</td>
@@ -1223,8 +1330,8 @@ function renderClientExpansion(uid, body){
               <td style="padding:8px 10px" data-cell="reps"      class="editable">${reps}</td>
               <td style="padding:8px 10px" data-cell="weight"    class="editable">${wt}</td>
               <td style="padding:8px 10px" data-cell="duration"  class="editable">${dur}</td>
-              <td class="muted" style="padding:8px 10px">${ex.updated_at ? escapeHtml(ex.updated_at) : '—'}</td>
-              <td class="muted" style="padding:8px 10px">${escapeHtml(ex.updated_by_name || '—')}</td>
+              <td class="muted" style="padding:8px 10px" data-cell="edited">${editedDisplay}</td>
+              <td class="muted" style="padding:8px 10px" data-cell="edited_by">${editedByDisplay}</td>
               <td style="padding:8px 10px" data-cell="actions">
                 <button class="btn small" type="button" data-ex-edit>Edit</button>
               </td>
@@ -1463,6 +1570,32 @@ async function saveRowEdit(tr){
     tr.querySelector('[data-cell="duration"]').textContent = setDisp(json.data.duration);
     tr.querySelector('[data-cell="notes"]').textContent = setDisp(json.data.notes);
 
+    const editedCell = tr.querySelector('[data-cell="edited"]');
+    const editedByCell = tr.querySelector('[data-cell="edited_by"]');
+    if (editedCell) {
+      const editedText = json.data.updated_at_fmt || json.data.updated_at || '—';
+      editedCell.textContent = editedText ? editedText : '—';
+    }
+    if (editedByCell) {
+      const editorText = json.data.updated_by_name || '—';
+      editedByCell.textContent = editorText ? editorText : '—';
+    }
+
+    window.__USER_EX = window.__USER_EX || {};
+    const userEntry = window.__USER_EX[uid] = window.__USER_EX[uid] || {};
+    const planEntry = userEntry[planId] = userEntry[planId] || {};
+    planEntry[exId] = {
+      sets: json.data.sets ?? null,
+      reps: json.data.reps ?? null,
+      weight: json.data.weight ?? null,
+      duration: json.data.duration ?? null,
+      notes: json.data.notes ?? null,
+      updated_at: json.data.updated_at ?? null,
+      updated_at_fmt: json.data.updated_at_fmt ?? null,
+      updated_by_id: json.data.updated_by_id ?? null,
+      updated_by_name: json.data.updated_by_name ?? null
+    };
+
     actionsCell.innerHTML = '<button class="btn small" type="button" data-ex-edit>Edit</button>';
     tr.dataset.editing = '0';
     delete tr._origValues;
@@ -1607,8 +1740,8 @@ document.getElementById('aeAdd')?.addEventListener('click', async ()=>{
           <td style="padding:8px 10px" data-cell="reps"     class="editable">—</td>
           <td style="padding:8px 10px" data-cell="weight"   class="editable">—</td>
           <td style="padding:8px 10px" data-cell="duration" class="editable">—</td>
-          <td style="padding:8px 10px" class="muted">—</td>
-          <td style="padding:8px 10px" class="muted">—</td>
+          <td style="padding:8px 10px" class="muted" data-cell="edited">—</td>
+          <td style="padding:8px 10px" class="muted" data-cell="edited_by">—</td>
           <td style="padding:8px 10px" data-cell="actions">
             <button class="btn small" type="button" data-ex-edit>Edit</button>
           </td>
