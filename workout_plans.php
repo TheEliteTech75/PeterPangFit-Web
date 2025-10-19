@@ -4,6 +4,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/logs.php';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function is_trainer_admin($role){ return in_array($role ?? 'guest', ['trainer','admin'], true); }
@@ -21,6 +22,34 @@ function parse_weight_to_float($input) {
   if ($s === '') return null;
   if (!preg_match('/^\d+(\.\d+)?$/', $s)) return null;
   return (float)$s;
+}
+
+function ppf_normalize_for_diff($value) {
+  if ($value === '' || $value === null) return null;
+  if (is_string($value)) {
+    $trimmed = trim($value);
+    return $trimmed === '' ? null : $trimmed;
+  }
+  if (is_numeric($value)) {
+    return $value + 0;
+  }
+  if (is_array($value)) {
+    return array_values($value);
+  }
+  return $value;
+}
+
+function ppf_changed_fields(array $before, array $after): array {
+  $out = [];
+  $keys = array_unique(array_merge(array_keys($before), array_keys($after)));
+  foreach ($keys as $key) {
+    $b = ppf_normalize_for_diff($before[$key] ?? null);
+    $a = ppf_normalize_for_diff($after[$key] ?? null);
+    if ($b !== $a) {
+      $out[$key] = ['from' => $b, 'to' => $a];
+    }
+  }
+  return $out;
 }
 
 if (!is_trainer_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
@@ -106,6 +135,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $stmt->close();
         }
         $conn->commit();
+        if (function_exists('ppf_log')) {
+          $details = json_encode([
+            'name' => $title,
+            'exercise_ids' => $exercise_ids,
+          ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+          @ppf_log($conn, null, null, null, 'workout_plan_created', 'workout_plan', (string)$plan_id, $details ?: '');
+        }
         header('Location: workout_plans.php?created=1'); exit;
       }
 
@@ -116,6 +152,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $raw     = $_POST['selected_exercises'] ?? [];
         if (!is_array($raw)) $raw = [$raw];
         $exercise_ids = array_values(array_filter(array_map('intval', $raw), fn($n)=>$n>0));
+
+        $plan_before_name = null;
+        $plan_before_exercises = [];
+        if ($stmt = $conn->prepare("SELECT name FROM workout_plans WHERE id = ?")) {
+          $stmt->bind_param("i", $plan_id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $plan_before_name = $row['name'] ?? null;
+            }
+          }
+          $stmt->close();
+        }
+        if ($stmt = $conn->prepare("SELECT exercise_id FROM plan_exercises WHERE plan_id = ? ORDER BY position ASC, exercise_id ASC")) {
+          $stmt->bind_param("i", $plan_id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            while ($row = $res->fetch_assoc()) {
+              $plan_before_exercises[] = (int)$row['exercise_id'];
+            }
+          }
+          $stmt->close();
+        }
 
         // Robust fallback: parse "selected_order" (comma-separated "1,2,3")
         if (!$exercise_ids) {
@@ -159,6 +218,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $conn->commit();
+        if (function_exists('ppf_log')) {
+          $details = json_encode([
+            'plan_id' => $plan_id,
+            'changes' => ppf_changed_fields(
+              [
+                'name' => $plan_before_name,
+                'exercise_ids' => $plan_before_exercises,
+              ],
+              [
+                'name' => $title,
+                'exercise_ids' => $exercise_ids,
+              ]
+            ),
+          ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+          @ppf_log($conn, null, null, null, 'workout_plan_updated', 'workout_plan', (string)$plan_id, $details ?: '');
+        }
         header('Location: workout_plans.php?updated=1'); exit;
       }
 
@@ -166,6 +241,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($action === 'delete_plan_modal') {
         $plan_id = (int)($_POST['plan_id'] ?? 0);
         if ($plan_id <= 0) throw new Exception('Invalid plan.');
+        $plan_delete_name = null;
+        $plan_delete_exercise_count = 0;
+        $plan_delete_user_count = 0;
+        if ($stmt = $conn->prepare("SELECT name FROM workout_plans WHERE id = ?")) {
+          $stmt->bind_param("i", $plan_id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $plan_delete_name = $row['name'] ?? null;
+            }
+          }
+          $stmt->close();
+        }
+        if ($stmt = $conn->prepare("SELECT COUNT(*) AS c FROM plan_exercises WHERE plan_id = ?")) {
+          $stmt->bind_param("i", $plan_id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $plan_delete_exercise_count = (int)($row['c'] ?? 0);
+            }
+          }
+          $stmt->close();
+        }
+        if ($stmt = $conn->prepare("SELECT COUNT(*) AS c FROM user_plans WHERE plan_id = ?")) {
+          $stmt->bind_param("i", $plan_id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $plan_delete_user_count = (int)($row['c'] ?? 0);
+            }
+          }
+          $stmt->close();
+        }
         $conn->begin_transaction();
         $stmt = $conn->prepare("DELETE FROM user_plans WHERE plan_id = ?");
         $stmt->bind_param("i", $plan_id); $stmt->execute(); $stmt->close();
@@ -176,6 +284,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$stmt->execute()) { $conn->rollback(); throw new Exception('Failed to delete plan.'); }
         $stmt->close();
         $conn->commit();
+        if (function_exists('ppf_log')) {
+          $details = json_encode([
+            'plan_id' => $plan_id,
+            'name' => $plan_delete_name,
+            'exercise_count' => $plan_delete_exercise_count,
+            'assigned_user_count' => $plan_delete_user_count,
+          ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+          @ppf_log($conn, null, null, null, 'workout_plan_deleted', 'workout_plan', (string)$plan_id, $details ?: '');
+        }
         header('Location: workout_plans.php?deleted=1'); exit;
       }
 

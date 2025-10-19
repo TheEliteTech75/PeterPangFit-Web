@@ -5,10 +5,36 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/ppf_lockout.php'; // unlock action
+require_once __DIR__ . '/logs.php';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function is_trainer_admin($role){ return in_array($role ?? 'guest', ['trainer','admin'], true); }
 if (!is_trainer_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
+
+function ppf_normalize_for_diff($value) {
+  if ($value === '' || $value === null) return null;
+  if (is_string($value)) {
+    $trimmed = trim($value);
+    return $trimmed === '' ? null : $trimmed;
+  }
+  if (is_numeric($value)) {
+    return $value + 0;
+  }
+  return $value;
+}
+
+function ppf_changed_fields(array $before, array $after): array {
+  $out = [];
+  $keys = array_unique(array_merge(array_keys($before), array_keys($after)));
+  foreach ($keys as $key) {
+    $b = ppf_normalize_for_diff($before[$key] ?? null);
+    $a = ppf_normalize_for_diff($after[$key] ?? null);
+    if ($b !== $a) {
+      $out[$key] = ['from' => $b, 'to' => $a];
+    }
+  }
+  return $out;
+}
 
 // --- Ensure is_active exists ---
 function ensure_is_active_column(mysqli $conn): void {
@@ -49,6 +75,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
       if ($action === 'update_client') {
         if ($uid <= 0) throw new Exception('Invalid client.');
+        $beforeRow = [];
+        if ($stmt = $conn->prepare("SELECT email, phone, birthdate, gender, first_name, middle_name, last_name, height_ft, height_in, weight_lbs FROM users WHERE id = ?")) {
+          $stmt->bind_param("i", $uid);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) $beforeRow = $row;
+          }
+          $stmt->close();
+        }
         $email      = trim($_POST['email'] ?? '');
         $phone      = trim($_POST['phone'] ?? '');
         $birthdate  = trim($_POST['birthdate'] ?? '');
@@ -95,6 +130,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->close();
 
         $flash = 'Client updated.'; $flash_type = 'ok';
+        $afterRow = [
+          'email' => $email,
+          'phone' => $phone,
+          'birthdate' => $bdate,
+          'gender' => $gend,
+          'first_name' => $fn,
+          'middle_name' => $mn,
+          'last_name' => $ln,
+          'height_ft' => $hf,
+          'height_in' => $hi,
+          'weight_lbs' => $wl,
+        ];
+        $changes = ppf_changed_fields($beforeRow, $afterRow);
+        $details = json_encode([
+          'target_user_id' => $uid,
+          'changed' => $changes,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (function_exists('ppf_log')) {
+          @ppf_log($conn, null, null, null, 'client_profile_updated', 'user', (string)$uid, $details ?: '');
+        }
       }
 
       // Append one or more exercises to an existing plan (AJAX, no navigation)
@@ -253,6 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($row = $res2->fetch_assoc()) $upe_id = (int)$row['id'];
         $q2->close();
 
+        $mode = 'update';
         if ($upe_id) {
           $q3 = $conn->prepare("
             UPDATE user_plan_exercises
@@ -264,6 +320,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if (!$q3->execute()) { $q3->close(); throw new Exception('Failed to update settings.'); }
           $q3->close();
         } else {
+          $mode = 'insert';
           $q4 = $conn->prepare("
             INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -271,7 +328,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           // up_id(i), exercise_id(i), sets(s), reps(s), weight(d), duration(i), user_notes(s)
           $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
           if (!$q4->execute()) { $q4->close(); throw new Exception('Failed to save settings.'); }
+          $upe_id = (int)$q4->insert_id;
           $q4->close();
+        }
+
+        if (function_exists('ppf_log')) {
+          $details = json_encode([
+            'user_id' => $uid,
+            'plan_id' => $plan_id,
+            'exercise_id' => $exercise_id,
+            'user_plan_id' => $up_id,
+            'mode' => $mode,
+            'values' => [
+              'sets' => $setsVal,
+              'reps' => $repsVal,
+              'weight_lbs' => $wtVal,
+              'duration_seconds' => $durVal,
+              'user_notes' => $notesVal,
+            ],
+          ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+          @ppf_log($conn, null, null, null, 'user_plan_exercise_saved', 'user_plan_exercise', $upe_id ? (string)$upe_id : null, $details ?: '');
         }
 
         header('Content-Type: application/json');

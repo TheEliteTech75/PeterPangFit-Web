@@ -9,6 +9,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/logs.php';
 
 function is_admin($role){ return ($role ?? 'guest') === 'admin'; }
 if (!is_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
@@ -21,6 +22,31 @@ function generate_temp_password($length = 12){
   $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
   $out = '';
   for ($i=0; $i<$length; $i++) { $out .= $alphabet[random_int(0, strlen($alphabet)-1)]; }
+  return $out;
+}
+
+function ppf_normalize_for_diff($value) {
+  if ($value === '' || $value === null) return null;
+  if (is_string($value)) {
+    $trimmed = trim($value);
+    return $trimmed === '' ? null : $trimmed;
+  }
+  if (is_numeric($value)) {
+    return $value + 0;
+  }
+  return $value;
+}
+
+function ppf_changed_fields(array $before, array $after): array {
+  $out = [];
+  $keys = array_unique(array_merge(array_keys($before), array_keys($after)));
+  foreach ($keys as $key) {
+    $b = ppf_normalize_for_diff($before[$key] ?? null);
+    $a = ppf_normalize_for_diff($after[$key] ?? null);
+    if ($b !== $a) {
+      $out[$key] = ['from' => $b, 'to' => $a];
+    }
+  }
   return $out;
 }
 
@@ -123,6 +149,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Inline Save (when Edit mode is active)
       if ($action === 'update_user') {
         if ($user_id <= 0) throw new Exception('Invalid user to update.');
+        $beforeRow = [];
+        if ($stmt = $conn->prepare("SELECT email, phone, birthdate, gender, first_name, middle_name, last_name FROM users WHERE id = ?")) {
+          $stmt->bind_param("i", $user_id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $beforeRow = $row;
+            }
+          }
+          $stmt->close();
+        }
         $email      = trim($_POST['email'] ?? '');
         $phone      = trim($_POST['phone'] ?? '');
         $birthdate  = trim($_POST['birthdate'] ?? '');
@@ -152,6 +189,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bind_param("sssssssi", $email, $phone, $bdate, $gend, $fn, $mn, $ln, $user_id);
         if (!$stmt->execute()) throw new Exception('Failed to update user.');
         $stmt->close();
+
+        $afterRow = [
+          'email' => $email,
+          'phone' => $phone,
+          'birthdate' => $bdate,
+          'gender' => $gend,
+          'first_name' => $fn,
+          'middle_name' => $mn,
+          'last_name' => $ln,
+        ];
+        $changes = ppf_changed_fields($beforeRow, $afterRow);
+        $details = json_encode([
+          'target_user_id' => $user_id,
+          'changed' => $changes,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (function_exists('ppf_log')) {
+          @ppf_log($conn, null, null, null, 'admin_user_profile_updated', 'user', (string)$user_id, $details ?: '');
+        }
 
         header('Location: users.php?updated=1'); // PRG: collapse edit mode
         exit;
