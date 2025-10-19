@@ -55,12 +55,78 @@ function ensure_user_plan_exercise_tracking_columns(mysqli $conn): void {
 function ppf_parse_duration_to_seconds($input): ?int {
   $s = trim((string)$input);
   if ($s === '') return null;
-  if (preg_match('/^\d+:\d{1,2}$/', $s)) {
-    [$m, $sec] = array_map('intval', explode(':', $s, 2));
-    return ($m * 60) + $sec;
+
+  $lower = strtolower($s);
+
+  // Handle mm:ss style values (e.g. 1:30, 01:45)
+  if (preg_match('/^(\d+):(\d{1,2})$/', $lower, $m)) {
+    $minutes = (int)$m[1];
+    $seconds = (int)$m[2];
+    return ($minutes * 60) + $seconds;
   }
-  if (ctype_digit($s)) return (int)$s;
+
+  // Handle zero-padded mmss (e.g. 0045, 0100)
+  if (ctype_digit($s)) {
+    if (strlen($s) === 4 && $s[0] === '0') {
+      $minutes = (int)substr($s, 0, 2);
+      $seconds = (int)substr($s, 2, 2);
+      return ($minutes * 60) + $seconds;
+    }
+    return (int)$s;
+  }
+
+  // Handle expressions like "1 min 30 sec", "45seconds", "1minute", etc.
+  $normalized = preg_replace('/[^0-9a-z]+/i', ' ', $lower);
+  $normalized = trim(preg_replace('/\s+/', ' ', $normalized));
+  if ($normalized === '') return null;
+
+  if (preg_match_all('/(\d+)\s*(hours?|hrs?|h|minutes?|mins?|min|m|seconds?|secs?|sec|s)/', $normalized, $matches, PREG_SET_ORDER)) {
+    $total = 0;
+    foreach ($matches as $match) {
+      $value = (int)$match[1];
+      $unit = $match[2];
+      if (preg_match('/^h/', $unit)) {
+        $total += $value * 3600;
+      } elseif (preg_match('/^m/', $unit) || preg_match('/min/', $unit)) {
+        $total += $value * 60;
+      } else {
+        $total += $value;
+      }
+    }
+    return $total;
+  }
+
   return null;
+}
+
+function ppf_trim_number(float $value, int $precision = 2): string {
+  $formatted = number_format($value, $precision, '.', '');
+  $formatted = rtrim(rtrim($formatted, '0'), '.');
+  if ($formatted === '') $formatted = '0';
+  return $formatted;
+}
+
+function ppf_format_weight_lbs($value): ?string {
+  if ($value === null || $value === '') return null;
+  if (!is_numeric($value)) return null;
+  $num = (float)$value;
+  return ppf_trim_number($num) . ' lbs';
+}
+
+function ppf_format_duration_display($seconds): ?string {
+  if ($seconds === null || $seconds === '') return null;
+  $total = (int)$seconds;
+  if ($total < 0) $total = 0;
+  $minutes = intdiv($total, 60);
+  $secs = $total % 60;
+  $parts = [];
+  if ($minutes > 0) {
+    $parts[] = $minutes . ' min' . ($minutes === 1 ? '' : 's');
+  }
+  if ($secs > 0 || !$parts) {
+    $parts[] = $secs . ' sec' . ($secs === 1 ? '' : 's');
+  }
+  return implode(' ', $parts);
 }
 
 function ppf_parse_weight_to_float($input): ?float {
@@ -458,14 +524,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $editedAtDisp = ($HAS_UPE_UPDATED_AT && $metaUpdatedAt) ? format_us_datetime($metaUpdatedAt) : null;
             $editedByName = ($HAS_UPE_UPDATED_BY && $metaUpdatedById) ? user_display_name($conn, $metaUpdatedById) : null;
 
+            $weightDisplay = $wtVal !== null ? ppf_format_weight_lbs($wtVal) : null;
+            $durationDisplay = $durVal !== null ? ppf_format_duration_display($durVal) : null;
+
             header('Content-Type: application/json');
             echo json_encode([
               'ok' => true,
               'data' => [
                 'sets' => $setsVal,
                 'reps' => $repsVal,
-                'weight' => $wtVal,
-                'duration' => $durVal,
+                'weight_value' => $wtVal,
+                'weight_display' => $weightDisplay,
+                'duration_seconds' => $durVal,
+                'duration_display' => $durationDisplay,
                 'notes' => $notesVal,
                 'updated_at' => $editedAtDisp,
                 'updated_by_name' => $editedByName
@@ -755,8 +826,8 @@ $sqlUserEx = "
     upe.exercise_id,
     upe.sets,
     upe.reps,
-    upe.weight_lbs AS weight,
-    upe.duration_seconds AS duration,
+    upe.weight_lbs AS weight_value,
+    upe.duration_seconds AS duration_seconds,
     upe.user_notes AS notes,
     " . ($HAS_UPE_UPDATED_AT ? "upe.updated_at" : "NULL AS updated_at") . ",
     " . ($HAS_UPE_UPDATED_BY ? "upe.updated_by" : "NULL AS updated_by") . "
@@ -793,14 +864,21 @@ if ($rs = $conn->query($sqlUserEx)) {
       $updatedByName = user_display_name($conn, (int)$r['updated_by']);
     }
 
+    $weightValue = isset($r['weight_value']) && $r['weight_value'] !== null ? (float)$r['weight_value'] : null;
+    $weightDisplay = $weightValue !== null ? ppf_format_weight_lbs($weightValue) : null;
+    $durationSeconds = isset($r['duration_seconds']) && $r['duration_seconds'] !== null ? (int)$r['duration_seconds'] : null;
+    $durationDisplay = $durationSeconds !== null ? ppf_format_duration_display($durationSeconds) : null;
+
     $userExByUserPlan[$u][$p][$ex] = [
-      'sets'            => isset($r['sets'])     ? (string)$r['sets']     : null,
-      'reps'            => isset($r['reps'])     ? (string)$r['reps']     : null,
-      'weight'          => isset($r['weight'])   ? (string)$r['weight']   : null,
-      'duration'        => isset($r['duration']) ? (string)$r['duration'] : null,
-      'notes'           => isset($r['notes'])    ? (string)$r['notes']    : null,
-      'updated_at'      => $updatedAtDisp,
-      'updated_by_name' => $updatedByName,
+      'sets'             => isset($r['sets'])     ? (string)$r['sets']     : null,
+      'reps'             => isset($r['reps'])     ? (string)$r['reps']     : null,
+      'weight_value'     => $weightValue,
+      'weight_display'   => $weightDisplay,
+      'duration_seconds' => $durationSeconds,
+      'duration_display' => $durationDisplay,
+      'notes'            => isset($r['notes'])    ? (string)$r['notes']    : null,
+      'updated_at'       => $updatedAtDisp,
+      'updated_by_name'  => $updatedByName,
     ];
   }
 }
@@ -1147,7 +1225,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .section-title { color:#fff; font-weight:600; margin-bottom:6px; }
   .empty-state { color:#f87171; font-weight:500; }
 
-  .mini-ex-row { cursor:pointer; }
+  .mini-ex-row { cursor:default; }
+  .mini-ex-link { color:inherit; text-decoration:underline; }
+  .mini-ex-link:hover { text-decoration:underline; opacity:0.85; }
   .mini-ex-row:hover { background:#141a25; }
   .mini-ex-row > td { transition: background .15s ease; }
   .mini-ex-row:hover > td { background:#141a25; }
@@ -1391,10 +1471,10 @@ function renderClientExpansion(uid, body){
                 <th style="padding:8px 10px">Media</th>
                 <th style="padding:8px 10px">Sets</th>
                 <th style="padding:8px 10px">Reps</th>
-                <th style="padding:8px 10px">Weight (lbs)</th>
-                <th style="padding:8px 10px">Duration (sec)</th>
-                <th style="padding:8px 10px">Edited</th>
-                <th style="padding:8px 10px">Edited By</th>
+                <th style="padding:8px 10px">Weight</th>
+                <th style="padding:8px 10px">Duration</th>
+                <th style="padding:8px 10px">Updated</th>
+                <th style="padding:8px 10px">Updated By</th>
                 <th style="padding:8px 10px">Actions</th>
               </tr>
             </thead>
@@ -1407,8 +1487,10 @@ function renderClientExpansion(uid, body){
           const per = (userEx[p.id] && userEx[p.id][ex.ex_id]) || {};
           const sets = per?.sets ?? '—';
           const reps = per?.reps ?? '—';
-          const wt   = per?.weight ?? '—';
-          const dur  = per?.duration ?? '—';
+          const weightRaw = per?.weight_value ?? '';
+          const weightDisp = per?.weight_display ?? '—';
+          const durRaw = per?.duration_seconds ?? '';
+          const durDisp = per?.duration_display ?? '—';
 
           // ONLY user-specific notes; show dash if empty
           const userNoteRaw = (per && per.notes != null) ? String(per.notes) : '';
@@ -1416,16 +1498,20 @@ function renderClientExpansion(uid, body){
           const editedAt   = per && per.updated_at ? per.updated_at : null;
           const editedBy   = per && per.updated_by_name ? per.updated_by_name : null;
 
+          const exLink = `exercises.php?focus_exercise=${encodeURIComponent(ex.ex_id)}#ex-${encodeURIComponent(ex.ex_id)}`;
+          const weightAttr = weightRaw === null || weightRaw === undefined || weightRaw === '' ? '' : ` data-raw="${escapeHtml(String(weightRaw))}"`;
+          const durAttr = durRaw === null || durRaw === undefined || durRaw === '' ? '' : ` data-raw="${escapeHtml(String(durRaw))}"`;
+
           exHtml += `
             <tr class="mini-ex-row" data-ex-id="${ex.ex_id}" data-user-id="${uid}" data-plan-id="${p.id}">
               <td style="padding:8px 10px">${ex.ex_id}</td>
-              <td style="padding:8px 10px"><strong>${escapeHtml(ex.name||'')}</strong></td>
+              <td style="padding:8px 10px"><a href="${exLink}" class="mini-ex-link"><strong>${escapeHtml(ex.name||'')}</strong></a></td>
               <td class="muted" style="padding:8px 10px" data-cell="notes" class="editable">${escapeHtml(showNotes)}</td>
               <td style="padding:8px 10px">${ex.has_video ? '<span class="chip">▶ Video</span>' : '<span class="muted">—</span>'}</td>
               <td style="padding:8px 10px" data-cell="sets"      class="editable">${sets}</td>
               <td style="padding:8px 10px" data-cell="reps"      class="editable">${reps}</td>
-              <td style="padding:8px 10px" data-cell="weight"    class="editable">${wt}</td>
-              <td style="padding:8px 10px" data-cell="duration"  class="editable">${dur}</td>
+              <td style="padding:8px 10px" data-cell="weight"    class="editable"${weightAttr}>${escapeHtml(weightDisp)}</td>
+              <td style="padding:8px 10px" data-cell="duration"  class="editable"${durAttr}>${escapeHtml(durDisp)}</td>
               <td class="muted" style="padding:8px 10px" data-cell="edited">${editedAt ? escapeHtml(editedAt) : '—'}</td>
               <td class="muted" style="padding:8px 10px" data-cell="edited_by">${editedBy ? escapeHtml(editedBy) : '—'}</td>
               <td style="padding:8px 10px" data-cell="actions">
@@ -1561,9 +1647,59 @@ function setActionsToEdit(tr){
   cell.appendChild(btn);
 }
 
+function normalizeEmpty(value){
+  return (value === null || value === undefined || value === '') ? null : value;
+}
+
+function computeWeightDisplay(raw, provided){
+  if (provided) return String(provided);
+  if (raw === null || raw === undefined || raw === '') return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return String(raw);
+  const fixed = Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.0+$/, '').replace(/\.$/, '');
+  return `${fixed} lbs`;
+}
+
+function computeDurationDisplay(raw, provided){
+  if (provided) return String(provided);
+  if (raw === null || raw === undefined || raw === '') return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return String(raw);
+  const total = Math.max(0, Math.round(num));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  const parts = [];
+  if (mins > 0) parts.push(`${mins} min${mins === 1 ? '' : 's'}`);
+  if (secs > 0 || parts.length === 0) parts.push(`${secs} sec${secs === 1 ? '' : 's'}`);
+  return parts.join(' ');
+}
+
+function setCellValue(cell, raw, display, type = 'text'){
+  if (!cell) return;
+
+  const normalizedRaw = normalizeEmpty(raw);
+  if (normalizedRaw === null) {
+    delete cell.dataset.raw;
+  } else {
+    cell.dataset.raw = String(normalizedRaw);
+  }
+
+  let shown = null;
+  if (type === 'weight') {
+    shown = normalizeEmpty(display) ?? computeWeightDisplay(normalizedRaw, display);
+  } else if (type === 'duration') {
+    shown = normalizeEmpty(display) ?? computeDurationDisplay(normalizedRaw, display);
+  } else if (type === 'notes') {
+    shown = normalizeEmpty(display) ?? (normalizedRaw !== null ? String(normalizedRaw) : null);
+  } else {
+    shown = normalizeEmpty(display) ?? (normalizedRaw !== null ? String(normalizedRaw) : null);
+  }
+
+  cell.textContent = (shown === null || shown === undefined || shown === '') ? '—' : shown;
+}
+
 function applyUserExerciseData(tr, data){
   if (!tr || !data) return;
-  const setDisp = v => (v === null || v === undefined || v === '' ? '—' : String(v));
 
   const cells = {
     sets: tr.querySelector('[data-cell="sets"]'),
@@ -1575,13 +1711,32 @@ function applyUserExerciseData(tr, data){
     edited_by: tr.querySelector('[data-cell="edited_by"]')
   };
 
-  if (cells.sets && 'sets' in data) cells.sets.textContent = setDisp(data.sets);
-  if (cells.reps && 'reps' in data) cells.reps.textContent = setDisp(data.reps);
-  if (cells.weight && 'weight' in data) cells.weight.textContent = setDisp(data.weight);
-  if (cells.duration && 'duration' in data) cells.duration.textContent = setDisp(data.duration);
-  if (cells.notes && 'notes' in data) cells.notes.textContent = setDisp(data.notes);
-  if (cells.edited && 'updated_at' in data) cells.edited.textContent = data.updated_at ? String(data.updated_at) : '—';
-  if (cells.edited_by && 'updated_by_name' in data) cells.edited_by.textContent = data.updated_by_name ? String(data.updated_by_name) : '—';
+  if (cells.sets && 'sets' in data) setCellValue(cells.sets, data.sets, data.sets);
+  if (cells.reps && 'reps' in data) setCellValue(cells.reps, data.reps, data.reps);
+
+  const weightRaw = ('weight_value' in data) ? data.weight_value : (('weight' in data && typeof data.weight === 'number') ? data.weight : (('weight' in data) ? data.weight : undefined));
+  const weightDisplay = ('weight_display' in data) ? data.weight_display : (('weight' in data && typeof data.weight === 'string') ? data.weight : undefined);
+  if (cells.weight && (weightRaw !== undefined || weightDisplay !== undefined)) {
+    setCellValue(cells.weight, weightRaw, weightDisplay, 'weight');
+  }
+
+  const durationRaw = ('duration_seconds' in data) ? data.duration_seconds : (('duration' in data && typeof data.duration === 'number') ? data.duration : (('duration' in data) ? data.duration : undefined));
+  const durationDisplay = ('duration_display' in data) ? data.duration_display : (('duration' in data && typeof data.duration === 'string') ? data.duration : undefined);
+  if (cells.duration && (durationRaw !== undefined || durationDisplay !== undefined)) {
+    setCellValue(cells.duration, durationRaw, durationDisplay, 'duration');
+  }
+
+  if (cells.notes && 'notes' in data) {
+    const notesVal = data.notes ?? null;
+    setCellValue(cells.notes, notesVal, notesVal, 'notes');
+  }
+
+  if (cells.edited && 'updated_at' in data) {
+    cells.edited.textContent = data.updated_at ? String(data.updated_at) : '—';
+  }
+  if (cells.edited_by && 'updated_by_name' in data) {
+    cells.edited_by.textContent = data.updated_by_name ? String(data.updated_by_name) : '—';
+  }
 
   const uid = parseInt(tr.dataset.userId, 10);
   const planId = parseInt(tr.dataset.planId, 10);
@@ -1592,15 +1747,35 @@ function applyUserExerciseData(tr, data){
   if (!window.__USER_EX[uid]) window.__USER_EX[uid] = {};
   if (!window.__USER_EX[uid][planId]) window.__USER_EX[uid][planId] = {};
   const existing = window.__USER_EX[uid][planId][exId] || {};
+
+  const normalizedSets = ('sets' in data) ? (data.sets === '' ? null : data.sets ?? null) : (existing.sets ?? null);
+  const normalizedReps = ('reps' in data) ? (data.reps === '' ? null : data.reps ?? null) : (existing.reps ?? null);
+
+  const normalizedWeightValue = (weightRaw !== undefined) ? normalizeEmpty(weightRaw) : (existing.weight_value ?? null);
+  const normalizedWeightDisplay = (weightDisplay !== undefined)
+    ? normalizeEmpty(weightDisplay) ?? computeWeightDisplay(normalizedWeightValue, weightDisplay)
+    : (existing.weight_display ?? ((existing.weight_value !== undefined && existing.weight_value !== null) ? computeWeightDisplay(existing.weight_value, existing.weight_display) : null));
+
+  const normalizedDurationValue = (durationRaw !== undefined) ? normalizeEmpty(durationRaw) : (existing.duration_seconds ?? null);
+  const normalizedDurationDisplay = (durationDisplay !== undefined)
+    ? normalizeEmpty(durationDisplay) ?? computeDurationDisplay(normalizedDurationValue, durationDisplay)
+    : (existing.duration_display ?? ((existing.duration_seconds !== undefined && existing.duration_seconds !== null) ? computeDurationDisplay(existing.duration_seconds, existing.duration_display) : null));
+
+  const normalizedNotes = ('notes' in data) ? (data.notes === '' ? null : data.notes ?? null) : (existing.notes ?? null);
+  const normalizedUpdatedAt = ('updated_at' in data) ? (data.updated_at ?? null) : (existing.updated_at ?? null);
+  const normalizedUpdatedBy = ('updated_by_name' in data) ? (data.updated_by_name ?? null) : (existing.updated_by_name ?? null);
+
   window.__USER_EX[uid][planId][exId] = {
     ...existing,
-    sets: ('sets' in data) ? (data.sets ?? null) : (existing.sets ?? null),
-    reps: ('reps' in data) ? (data.reps ?? null) : (existing.reps ?? null),
-    weight: ('weight' in data) ? (data.weight ?? null) : (existing.weight ?? null),
-    duration: ('duration' in data) ? (data.duration ?? null) : (existing.duration ?? null),
-    notes: ('notes' in data) ? (data.notes ?? null) : (existing.notes ?? null),
-    updated_at: ('updated_at' in data) ? (data.updated_at ?? null) : (existing.updated_at ?? null),
-    updated_by_name: ('updated_by_name' in data) ? (data.updated_by_name ?? null) : (existing.updated_by_name ?? null)
+    sets: normalizedSets,
+    reps: normalizedReps,
+    weight_value: normalizedWeightValue,
+    weight_display: normalizedWeightDisplay,
+    duration_seconds: normalizedDurationValue,
+    duration_display: normalizedDurationDisplay,
+    notes: normalizedNotes,
+    updated_at: normalizedUpdatedAt,
+    updated_by_name: normalizedUpdatedBy
   };
 }
 
@@ -1616,12 +1791,18 @@ function startRowEdit(tr){
   const notesCell = getCell('notes');
   const actionsCell = getCell('actions');
 
+  const uid = parseInt(tr.dataset.userId, 10);
+  const planId = parseInt(tr.dataset.planId, 10);
+  const exId = parseInt(tr.dataset.exId, 10);
+  const stored = (window.__USER_EX && window.__USER_EX[uid] && window.__USER_EX[uid][planId] && window.__USER_EX[uid][planId][exId]) || {};
+  const toInputValue = (v) => (v === null || v === undefined ? '' : String(v));
+
   tr._origValues = {
-    sets: setsCell.textContent.trim() === '—' ? '' : setsCell.textContent.trim(),
-    reps: repsCell.textContent.trim() === '—' ? '' : repsCell.textContent.trim(),
-    weight: weightCell.textContent.trim() === '—' ? '' : weightCell.textContent.trim(),
-    duration: durCell.textContent.trim() === '—' ? '' : durCell.textContent.trim(),
-    notes: notesCell.textContent.trim() === '—' ? '' : notesCell.textContent.trim(),
+    sets: toInputValue(stored.sets ?? (setsCell.dataset.raw ?? (setsCell.textContent.trim() === '—' ? '' : setsCell.textContent.trim()))),
+    reps: toInputValue(stored.reps ?? (repsCell.dataset.raw ?? (repsCell.textContent.trim() === '—' ? '' : repsCell.textContent.trim()))),
+    weight: toInputValue(stored.weight_value ?? stored.weight ?? (weightCell.dataset.raw ?? (weightCell.textContent.trim() === '—' ? '' : weightCell.textContent.trim()))),
+    duration: toInputValue(stored.duration_seconds ?? stored.duration ?? (durCell.dataset.raw ?? (durCell.textContent.trim() === '—' ? '' : durCell.textContent.trim()))),
+    notes: toInputValue(stored.notes ?? (notesCell.dataset.raw ?? (notesCell.textContent.trim() === '—' ? '' : notesCell.textContent.trim()))),
     actionsHTML: actionsCell.innerHTML
   };
 
@@ -1634,7 +1815,7 @@ function startRowEdit(tr){
   const iSets = makeInput(tr._origValues.sets,   { type:'text',    placeholder:'e.g. 3 or 3x' });
   const iReps = makeInput(tr._origValues.reps,   { type:'text',    placeholder:'e.g. 8-10' });
   const iWeight = makeInput(tr._origValues.weight,{ type:'number',  step:'0.1', min:'0', placeholder:'lbs' });
-  const iDur = makeInput(tr._origValues.duration,{ type:'number',  step:'1', min:'0', placeholder:'sec' });
+  const iDur = makeInput(tr._origValues.duration,{ type:'text',    placeholder:'e.g. 1:30 or 90 sec' });
   const iNotes = makeInput(tr._origValues.notes, { type:'text',    placeholder:'user notes', width:'240px' });
 
   iSets.name = 'sets';
@@ -1669,15 +1850,14 @@ function startRowEdit(tr){
 
 function cancelRowEdit(tr){
   if (!tr._origValues) return;
-  const setText = (cellName, val) => {
-    const c = tr.querySelector(`[data-cell="${cellName}"]`);
-    c.textContent = val ? val : '—';
-  };
-  setText('sets', tr._origValues.sets);
-  setText('reps', tr._origValues.reps);
-  setText('weight', tr._origValues.weight);
-  setText('duration', tr._origValues.duration);
-  setText('notes', tr._origValues.notes);
+  const toNull = v => (v === '' ? null : v);
+  applyUserExerciseData(tr, {
+    sets: toNull(tr._origValues.sets),
+    reps: toNull(tr._origValues.reps),
+    weight_value: toNull(tr._origValues.weight),
+    duration_seconds: toNull(tr._origValues.duration),
+    notes: toNull(tr._origValues.notes)
+  });
   const actionsCell = tr.querySelector('[data-cell="actions"]');
   actionsCell.innerHTML = tr._origValues.actionsHTML;
   tr.dataset.editing = '0';
@@ -1734,24 +1914,6 @@ document.addEventListener('click', function(e){
   const tr = btn.closest('tr.mini-ex-row');
   if (!tr) return;
   startRowEdit(tr);
-});
-
-// Click an EXERCISE row -> navigate to exercises.php (but NOT when interacting with editable cells)
-document.addEventListener('click', function(e){
-  if (e.target.closest('.add-ex-row')) return;
-
-  // Block navigation if clicking inside editable cells/inputs/buttons (including NOTES)
-  if (e.target.closest('[data-cell="sets"],[data-cell="reps"],[data-cell="weight"],[data-cell="duration"],[data-cell="notes"], input, textarea, select, button, .btn')) {
-    return;
-  }
-
-  const xr = e.target.closest('.mini-ex-row');
-  if (!xr) return;
-
-  const exId = xr.dataset.exId;
-  if (exId) {
-    location.href = `exercises.php?focus_exercise=${encodeURIComponent(exId)}#ex-${encodeURIComponent(exId)}`;
-  }
 });
 
 // --- Add Exercises modal logic (unchanged except notes cell in new rows) ---
@@ -1934,8 +2096,10 @@ function openCellEditor(td){
   const col = td.getAttribute('data-cell'); // sets|reps|weight|duration|notes
   if (!['sets','reps','weight','duration','notes'].includes(col)) return;
 
-  const originalText = td.textContent.trim();
-  td.dataset.original = originalText === '—' ? '' : originalText;
+  const displayBefore = td.textContent.trim();
+  const rawBefore = td.dataset.raw !== undefined ? td.dataset.raw : (displayBefore === '—' ? '' : displayBefore);
+  td.dataset.originalRaw = rawBefore;
+  td.dataset.originalDisplay = displayBefore;
   td.classList.add('editing');
 
   const input = document.createElement('input');
@@ -1944,14 +2108,14 @@ function openCellEditor(td){
   input.placeholder = (col === 'sets' ? 'e.g. 3 or 3x'
                      : col === 'reps' ? 'e.g. 8-10'
                      : col === 'weight' ? 'lbs'
-                     : col === 'duration' ? 'sec'
+                     : col === 'duration' ? 'e.g. 1:30 or 90 sec'
                      : 'user notes');
 
   if (col === 'weight') { input.type = 'number'; input.step = '0.1'; input.min = '0'; }
-  else if (col === 'duration') { input.type = 'number'; input.step = '1'; input.min = '0'; }
+  else if (col === 'duration') { input.type = 'text'; }
   else { input.type = 'text'; }
 
-  input.value = td.dataset.original || '';
+  input.value = rawBefore || '';
   td.innerHTML = '';
   td.appendChild(input);
   input.focus();
@@ -1983,7 +2147,13 @@ function getCellsPayload(tr){
     if (!cell) return '';
     // If cell is currently editing, read from input, else from text
     const inp = cell.querySelector('input');
-    const val = inp ? inp.value.trim() : cell.textContent.trim();
+    if (inp) {
+      return inp.value.trim();
+    }
+    if (cell.dataset.raw !== undefined) {
+      return cell.dataset.raw;
+    }
+    const val = cell.textContent.trim();
     return (val === '—') ? '' : val;
   };
   return {
@@ -2038,7 +2208,7 @@ function closeCellEditor(td, {save=true, saveIfChanged=false}={}){
   if (!td || !td.classList.contains('editing')) return;
   const tr = td.closest('tr.mini-ex-row');
   const input = td.querySelector('input');
-  const original = td.dataset.original ?? '';
+  const original = td.dataset.originalRaw ?? '';
   const curr = input ? input.value.trim() : '';
   const changed = (curr !== original);
 
@@ -2047,7 +2217,26 @@ function closeCellEditor(td, {save=true, saveIfChanged=false}={}){
 
   // Restore display first
   td.classList.remove('editing');
-  td.innerHTML = (curr === '' ? '—' : escapeHtml(curr));
+  if (shouldSave) {
+    if (curr === '') {
+      delete td.dataset.raw;
+      td.textContent = '—';
+    } else {
+      td.dataset.raw = curr;
+      td.innerHTML = escapeHtml(curr);
+    }
+  } else {
+    if (original === '') {
+      delete td.dataset.raw;
+      td.textContent = '—';
+    } else {
+      td.dataset.raw = original;
+      const originalDisplay = td.dataset.originalDisplay ?? original;
+      td.innerHTML = escapeHtml(originalDisplay);
+    }
+  }
+  delete td.dataset.originalRaw;
+  delete td.dataset.originalDisplay;
 
   __ActiveCell = null;
 
