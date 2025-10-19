@@ -195,43 +195,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $bulkType = trim($_POST['bulk_type'] ?? '');
-        $idsRaw = $_POST['user_ids'] ?? [];
-        if (!is_array($idsRaw)) $idsRaw = [$idsRaw];
-        $ids = [];
-        foreach ($idsRaw as $idRaw) {
-          $idVal = (int)$idRaw;
-          if ($idVal > 0) $ids[$idVal] = $idVal;
-        }
-        $ids = array_values($ids);
-        if (!$ids) {
-          throw new Exception('Select at least one client.');
-        }
-
-        $idList = implode(',', array_map('intval', $ids));
 
         if ($bulkType === 'bulk_unassign') {
+          $planRaw = $_POST['plan_ids'] ?? [];
+          if (!is_array($planRaw)) $planRaw = [$planRaw];
+          $planIds = [];
+          foreach ($planRaw as $planVal) {
+            $pid = (int)$planVal;
+            if ($pid > 0) $planIds[$pid] = $pid;
+          }
+          $planIds = array_values($planIds);
+          if (!$planIds) {
+            throw new Exception('Select at least one plan to unassign.');
+          }
+          $planList = implode(',', array_map('intval', $planIds));
+
+          $validPlans = [];
+          $sqlPlan = "SELECT up.id FROM user_plans up JOIN users u ON u.id = up.user_id WHERE up.id IN ($planList) AND (u.role='client' OR u.is_client=1)";
+          if ($resPlan = $conn->query($sqlPlan)) {
+            while ($row = $resPlan->fetch_assoc()) {
+              $validPlans[] = (int)$row['id'];
+            }
+          }
+          if (!$validPlans) {
+            throw new Exception('Selected plans could not be found.');
+          }
+
+          $validList = implode(',', array_map('intval', $validPlans));
+
           $conn->begin_transaction();
           try {
-            $upIds = [];
-            $sqlUp = "SELECT id FROM user_plans WHERE user_id IN ($idList)";
-            if ($resUp = $conn->query($sqlUp)) {
-              while ($row = $resUp->fetch_assoc()) {
-                $upIds[] = (int)$row['id'];
-              }
-            }
-            if ($upIds) {
-              $upList = implode(',', array_map('intval', $upIds));
-              $conn->query("DELETE FROM user_plan_exercises WHERE user_plan_id IN ($upList)");
-            }
-            $conn->query("DELETE FROM user_plans WHERE user_id IN ($idList)");
+            $conn->query("DELETE FROM user_plan_exercises WHERE user_plan_id IN ($validList)");
+            $conn->query("DELETE FROM user_plans WHERE id IN ($validList)");
             $conn->commit();
-            $flash = 'Unassigned plans for selected clients.';
+            $count = count($validPlans);
+            $flash = $count === 1 ? 'Unassigned 1 plan.' : ('Unassigned ' . $count . ' plans.');
             $flash_type = 'ok';
           } catch (Throwable $e) {
             $conn->rollback();
-            throw $e;
+            throw new Exception('Failed to unassign selected plans.');
           }
         } elseif ($bulkType === 'bulk_deactivate') {
+          $idsRaw = $_POST['user_ids'] ?? [];
+          if (!is_array($idsRaw)) $idsRaw = [$idsRaw];
+          $ids = [];
+          foreach ($idsRaw as $idRaw) {
+            $idVal = (int)$idRaw;
+            if ($idVal > 0) $ids[$idVal] = $idVal;
+          }
+          $ids = array_values($ids);
+          if (!$ids) {
+            throw new Exception('Select at least one client.');
+          }
+          $idList = implode(',', array_map('intval', $ids));
+
           $sql = "UPDATE users SET is_active=0 WHERE id IN ($idList) AND (role='client' OR is_client=1)";
           if (!$conn->query($sql)) {
             throw new Exception('Failed to deactivate selected clients.');
@@ -1364,7 +1381,11 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .table-tools__search{flex:1 1 260px;max-width:420px}
   .table-tools__bulk{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .table-tools__bulk .input{width:auto;min-width:170px}
-  .table-wrapper{overflow:auto;border:1px solid var(--line);border-radius:12px}
+  .table-wrapper{position:relative;overflow-x:auto;overflow-y:hidden;border:1px solid var(--line);border-radius:12px;scrollbar-width:none}
+  .table-wrapper::-webkit-scrollbar{height:0}
+  .table-wrapper.is-scrolling{scrollbar-width:thin}
+  .table-wrapper.is-scrolling::-webkit-scrollbar{height:8px}
+  .table-wrapper.is-scrolling::-webkit-scrollbar-thumb{background:rgba(148,163,184,0.45);border-radius:999px}
   table{width:100%;border-collapse:collapse}
   .clients-table{min-width:960px}
   th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:middle}
@@ -1801,16 +1822,23 @@ const CLIENT_SORT_TYPES = {
       .filter(Boolean);
   }
 
+  function getSelectedPlanIds(){
+    const out = [];
+    const seen = new Set();
+    document.querySelectorAll('[data-plan-checkbox]:checked').forEach(cb => {
+      const val = parseInt(cb.value, 10);
+      if (!val || seen.has(val)) return;
+      seen.add(val);
+      out.push(val);
+    });
+    return out;
+  }
+
   if (bulkButton) {
     bulkButton.addEventListener('click', () => {
       const action = bulkSelect ? bulkSelect.value : '';
       if (!action) {
         alert('Choose a bulk action to run.');
-        return;
-      }
-      const selected = getSelectedIds();
-      if (!selected.length) {
-        alert('Select at least one client.');
         return;
       }
       if (!bulkForm) {
@@ -1819,14 +1847,38 @@ const CLIENT_SORT_TYPES = {
       }
       const typeInput = bulkForm.querySelector('input[name="bulk_type"]');
       if (typeInput) typeInput.value = action;
-      bulkForm.querySelectorAll('input[name="user_ids[]"]').forEach(el => el.remove());
-      selected.forEach(id => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'user_ids[]';
-        input.value = id;
-        bulkForm.appendChild(input);
-      });
+      bulkForm.querySelectorAll('input[name="user_ids[]"], input[name="plan_ids[]"]').forEach(el => el.remove());
+
+      if (action === 'bulk_unassign') {
+        const plans = getSelectedPlanIds();
+        if (!plans.length) {
+          alert('Select at least one plan to unassign.');
+          return;
+        }
+        plans.forEach(id => {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = 'plan_ids[]';
+          input.value = String(id);
+          bulkForm.appendChild(input);
+        });
+      } else if (action === 'bulk_deactivate') {
+        const selected = getSelectedIds();
+        if (!selected.length) {
+          alert('Select at least one client.');
+          return;
+        }
+        selected.forEach(id => {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = 'user_ids[]';
+          input.value = id;
+          bulkForm.appendChild(input);
+        });
+      } else {
+        alert('Choose a bulk action to run.');
+        return;
+      }
       bulkForm.submit();
     });
   }
@@ -1978,6 +2030,30 @@ const CLIENT_SORT_TYPES = {
 
   enableColumnResizing(table);
 
+  const tableWrapper = container ? container.querySelector('.table-wrapper') : null;
+  if (tableWrapper) {
+    let scrollHideTimer = null;
+    const revealScrollbar = () => {
+      if (tableWrapper.scrollWidth <= tableWrapper.clientWidth) return;
+      tableWrapper.classList.add('is-scrolling');
+      if (scrollHideTimer) clearTimeout(scrollHideTimer);
+      scrollHideTimer = setTimeout(() => {
+        tableWrapper.classList.remove('is-scrolling');
+        scrollHideTimer = null;
+      }, 700);
+    };
+    tableWrapper.addEventListener('scroll', () => {
+      revealScrollbar();
+    }, { passive: true });
+    tableWrapper.addEventListener('mouseleave', () => {
+      tableWrapper.classList.remove('is-scrolling');
+      if (scrollHideTimer) {
+        clearTimeout(scrollHideTimer);
+        scrollHideTimer = null;
+      }
+    });
+  }
+
   window.__refreshClientSearchCache = function(uid){
     const key = String(uid || '');
     if (!key) return;
@@ -2081,6 +2157,7 @@ function renderClientExpansion(uid, body){
       <table style="width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden">
         <thead>
           <tr>
+            <th style="background:#0f1218;padding:8px 10px;width:44px;text-align:center">Select</th>
             <th style="background:#0f1218;padding:8px 10px">Plan ID</th>
             <th style="background:#0f1218;padding:8px 10px">Name</th>
             <th style="background:#0f1218;padding:8px 10px">Assigned</th>
@@ -2096,7 +2173,7 @@ function renderClientExpansion(uid, body){
   `;
 
   if (!plans.length) {
-    html += `<tr><td colspan="9" class="muted empty-state" style="padding:10px">No plans assigned.</td></tr>`;
+    html += `<tr><td colspan="10" class="muted empty-state" style="padding:10px">No plans assigned.</td></tr>`;
   } else {
     plans.forEach(p=>{
       const assigned = p.assigned_at_fmt || '—';
@@ -2108,6 +2185,9 @@ function renderClientExpansion(uid, body){
 
       html += `
         <tr class="plan-row" data-plan-id="${p.id}">
+          <td style="padding:8px 10px;text-align:center">
+            <input type="checkbox" class="plan-select" data-plan-checkbox data-plan-user="${uid}" value="${p.id}" aria-label="Select plan #${p.id}">
+          </td>
           <td style="padding:8px 10px">${p.id}</td>
           <td style="padding:8px 10px"><strong>${escapeHtml(p.name||'')}</strong></td>
           <td class="muted" style="padding:8px 10px">${assigned}</td>
@@ -2219,13 +2299,13 @@ function renderClientExpansion(uid, body){
           </tbody></table>
         </div>
       `;
-      html += `<tr class="plan-expand" id="pexp-${p.id}" data-user-id="${uid}" style="display:none"><td colspan="9">${exHtml}</td></tr>`;
+      html += `<tr class="plan-expand" id="pexp-${p.id}" data-user-id="${uid}" style="display:none"><td colspan="10">${exHtml}</td></tr>`;
     });
   }
 
   html += `
         <tr class="add-plan-row" data-add-for="${uid}">
-          <td colspan="9" style="padding:10px">
+          <td colspan="10" style="padding:10px">
             <div style="display:flex;align-items:center;gap:10px">
               <span style="font-size:18px;line-height:1">+</span>
               <strong>Assign a plan</strong>
