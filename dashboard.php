@@ -1147,6 +1147,7 @@ $CAT_PALETTE = [
       --spark-bar-2:#8e7df0;
 
       --border:#1b2332; --radius:14px;
+      --dash-header-offset:72px;
     }
 
     @media (max-width: 520px){
@@ -1304,7 +1305,10 @@ $CAT_PALETTE = [
 
     .dash-settings-overlay{
       position:fixed;
-      inset:0;
+      top:var(--dash-header-offset);
+      right:0;
+      bottom:0;
+      left:0;
       background:rgba(5, 10, 20, 0.55);
       backdrop-filter:blur(2px);
       opacity:0;
@@ -1316,11 +1320,11 @@ $CAT_PALETTE = [
 
     .dash-settings{
       position:fixed;
-      top:0;
+      top:var(--dash-header-offset);
       right:0;
       width:320px;
       max-width:90vw;
-      height:100vh;
+      height:calc(100vh - var(--dash-header-offset));
       background:rgba(13,18,31,0.98);
       border-left:1px solid var(--border);
       box-shadow:-16px 0 48px rgba(0,0,0,0.45);
@@ -2078,6 +2082,16 @@ $CAT_PALETTE = [
       const userScope = <?php echo json_encode('uid-' . ($USER_ID ?? 'guest')); ?>;
       const containers = Array.from(document.querySelectorAll('.cards'));
       if (!containers.length) return;
+
+      const topbar = document.querySelector('.ppf-topbar');
+      const updateHeaderOffset = () => {
+        if (!topbar) return;
+        const rect = topbar.getBoundingClientRect();
+        const height = Math.max(0, Math.round(rect.height));
+        document.documentElement.style.setProperty('--dash-header-offset', `${height}px`);
+      };
+      updateHeaderOffset();
+      window.addEventListener('resize', updateHeaderOffset, { passive: true });
 
       const MOBILE_BREAKPOINT = 640;
       const mobileMedia = typeof window.matchMedia === 'function'
