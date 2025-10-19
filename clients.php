@@ -189,6 +189,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $uid    = (int)($_POST['user_id'] ?? 0);
 
     try {
+      if ($action === 'bulk_action') {
+        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+          throw new Exception('You do not have permission to perform bulk actions.');
+        }
+
+        $bulkType = trim($_POST['bulk_type'] ?? '');
+        $idsRaw = $_POST['user_ids'] ?? [];
+        if (!is_array($idsRaw)) $idsRaw = [$idsRaw];
+        $ids = [];
+        foreach ($idsRaw as $idRaw) {
+          $idVal = (int)$idRaw;
+          if ($idVal > 0) $ids[$idVal] = $idVal;
+        }
+        $ids = array_values($ids);
+        if (!$ids) {
+          throw new Exception('Select at least one client.');
+        }
+
+        $idList = implode(',', array_map('intval', $ids));
+
+        if ($bulkType === 'bulk_unassign') {
+          $conn->begin_transaction();
+          try {
+            $upIds = [];
+            $sqlUp = "SELECT id FROM user_plans WHERE user_id IN ($idList)";
+            if ($resUp = $conn->query($sqlUp)) {
+              while ($row = $resUp->fetch_assoc()) {
+                $upIds[] = (int)$row['id'];
+              }
+            }
+            if ($upIds) {
+              $upList = implode(',', array_map('intval', $upIds));
+              $conn->query("DELETE FROM user_plan_exercises WHERE user_plan_id IN ($upList)");
+            }
+            $conn->query("DELETE FROM user_plans WHERE user_id IN ($idList)");
+            $conn->commit();
+            $flash = 'Unassigned plans for selected clients.';
+            $flash_type = 'ok';
+          } catch (Throwable $e) {
+            $conn->rollback();
+            throw $e;
+          }
+        } elseif ($bulkType === 'bulk_deactivate') {
+          $sql = "UPDATE users SET is_active=0 WHERE id IN ($idList) AND (role='client' OR is_client=1)";
+          if (!$conn->query($sql)) {
+            throw new Exception('Failed to deactivate selected clients.');
+          }
+          $flash = 'Selected clients deactivated.';
+          $flash_type = 'ok';
+        } else {
+          throw new Exception('Choose a bulk action to run.');
+        }
+      }
+
       if ($action === 'update_client') {
         if ($uid <= 0) throw new Exception('Invalid client.');
         $email      = trim($_POST['email'] ?? '');
@@ -703,7 +757,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
       }
 
-      if (in_array($action, ['update_client','invite_client','resend_invite','deactivate_client','reactivate_client','unlock_user','unassign_plan'], true)) {
+      if (in_array($action, ['update_client','invite_client','resend_invite','deactivate_client','reactivate_client','unlock_user','unassign_plan','bulk_action'], true)) {
         header('Location: clients.php?tab=' . urlencode($tab));
         exit;
       }
@@ -997,43 +1051,102 @@ if ($rs = $conn->query($sqlPlans)) {
 // --- Rendering helpers ---
 function render_clients_table(array $clients, string $csrf, string $whichTab): void {
   global $USER_ROLE;
+  $tableId = 'clientsTable-' . $whichTab;
+  $searchId = 'clientSearch-' . $whichTab;
+  $bulkSelectId = 'clientBulkSelect-' . $whichTab;
+  $bulkButtonId = 'clientBulkApply-' . $whichTab;
+  $bulkFormId = 'clientBulkForm-' . $whichTab;
+  $selectAllId = 'clientSelectAll-' . $whichTab;
+  $colspan = 14;
   ?>
-  <div style="overflow:auto">
-    <div style="min-width:900px">
-      <table>
-  <thead>
-    <tr>
-      <th>ID</th>
-      <th>First</th>
-      <th>Middle</th>
-      <th>Last</th>
-      <th>Email</th>
-      <th>Phone</th>
-      <th>Birthdate</th>
-      <th>Age</th>
-      <th>Gender</th>
-      <th>Height</th>
-      <th>Weight</th>
-      <th>Plans</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
+  <div class="clients-table-container" data-clients-tab="<?php echo h($whichTab); ?>" data-bulk-form-id="<?php echo h($bulkFormId); ?>">
+    <div class="table-tools">
+      <div class="table-tools__search">
+        <input type="search" class="input search-input" id="<?php echo h($searchId); ?>" data-client-search placeholder="Search clients..." autocomplete="off">
+      </div>
+      <div class="table-tools__bulk">
+        <select class="input bulk-select" id="<?php echo h($bulkSelectId); ?>" data-bulk-select>
+          <option value="">Bulk actions…</option>
+          <option value="bulk_unassign">Bulk Unassign</option>
+          <option value="bulk_deactivate">Bulk Deactivate</option>
+        </select>
+        <button type="button" class="btn small" id="<?php echo h($bulkButtonId); ?>" data-bulk-apply>Apply</button>
+      </div>
+    </div>
+    <div class="table-wrapper">
+      <table id="<?php echo h($tableId); ?>" class="clients-table" data-table="clients" data-tab="<?php echo h($whichTab); ?>">
+        <colgroup>
+          <col style="width:48px">
+          <col style="width:90px">
+          <col>
+          <col>
+          <col>
+          <col style="min-width:220px">
+          <col style="min-width:150px">
+          <col style="min-width:150px">
+          <col style="width:90px">
+          <col style="width:110px">
+          <col style="width:120px">
+          <col style="width:120px">
+          <col style="width:90px">
+          <col style="min-width:240px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="select-col"><input type="checkbox" data-select-all id="<?php echo h($selectAllId); ?>" aria-label="Select all clients"></th>
+            <th data-sort-key="id"><button type="button" class="sort-btn" data-sort-key="id" data-state="off">ID<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="first"><button type="button" class="sort-btn" data-sort-key="first" data-state="off">First<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="middle"><button type="button" class="sort-btn" data-sort-key="middle" data-state="off">Middle<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="last"><button type="button" class="sort-btn" data-sort-key="last" data-state="off">Last<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="email"><button type="button" class="sort-btn" data-sort-key="email" data-state="off">Email<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="phone"><button type="button" class="sort-btn" data-sort-key="phone" data-state="off">Phone<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="birthdate"><button type="button" class="sort-btn" data-sort-key="birthdate" data-state="off">Birthdate<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="age"><button type="button" class="sort-btn" data-sort-key="age" data-state="off">Age<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="gender"><button type="button" class="sort-btn" data-sort-key="gender" data-state="off">Gender<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="height"><button type="button" class="sort-btn" data-sort-key="height" data-state="off">Height<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="weight"><button type="button" class="sort-btn" data-sort-key="weight" data-state="off">Weight<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="plans"><button type="button" class="sort-btn" data-sort-key="plans" data-state="off">Plans<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
         <?php if (!$clients): ?>
-          <tr><td colspan="13" class="muted" style="padding:24px">No clients found.</td></tr>
-        <?php else: foreach ($clients as $c):
+          <tr><td colspan="<?php echo $colspan; ?>" class="muted" style="padding:24px">No clients found.</td></tr>
+        <?php else: $index = 0; foreach ($clients as $c):
           $id   = (int)$c['id'];
           $pw   = (string)($c['password_hash'] ?? '');
           $has_password = ($pw !== null && $pw !== '');
           $editing = isset($_GET['edit']) && (int)$_GET['edit'] === $id;
           $is_real_client = ($c['role'] === 'client');
           $ageYears = calc_age_years($c['birthdate'] ?? null);
-
           $lockedUntil = $c['locked_until'] ?? null;
           $isLocked = !empty($lockedUntil) && (strtotime($lockedUntil) > time());
+          $heightFt = isset($c['height_ft']) && $c['height_ft'] !== '' && is_numeric($c['height_ft']) ? (int)$c['height_ft'] : null;
+          $heightIn = isset($c['height_in']) && $c['height_in'] !== '' && is_numeric($c['height_in']) ? (int)$c['height_in'] : null;
+          $heightSort = ($heightFt !== null ? $heightFt * 12 : 0) + ($heightIn !== null ? $heightIn : 0);
+          if ($heightFt === null && $heightIn === null) $heightSort = '';
+          $weightSort = null;
+          if (isset($c['weight_lbs']) && $c['weight_lbs'] !== '' && is_numeric($c['weight_lbs'])) {
+            $weightSort = (float)$c['weight_lbs'];
+          }
+          $weightSortAttr = ($weightSort === null) ? '' : ppf_trim_number($weightSort, 6);
+          $phoneDigits = preg_replace('/\D+/', '', (string)($c['phone'] ?? ''));
+          $birthAttr = trim((string)($c['birthdate'] ?? ''));
+          $firstSort = strtolower(trim((string)($c['first_name'] ?? '')));
+          $middleSort = strtolower(trim((string)($c['middle_name'] ?? '')));
+          $lastSort = strtolower(trim((string)($c['last_name'] ?? '')));
+          $emailSort = strtolower(trim((string)($c['email'] ?? '')));
+          $genderSort = strtolower(trim((string)($c['gender'] ?? '')));
+          $plansCount = (int)($c['plans_count'] ?? 0);
+          $orderIndex = $index++;
+          $heightSortAttr = ($heightSort === '') ? '' : (string)$heightSort;
+          $labelName = trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? ''));
         ?>
-          <!-- Main row (clickable/expandable) -->
-          <tr class="client-row" data-uid="<?php echo $id; ?>">
+          <tr class="client-row" data-uid="<?php echo $id; ?>" data-order="<?php echo $orderIndex; ?>" data-sort-id="<?php echo $id; ?>" data-sort-first="<?php echo h($firstSort); ?>" data-sort-middle="<?php echo h($middleSort); ?>" data-sort-last="<?php echo h($lastSort); ?>" data-sort-email="<?php echo h($emailSort); ?>" data-sort-phone="<?php echo h($phoneDigits); ?>" data-sort-birthdate="<?php echo h($birthAttr); ?>" data-sort-age="<?php echo $ageYears === null ? '' : (int)$ageYears; ?>" data-sort-gender="<?php echo h($genderSort); ?>" data-sort-height="<?php echo h($heightSortAttr); ?>" data-sort-weight="<?php echo h($weightSortAttr); ?>" data-sort-plans="<?php echo $plansCount; ?>">
+            <td>
+              <input type="checkbox" class="client-select" value="<?php echo $id; ?>" data-client-checkbox aria-label="Select <?php echo h($labelName !== '' ? $labelName : ('Client #' . $id)); ?>">
+            </td>
+
             <td><?php echo $id; ?></td>
 
             <td>
@@ -1132,13 +1245,12 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
               <?php endif; ?>
             </td>
 
-            <td><?php echo (int)($c['plans_count'] ?? 0); ?></td>
+            <td><?php echo $plansCount; ?></td>
 
             <td>
               <div class="actions">
                 <?php if (in_array(($USER_ROLE ?? ''), ['admin','trainer'], true) && $isLocked): ?>
-                  <form method="post" action="clients.php" style="display:inline"
-                        onsubmit="return confirm('Unlock this account? This will clear failed attempts and remove the lockout.');">
+                  <form method="post" action="clients.php" style="display:inline" onsubmit="return confirm('Unlock this account? This will clear failed attempts and remove the lockout.');">
                     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                     <input type="hidden" name="action" value="unlock_user">
                     <input type="hidden" name="user_id" value="<?php echo $id; ?>">
@@ -1190,9 +1302,8 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
             </td>
           </tr>
 
-          <!-- Expansion row (hidden until clicked) -->
           <tr class="client-expand" id="exp-<?php echo $id; ?>" style="display:none">
-            <td colspan="13" style="background:#0f1218">
+            <td colspan="<?php echo $colspan; ?>" style="background:#0f1218">
               <div class="muted" data-exp-body>Loading plans…</div>
             </td>
           </tr>
@@ -1202,10 +1313,14 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
       </table>
     </div>
   </div>
+  <form id="<?php echo h($bulkFormId); ?>" method="post" style="display:none" data-bulk-form>
+    <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+    <input type="hidden" name="action" value="bulk_action">
+    <input type="hidden" name="bulk_type" value="">
+  </form>
   <?php
 }
-?>
-<!doctype html>
+?><!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1244,9 +1359,31 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .subheader .left{display:flex;align-items:center;gap:10px}
   .brand{font-weight:800;font-size:20px;letter-spacing:.2px}
   .btnset{display:flex;gap:8px;flex-wrap:wrap}
+  .clients-table-container{display:flex;flex-direction:column;gap:12px}
+  .table-tools{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between}
+  .table-tools__search{flex:1 1 260px;max-width:420px}
+  .table-tools__bulk{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .table-tools__bulk .input{width:auto;min-width:170px}
+  .table-wrapper{overflow:auto;border:1px solid var(--line);border-radius:12px}
   table{width:100%;border-collapse:collapse}
+  .clients-table{min-width:960px}
   th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:middle}
   thead th{position:sticky;top:0;background:#0f121a;z-index:1}
+  .clients-table thead th{z-index:2}
+  .clients-table .select-col{text-align:center;width:48px}
+  .clients-table td:first-child{text-align:center}
+  .clients-table td:first-child input{margin:0 auto;display:block}
+  .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:none;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer}
+  .sort-btn:hover .sort-indicator{opacity:0.8}
+  .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .sort-indicator{font-size:10px;opacity:0.4;line-height:1}
+  .sort-btn[data-state="asc"] .sort-indicator::before{content:'▲'}
+  .sort-btn[data-state="desc"] .sort-indicator::before{content:'▼'}
+  .sort-btn[data-state="off"] .sort-indicator::before{content:''}
+  .sort-btn[data-state="asc"] .sort-indicator,
+  .sort-btn[data-state="desc"] .sort-indicator{opacity:0.8}
+  .col-resize-handle{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize}
+  .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:rgba(148,163,184,0.2);}
   .input{background:#0e1320;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;width:100%}
   .muted{color:var(--muted)}
 
@@ -1262,6 +1399,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
     th,td{padding:6px 4px;font-size:12px}
     .brand{font-size:18px}
     .subheader{padding:8px 10px}
+    .table-tools{flex-direction:column;align-items:stretch;gap:10px}
+    .table-tools__bulk{width:100%;justify-content:flex-start}
+    .table-tools__bulk .input{width:100%;min-width:0}
   }
   .badge{ display:inline-block; padding:3px 8px; font-size:11px; border-radius:999px; }
   .bg-warning{ background:#f59e0b; color:#111; }
@@ -1467,6 +1607,395 @@ function renderCategoryChips(list){
   return parts.length ? parts.join(' ') : '<span class="muted">—</span>';
 }
 
+const CLIENT_SORT_TYPES = {
+  id: 'number',
+  first: 'string',
+  middle: 'string',
+  last: 'string',
+  email: 'string',
+  phone: 'string',
+  birthdate: 'string',
+  age: 'number',
+  gender: 'string',
+  height: 'number',
+  weight: 'number',
+  plans: 'number'
+};
+
+(function(){
+  const table = document.querySelector('[data-table="clients"]');
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+
+  const container = table.closest('[data-clients-tab]');
+  const searchInput = document.querySelector('[data-client-search]');
+  const bulkSelect = document.querySelector('[data-bulk-select]');
+  const bulkButton = document.querySelector('[data-bulk-apply]');
+  const selectAll = table.querySelector('[data-select-all]');
+  const bulkFormId = container?.dataset.bulkFormId;
+  const bulkForm = bulkFormId ? document.getElementById(bulkFormId) : null;
+
+  const rows = Array.from(tbody.querySelectorAll('tr.client-row'));
+  const expansions = new Map();
+  rows.forEach(row => {
+    const exp = row.nextElementSibling;
+    if (exp && exp.classList.contains('client-expand')) {
+      expansions.set(row, exp);
+    }
+  });
+
+  const searchCache = new Map();
+
+  function computeSearch(uid){
+    const parts = [];
+    const row = table.querySelector(`tr.client-row[data-uid="${uid}"]`);
+    if (row) {
+      const rowText = Array.from(row.querySelectorAll('td'))
+        .map(td => td.textContent || '')
+        .join(' ');
+      parts.push(rowText);
+    }
+
+    const plans = (window.__PLANS_BY_USER && window.__PLANS_BY_USER[uid]) || [];
+    plans.forEach(plan => {
+      parts.push(
+        plan.name || '',
+        plan.assigned_at_fmt || '',
+        plan.created_at_fmt || '',
+        plan.updated_at_fmt || '',
+        plan.created_by_name || '',
+        plan.updated_by_name || '',
+        plan.exercise_count != null ? String(plan.exercise_count) : ''
+      );
+
+      const exs = (window.__EX_BY_PLAN && window.__EX_BY_PLAN[plan.id]) || [];
+      exs.forEach(ex => {
+        parts.push(
+          ex.name || '',
+          ex.notes || '',
+          ex.created_by_name || '',
+          ex.updated_by_name || '',
+          ex.video_url ? 'video' : ''
+        );
+        if (Array.isArray(ex.categories)) {
+          ex.categories.forEach(cat => {
+            if (!cat) return;
+            if (typeof cat === 'object') {
+              if (cat.name) parts.push(String(cat.name));
+            } else {
+              parts.push(String(cat));
+            }
+          });
+        }
+        const per = window.__USER_EX
+          && window.__USER_EX[uid]
+          && window.__USER_EX[uid][plan.id]
+          && window.__USER_EX[uid][plan.id][ex.ex_id];
+        if (per) {
+          parts.push(
+            per.sets || '',
+            per.reps || '',
+            per.weight_display || per.weight_value || '',
+            per.duration_display || per.duration_seconds || '',
+            per.notes || '',
+            per.updated_by_name || '',
+            per.updated_at || ''
+          );
+        }
+      });
+    });
+
+    return parts.join(' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function refreshSearchCache(uid){
+    if (!uid) return;
+    const key = String(uid);
+    const text = computeSearch(key);
+    searchCache.set(key, text);
+  }
+
+  rows.forEach(row => refreshSearchCache(row.dataset.uid));
+
+  const noMatchesRow = document.createElement('tr');
+  noMatchesRow.dataset.noMatches = '1';
+  const emptyTd = document.createElement('td');
+  emptyTd.colSpan = table.querySelectorAll('thead th').length;
+  emptyTd.className = 'muted';
+  emptyTd.style.padding = '18px';
+  emptyTd.textContent = 'No matching clients.';
+  noMatchesRow.appendChild(emptyTd);
+  noMatchesRow.style.display = 'none';
+  tbody.appendChild(noMatchesRow);
+
+  function updateSelectAll(){
+    if (!selectAll) return;
+    const visible = rows.filter(row => row.style.display !== 'none');
+    if (!visible.length) {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+      return;
+    }
+    let checkedCount = 0;
+    visible.forEach(row => {
+      const cb = row.querySelector('[data-client-checkbox]');
+      if (cb && cb.checked) checkedCount++;
+    });
+    selectAll.checked = checkedCount > 0 && checkedCount === visible.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < visible.length;
+  }
+
+  function applySearch(query){
+    const q = (query || '').trim().toLowerCase();
+    let matches = 0;
+    rows.forEach(row => {
+      const uid = row.dataset.uid;
+      if (!uid) return;
+      let haystack = searchCache.get(uid);
+      if (haystack === undefined) {
+        haystack = computeSearch(uid);
+        searchCache.set(uid, haystack);
+      }
+      const isMatch = !q || (haystack && haystack.includes(q));
+      if (isMatch) {
+        row.style.display = '';
+        matches++;
+      } else {
+        row.style.display = 'none';
+        const exp = expansions.get(row);
+        if (exp) exp.style.display = 'none';
+        row.classList.remove('expanded');
+      }
+    });
+    noMatchesRow.style.display = matches ? 'none' : '';
+    updateSelectAll();
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener('input', (event) => {
+      applySearch(event.target.value);
+    });
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      const visible = rows.filter(row => row.style.display !== 'none');
+      visible.forEach(row => {
+        const cb = row.querySelector('[data-client-checkbox]');
+        if (cb) cb.checked = selectAll.checked;
+      });
+      updateSelectAll();
+    });
+  }
+
+  tbody.addEventListener('change', (event) => {
+    if (event.target && event.target.matches('[data-client-checkbox]')) {
+      updateSelectAll();
+    }
+  });
+
+  function getSelectedIds(){
+    return Array.from(document.querySelectorAll('[data-client-checkbox]:checked'))
+      .map(cb => cb.value)
+      .filter(Boolean);
+  }
+
+  if (bulkButton) {
+    bulkButton.addEventListener('click', () => {
+      const action = bulkSelect ? bulkSelect.value : '';
+      if (!action) {
+        alert('Choose a bulk action to run.');
+        return;
+      }
+      const selected = getSelectedIds();
+      if (!selected.length) {
+        alert('Select at least one client.');
+        return;
+      }
+      if (!bulkForm) {
+        alert('Unable to run bulk action right now.');
+        return;
+      }
+      const typeInput = bulkForm.querySelector('input[name="bulk_type"]');
+      if (typeInput) typeInput.value = action;
+      bulkForm.querySelectorAll('input[name="user_ids[]"]').forEach(el => el.remove());
+      selected.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'user_ids[]';
+        input.value = id;
+        bulkForm.appendChild(input);
+      });
+      bulkForm.submit();
+    });
+  }
+
+  const sortButtons = Array.from(table.querySelectorAll('.sort-btn'));
+  const sortState = { key: null, dir: null };
+  const originalOrder = rows.map(row => ({
+    row,
+    exp: expansions.get(row) || null,
+    order: parseInt(row.dataset.order, 10) || 0
+  }));
+
+  function getSortValue(row, key){
+    const prop = 'sort' + key.charAt(0).toUpperCase() + key.slice(1);
+    return row.dataset[prop] ?? '';
+  }
+
+  function compareRows(aRow, bRow, key, dir){
+    const type = CLIENT_SORT_TYPES[key] || 'string';
+    const aVal = getSortValue(aRow, key);
+    const bVal = getSortValue(bRow, key);
+
+    if (type === 'number') {
+      const aNum = aVal === '' ? NaN : parseFloat(aVal);
+      const bNum = bVal === '' ? NaN : parseFloat(bVal);
+      if (Number.isNaN(aNum) && Number.isNaN(bNum)) return 0;
+      if (Number.isNaN(aNum)) return dir === 'asc' ? 1 : -1;
+      if (Number.isNaN(bNum)) return dir === 'asc' ? -1 : 1;
+      return dir === 'asc' ? aNum - bNum : bNum - aNum;
+    }
+
+    const aStr = String(aVal || '').toLowerCase();
+    const bStr = String(bVal || '').toLowerCase();
+    const cmp = aStr.localeCompare(bStr, undefined, { numeric: true, sensitivity: 'base' });
+    return dir === 'asc' ? cmp : -cmp;
+  }
+
+  function applySort(key, dir){
+    const items = originalOrder.map(item => ({ ...item }));
+    if (key && dir) {
+      items.sort((a, b) => {
+        const primary = compareRows(a.row, b.row, key, dir);
+        if (primary !== 0) return primary;
+        return a.order - b.order;
+      });
+    } else {
+      items.sort((a, b) => a.order - b.order);
+    }
+    items.forEach(item => {
+      tbody.appendChild(item.row);
+      if (item.exp) tbody.appendChild(item.exp);
+    });
+    tbody.appendChild(noMatchesRow);
+  }
+
+  function updateSortIndicators(activeKey, dir){
+    sortButtons.forEach(btn => {
+      const key = btn.dataset.sortKey;
+      if (key === activeKey && dir) {
+        btn.dataset.state = dir;
+      } else {
+        btn.dataset.state = 'off';
+      }
+    });
+  }
+
+  function cycleSort(btn){
+    const key = btn.dataset.sortKey;
+    if (!key) return;
+    let nextDir = 'asc';
+    if (sortState.key === key) {
+      if (sortState.dir === 'asc') nextDir = 'desc';
+      else if (sortState.dir === 'desc') nextDir = null;
+    }
+    sortState.key = nextDir ? key : null;
+    sortState.dir = nextDir;
+    updateSortIndicators(sortState.key, sortState.dir);
+    applySort(sortState.key, sortState.dir);
+  }
+
+  sortButtons.forEach(btn => {
+    btn.addEventListener('click', () => cycleSort(btn));
+  });
+
+  sortState.key = 'first';
+  sortState.dir = 'asc';
+  updateSortIndicators('first', 'asc');
+  applySort('first', 'asc');
+
+  function enableColumnResizing(tableEl){
+    const colgroup = tableEl.querySelector('colgroup');
+    if (!colgroup) return;
+    const cols = Array.from(colgroup.children);
+    const headers = Array.from(tableEl.querySelectorAll('thead th'));
+    const MIN_WIDTH = 48;
+
+    headers.forEach((th, index) => {
+      th.style.position = 'relative';
+      const handle = document.createElement('span');
+      handle.className = 'col-resize-handle';
+      handle.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const startX = ev.clientX;
+        const col = cols[index];
+        const startWidth = col && col.style.width
+          ? parseFloat(col.style.width)
+          : th.getBoundingClientRect().width;
+        function onMove(e){
+          const delta = e.clientX - startX;
+          const newWidth = Math.max(MIN_WIDTH, startWidth + delta);
+          if (col) {
+            col.style.width = `${newWidth}px`;
+            col.style.minWidth = `${newWidth}px`;
+          }
+        }
+        function onUp(){
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.body.style.cursor = '';
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.body.style.cursor = 'col-resize';
+      });
+      handle.addEventListener('dblclick', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const col = cols[index];
+        if (!col) return;
+        col.style.width = '';
+        col.style.minWidth = '';
+        const cells = tableEl.querySelectorAll(`tr > *:nth-child(${index + 1})`);
+        let max = 0;
+        cells.forEach(cell => {
+          const style = window.getComputedStyle(cell);
+          const width = cell.scrollWidth + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+          if (width > max) max = width;
+        });
+        if (max > 0) {
+          const finalWidth = Math.max(MIN_WIDTH, Math.ceil(max));
+          col.style.width = `${finalWidth}px`;
+          col.style.minWidth = `${finalWidth}px`;
+        }
+      });
+      th.appendChild(handle);
+    });
+  }
+
+  enableColumnResizing(table);
+
+  window.__refreshClientSearchCache = function(uid){
+    const key = String(uid || '');
+    if (!key) return;
+    refreshSearchCache(key);
+    if (searchInput) {
+      applySearch(searchInput.value);
+    }
+  };
+
+  window.__reapplyClientSort = function(){
+    updateSortIndicators(sortState.key, sortState.dir);
+    applySort(sortState.key, sortState.dir);
+  };
+
+  applySearch(searchInput ? searchInput.value : '');
+  updateSelectAll();
+})();
+
 // --- Assign Plan modal wiring ---
 (function(){
   const btn = document.getElementById('ppContinue');
@@ -1503,11 +2032,20 @@ function renderCategoryChips(list){
 
       const mainRow = document.querySelector(`tr.client-row[data-uid="${uid}"]`);
       if (mainRow) {
-        const plansCell = mainRow.querySelector('td:nth-child(12)');
+        const plansCell = mainRow.querySelector('td:nth-child(13)');
         if (plansCell) {
           const n = parseInt(plansCell.textContent.trim(), 10);
-          plansCell.textContent = isNaN(n) ? '1' : String(n + (json.already_assigned ? 0 : 1));
+          const nextVal = isNaN(n) ? 1 : (n + (json.already_assigned ? 0 : 1));
+          plansCell.textContent = String(nextVal);
+          mainRow.dataset.sortPlans = String(nextVal);
         }
+      }
+
+      if (typeof window.__refreshClientSearchCache === 'function') {
+        window.__refreshClientSearchCache(uid);
+      }
+      if (typeof window.__reapplyClientSort === 'function') {
+        window.__reapplyClientSort();
       }
 
       const exp = document.getElementById('exp-'+uid);
@@ -1924,6 +2462,10 @@ function applyUserExerciseData(tr, data){
     updated_at: normalizedUpdatedAt,
     updated_by_name: normalizedUpdatedBy
   };
+
+  if (typeof window.__refreshClientSearchCache === 'function') {
+    window.__refreshClientSearchCache(uid);
+  }
 }
 
 function startRowEdit(tr){
