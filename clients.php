@@ -261,16 +261,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $idsIn = implode(',', array_map('intval', $toInsert));
         $newRows = [];
         if ($idsIn !== '') {
-          $q = "SELECT id AS ex_id, name, notes, video_url FROM exercises WHERE id IN ($idsIn)";
+          $q = "
+            SELECT
+              e.id AS ex_id,
+              e.name,
+              e.notes,
+              e.video_url,
+              GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR '||') AS categories
+            FROM exercises e
+            LEFT JOIN exercise_categories ec ON ec.exercise_id = e.id
+            LEFT JOIN categories c ON c.id = ec.category_id
+            WHERE e.id IN ($idsIn)
+            GROUP BY e.id
+          ";
           if ($res = $conn->query($q)) {
             while ($r = $res->fetch_assoc()) {
               $videoUrl = (string)($r['video_url'] ?? '');
+              $catRaw = (string)($r['categories'] ?? '');
+              $catList = array_values(array_filter(array_map('trim', explode('||', $catRaw)), fn($s) => $s !== ''));
               $newRows[] = [
                 'ex_id' => (int)$r['ex_id'],
                 'name'  => (string)$r['name'],
                 'notes' => (string)($r['notes'] ?? ''),
                 'has_video' => $videoUrl !== '',
                 'video_url' => $videoUrl,
+                'categories' => $catList,
                 'updated_at' => null,
                 'updated_by_name' => '—'
               ];
@@ -807,6 +822,7 @@ $sqlEx = "
     e.name,
     e.notes,
     e.video_url,
+    GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR '||') AS categories,
     " . ($HAS_EX_CREATED_AT ? "e.created_at" : "NULL AS created_at") . ",
     " . ($HAS_EX_CREATED_BY ? "e.created_by" : "NULL AS created_by") . ",
     " . ($HAS_EX_UPDATED_AT ? "e.updated_at" : "NULL AS updated_at") . ",
@@ -814,6 +830,8 @@ $sqlEx = "
     COUNT(DISTINCT pe2.plan_id) AS used_in_plans
   FROM plan_exercises pe
   JOIN exercises e       ON e.id = pe.exercise_id
+  LEFT JOIN exercise_categories ec ON ec.exercise_id = e.id
+  LEFT JOIN categories c ON c.id = ec.category_id
   LEFT JOIN plan_exercises pe2 ON pe2.exercise_id = e.id
   GROUP BY pe.plan_id, e.id
   ORDER BY pe.plan_id ASC, e.name ASC
@@ -898,6 +916,8 @@ if ($rs = $conn->query($sqlEx)) {
     }
 
     $videoUrl = (string)($r['video_url'] ?? '');
+    $catRaw = (string)($r['categories'] ?? '');
+    $catList = array_values(array_filter(array_map('trim', explode('||', $catRaw)), fn($s) => $s !== ''));
 
     $exByPlan[$pid][] = [
       'ex_id'            => (int)$r['ex_id'],
@@ -905,6 +925,7 @@ if ($rs = $conn->query($sqlEx)) {
       'notes'            => (string)($r['notes'] ?? ''),
       'has_video'        => $videoUrl !== '',
       'video_url'        => $videoUrl,
+      'categories'       => $catList,
       'created_at'       => $r['created_at'] ?? null,
       'created_by_name'  => $creator,
       'updated_at'       => $r['updated_at'] ?? null,
@@ -1525,6 +1546,7 @@ function renderClientExpansion(uid, body){
                 <th style="padding:8px 10px">Ex ID</th>
                 <th style="padding:8px 10px">Name</th>
                 <th style="padding:8px 10px">Notes</th>
+                <th style="padding:8px 10px">Categories</th>
                 <th style="padding:8px 10px">Media</th>
                 <th style="padding:8px 10px">Sets</th>
                 <th style="padding:8px 10px">Reps</th>
@@ -1538,7 +1560,7 @@ function renderClientExpansion(uid, body){
             <tbody>
       `;
       if (!exs.length) {
-        exHtml += `<tr><td colspan="11" class="muted empty-state" style="padding:10px">No exercises in this plan.</td></tr>`;
+        exHtml += `<tr><td colspan="12" class="muted empty-state" style="padding:10px">No exercises in this plan.</td></tr>`;
       } else {
         exs.forEach(ex=>{
           const per = (userEx[p.id] && userEx[p.id][ex.ex_id]) || {};
@@ -1556,6 +1578,8 @@ function renderClientExpansion(uid, body){
           const editedBy   = per && per.updated_by_name ? per.updated_by_name : null;
 
           const exLink = `exercises.php?focus_exercise=${encodeURIComponent(ex.ex_id)}#ex-${encodeURIComponent(ex.ex_id)}`;
+          const catList = Array.isArray(ex.categories) ? ex.categories : [];
+          const catDisplay = catList.length ? catList.map(c=>escapeHtml(c)).join(', ') : '—';
           const videoUrl = ex.video_url || '';
           const hasVideo = !!videoUrl;
           const videoAttrs = hasVideo
@@ -1572,7 +1596,8 @@ function renderClientExpansion(uid, body){
             <tr class="mini-ex-row" data-ex-id="${ex.ex_id}" data-user-id="${uid}" data-plan-id="${p.id}">
               <td style="padding:8px 10px">${ex.ex_id}</td>
               <td style="padding:8px 10px"><a href="${exLink}" class="mini-ex-link"><strong>${escapeHtml(ex.name||'')}</strong></a></td>
-              <td class="muted" style="padding:8px 10px" data-cell="notes" class="editable">${escapeHtml(showNotes)}</td>
+              <td class="muted" style="padding:8px 10px" data-cell="notes">${escapeHtml(showNotes)}</td>
+              <td class="muted" style="padding:8px 10px" data-cell="categories">${catDisplay}</td>
               <td style="padding:8px 10px">${videoCell}</td>
               <td style="padding:8px 10px" data-cell="sets"      class="editable">${sets}</td>
               <td style="padding:8px 10px" data-cell="reps"      class="editable">${reps}</td>
@@ -1589,7 +1614,7 @@ function renderClientExpansion(uid, body){
       }
       exHtml += `
             <tr class="add-ex-row" data-plan-id="${p.id}">
-              <td colspan="11" style="padding:10px">
+              <td colspan="12" style="padding:10px">
                 <div style="display:flex;align-items:center;gap:10px">
                   <span style="font-size:18px;line-height:1">+</span>
                   <strong>Add an exercise</strong>
@@ -2064,6 +2089,7 @@ document.getElementById('aeAdd')?.addEventListener('click', async ()=>{
         notes: ex.notes || '',
         has_video: !!(ex.video_url || ex.has_video),
         video_url: ex.video_url || '',
+        categories: Array.isArray(ex.categories) ? ex.categories : [],
         updated_at: ex.updated_at || null,
         updated_by_name: ex.updated_by_name || null
       });
@@ -2081,6 +2107,8 @@ document.getElementById('aeAdd')?.addEventListener('click', async ()=>{
         tr.setAttribute('data-user-id', __AddEx.userId ? String(__AddEx.userId) : '');
         tr.setAttribute('data-plan-id', String(planId));
         const exLink = `exercises.php?focus_exercise=${encodeURIComponent(ex.ex_id)}#ex-${encodeURIComponent(ex.ex_id)}`;
+        const catList = Array.isArray(ex.categories) ? ex.categories : [];
+        const catDisplay = catList.length ? catList.map(c=>escapeHtml(c)).join(', ') : '—';
         const videoUrl = ex.video_url || '';
         const hasVideo = !!videoUrl;
         const videoAttrs = hasVideo
@@ -2094,6 +2122,7 @@ document.getElementById('aeAdd')?.addEventListener('click', async ()=>{
           <td style="padding:8px 10px">${ex.ex_id}</td>
           <td style="padding:8px 10px"><a href="${exLink}" class="mini-ex-link"><strong>${escapeHtml(ex.name||'')}</strong></a></td>
           <td style="padding:8px 10px" class="muted" data-cell="notes">—</td>
+          <td style="padding:8px 10px" class="muted" data-cell="categories">${catDisplay}</td>
           <td style="padding:8px 10px">${videoChip}</td>
           <td style="padding:8px 10px" data-cell="sets"     class="editable">—</td>
           <td style="padding:8px 10px" data-cell="reps"     class="editable">—</td>
