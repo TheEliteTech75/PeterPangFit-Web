@@ -1332,26 +1332,29 @@ $CAT_PALETTE = [
     }
     .dash-settings.is-open{ transform:translateX(0); }
     .dash-settings__inner{ padding:20px 20px 24px; display:flex; flex-direction:column; gap:20px; overflow-y:auto; flex:1; }
-    .dash-settings__header{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .dash-settings__header{ display:flex; align-items:center; justify-content:space-between; gap:12px; position:relative; }
     .dash-settings__header h2{ margin:0; font-size:16px; }
     .dash-settings__close{
       border:1px solid var(--border);
       background:#111a2c;
       color:var(--c-text);
       border-radius:999px;
-      padding:6px 12px;
+      width:34px;
+      height:34px;
+      padding:0;
       font-size:12px;
       text-transform:uppercase;
       letter-spacing:0.05em;
       display:inline-flex;
       align-items:center;
+      justify-content:center;
       gap:6px;
       cursor:pointer;
       transition:background .2s ease, border-color .2s ease;
     }
     .dash-settings__close:is(:hover,:focus-visible){ background:#182338; border-color:#2a3650; }
-    .dash-settings__close-icon{ font-size:14px; line-height:1; }
-    .dash-settings__close-text{ font-size:11px; letter-spacing:0.08em; }
+    .dash-settings__close-icon{ font-size:18px; line-height:1; }
+    .dash-settings__close-text{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
     .dash-settings__section{ display:flex; flex-direction:column; gap:12px; }
     .dash-settings__section h3{ margin:0; font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:#f3f6ff; }
     .dash-settings__columns{ display:flex; gap:10px; flex-wrap:wrap; }
@@ -2039,7 +2042,7 @@ $CAT_PALETTE = [
     <div class="dash-settings__inner">
       <div class="dash-settings__header">
         <h2>Dashboard Options</h2>
-        <button type="button" class="dash-settings__close" data-close-settings aria-label="Close dashboard options">
+        <button type="button" class="dash-settings__close" data-close-settings aria-label="Close dashboard options" title="Close dashboard options">
           <span class="dash-settings__close-icon" aria-hidden="true">&times;</span>
           <span class="dash-settings__close-text">Close</span>
         </button>
