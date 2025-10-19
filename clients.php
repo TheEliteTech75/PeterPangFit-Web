@@ -136,6 +136,34 @@ function ppf_parse_weight_to_float($input): ?float {
   return (float)$s;
 }
 
+function ppf_parse_category_concat(string $raw): array {
+  $raw = trim($raw);
+  if ($raw === '') return [];
+
+  $parts = explode('||', $raw);
+  $out = [];
+  foreach ($parts as $part) {
+    $part = trim($part);
+    if ($part === '') continue;
+
+    $id = null;
+    $name = $part;
+    if (strpos($part, '::') !== false) {
+      [$idRaw, $nameRaw] = explode('::', $part, 2);
+      $nameRaw = trim($nameRaw ?? '');
+      if ($nameRaw === '') continue;
+      $id = is_numeric($idRaw) ? (int)$idRaw : null;
+      $name = $nameRaw;
+    }
+
+    $name = trim($name);
+    if ($name === '') continue;
+    $out[] = ['id' => $id, 'name' => $name];
+  }
+
+  return $out;
+}
+
 // ---------- CSRF ----------
 if (session_status() === PHP_SESSION_NONE) session_start();
 if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -267,7 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               e.name,
               e.notes,
               e.video_url,
-              GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR '||') AS categories
+              GROUP_CONCAT(DISTINCT CONCAT(c.id, '::', c.name) ORDER BY c.name SEPARATOR '||') AS categories
             FROM exercises e
             LEFT JOIN exercise_categories ec ON ec.exercise_id = e.id
             LEFT JOIN categories c ON c.id = ec.category_id
@@ -278,7 +306,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             while ($r = $res->fetch_assoc()) {
               $videoUrl = (string)($r['video_url'] ?? '');
               $catRaw = (string)($r['categories'] ?? '');
-              $catList = array_values(array_filter(array_map('trim', explode('||', $catRaw)), fn($s) => $s !== ''));
+              $catList = ppf_parse_category_concat($catRaw);
               $newRows[] = [
                 'ex_id' => (int)$r['ex_id'],
                 'name'  => (string)$r['name'],
@@ -822,7 +850,7 @@ $sqlEx = "
     e.name,
     e.notes,
     e.video_url,
-    GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR '||') AS categories,
+    GROUP_CONCAT(DISTINCT CONCAT(c.id, '::', c.name) ORDER BY c.name SEPARATOR '||') AS categories,
     " . ($HAS_EX_CREATED_AT ? "e.created_at" : "NULL AS created_at") . ",
     " . ($HAS_EX_CREATED_BY ? "e.created_by" : "NULL AS created_by") . ",
     " . ($HAS_EX_UPDATED_AT ? "e.updated_at" : "NULL AS updated_at") . ",
@@ -917,7 +945,7 @@ if ($rs = $conn->query($sqlEx)) {
 
     $videoUrl = (string)($r['video_url'] ?? '');
     $catRaw = (string)($r['categories'] ?? '');
-    $catList = array_values(array_filter(array_map('trim', explode('||', $catRaw)), fn($s) => $s !== ''));
+    $catList = ppf_parse_category_concat($catRaw);
 
     $exByPlan[$pid][] = [
       'ex_id'            => (int)$r['ex_id'],
@@ -1260,7 +1288,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .mini-ex-row:hover > td { background:#141a25; }
 
   .chip{ display:inline-flex;align-items:center;gap:6px; background:var(--chip);border:1px solid var(--line);
-    padding:3px 7px;border-radius:999px;font-size:12px;color:#c3c9d4 }
+    padding:3px 7px;border-radius:999px;font-size:12px;color:#c3c9d4; text-decoration:none }
+  .chip:hover, .chip:focus { text-decoration:none; }
+  .mini-cat-chip:hover { opacity:0.85; }
 
   .video-chip { cursor:pointer; color:#f8fafc; background:rgba(63, 99, 221, 0.18); border-color:rgba(99, 102, 241, 0.5); }
   .video-chip:hover { background:rgba(99,102,241,0.28); }
@@ -1410,6 +1440,32 @@ window.__CSRF = '<?php echo h($csrf); ?>';
 window.__TAB  = '<?php echo h($tab); ?>';
 window.__ALL_PLANS = <?php echo json_encode($allPlans, JSON_UNESCAPED_SLASHES); ?>;
 window.__ALL_EXERCISES = <?php echo json_encode($allExercises, JSON_UNESCAPED_SLASHES); ?>;
+
+function renderCategoryChips(list){
+  if (!Array.isArray(list) || !list.length) {
+    return '<span class="muted">—</span>';
+  }
+
+  const parts = list.map(cat => {
+    if (!cat) return '';
+    if (typeof cat === 'object') {
+      const name = cat.name != null ? String(cat.name) : '';
+      if (!name.trim()) return '';
+      const safeName = escapeHtml(name);
+      const id = cat.id;
+      if (id !== null && id !== undefined && String(id).trim() !== '' && !Number.isNaN(Number(id))) {
+        const cid = encodeURIComponent(id);
+        return `<a class="chip mini-cat-chip" href="categories.php?focus_category=${cid}#cat-${cid}">${safeName}</a>`;
+      }
+      return `<span class="chip mini-cat-chip">${safeName}</span>`;
+    }
+    const name = String(cat).trim();
+    if (!name) return '';
+    return `<span class="chip mini-cat-chip">${escapeHtml(name)}</span>`;
+  }).filter(Boolean);
+
+  return parts.length ? parts.join(' ') : '<span class="muted">—</span>';
+}
 
 // --- Assign Plan modal wiring ---
 (function(){
@@ -1579,7 +1635,7 @@ function renderClientExpansion(uid, body){
 
           const exLink = `exercises.php?focus_exercise=${encodeURIComponent(ex.ex_id)}#ex-${encodeURIComponent(ex.ex_id)}`;
           const catList = Array.isArray(ex.categories) ? ex.categories : [];
-          const catDisplay = catList.length ? catList.map(c=>escapeHtml(c)).join(', ') : '—';
+          const catDisplay = renderCategoryChips(catList);
           const videoUrl = ex.video_url || '';
           const hasVideo = !!videoUrl;
           const videoAttrs = hasVideo
@@ -1597,7 +1653,7 @@ function renderClientExpansion(uid, body){
               <td style="padding:8px 10px">${ex.ex_id}</td>
               <td style="padding:8px 10px"><a href="${exLink}" class="mini-ex-link"><strong>${escapeHtml(ex.name||'')}</strong></a></td>
               <td class="muted" style="padding:8px 10px" data-cell="notes">${escapeHtml(showNotes)}</td>
-              <td class="muted" style="padding:8px 10px" data-cell="categories">${catDisplay}</td>
+              <td style="padding:8px 10px" data-cell="categories">${catDisplay}</td>
               <td style="padding:8px 10px">${videoCell}</td>
               <td style="padding:8px 10px" data-cell="sets"      class="editable">${sets}</td>
               <td style="padding:8px 10px" data-cell="reps"      class="editable">${reps}</td>
@@ -2108,7 +2164,7 @@ document.getElementById('aeAdd')?.addEventListener('click', async ()=>{
         tr.setAttribute('data-plan-id', String(planId));
         const exLink = `exercises.php?focus_exercise=${encodeURIComponent(ex.ex_id)}#ex-${encodeURIComponent(ex.ex_id)}`;
         const catList = Array.isArray(ex.categories) ? ex.categories : [];
-        const catDisplay = catList.length ? catList.map(c=>escapeHtml(c)).join(', ') : '—';
+        const catDisplay = renderCategoryChips(catList);
         const videoUrl = ex.video_url || '';
         const hasVideo = !!videoUrl;
         const videoAttrs = hasVideo
@@ -2122,7 +2178,7 @@ document.getElementById('aeAdd')?.addEventListener('click', async ()=>{
           <td style="padding:8px 10px">${ex.ex_id}</td>
           <td style="padding:8px 10px"><a href="${exLink}" class="mini-ex-link"><strong>${escapeHtml(ex.name||'')}</strong></a></td>
           <td style="padding:8px 10px" class="muted" data-cell="notes">—</td>
-          <td style="padding:8px 10px" class="muted" data-cell="categories">${catDisplay}</td>
+          <td style="padding:8px 10px" data-cell="categories">${catDisplay}</td>
           <td style="padding:8px 10px">${videoChip}</td>
           <td style="padding:8px 10px" data-cell="sets"     class="editable">—</td>
           <td style="padding:8px 10px" data-cell="reps"     class="editable">—</td>
