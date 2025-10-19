@@ -261,14 +261,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $idsIn = implode(',', array_map('intval', $toInsert));
         $newRows = [];
         if ($idsIn !== '') {
-          $q = "SELECT id AS ex_id, name, notes FROM exercises WHERE id IN ($idsIn)";
+          $q = "SELECT id AS ex_id, name, notes, video_url FROM exercises WHERE id IN ($idsIn)";
           if ($res = $conn->query($q)) {
             while ($r = $res->fetch_assoc()) {
+              $videoUrl = (string)($r['video_url'] ?? '');
               $newRows[] = [
                 'ex_id' => (int)$r['ex_id'],
                 'name'  => (string)$r['name'],
                 'notes' => (string)($r['notes'] ?? ''),
-                'has_video' => false,
+                'has_video' => $videoUrl !== '',
+                'video_url' => $videoUrl,
                 'updated_at' => null,
                 'updated_by_name' => '—'
               ];
@@ -895,11 +897,14 @@ if ($rs = $conn->query($sqlEx)) {
       $editor = user_display_name($conn, (int)$r['updated_by']);
     }
 
+    $videoUrl = (string)($r['video_url'] ?? '');
+
     $exByPlan[$pid][] = [
       'ex_id'            => (int)$r['ex_id'],
       'name'             => (string)$r['name'],
       'notes'            => (string)($r['notes'] ?? ''),
-      'has_video'        => (string)($r['video_url'] ?? '') !== '',
+      'has_video'        => $videoUrl !== '',
+      'video_url'        => $videoUrl,
       'created_at'       => $r['created_at'] ?? null,
       'created_by_name'  => $creator,
       'updated_at'       => $r['updated_at'] ?? null,
@@ -1226,14 +1231,42 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .empty-state { color:#f87171; font-weight:500; }
 
   .mini-ex-row { cursor:default; }
-  .mini-ex-link { color:inherit; text-decoration:underline; }
-  .mini-ex-link:hover { text-decoration:underline; opacity:0.85; }
+  .mini-ex-link { color:inherit; text-decoration:none; font-weight:600; }
+  .mini-ex-link:hover { text-decoration:none; opacity:0.85; }
+  .mini-ex-link:focus-visible { outline:2px solid var(--brand); outline-offset:3px; }
   .mini-ex-row:hover { background:#141a25; }
   .mini-ex-row > td { transition: background .15s ease; }
   .mini-ex-row:hover > td { background:#141a25; }
 
   .chip{ display:inline-flex;align-items:center;gap:6px; background:var(--chip);border:1px solid var(--line);
     padding:3px 7px;border-radius:999px;font-size:12px;color:#c3c9d4 }
+
+  .video-chip { cursor:pointer; color:#f8fafc; background:rgba(63, 99, 221, 0.18); border-color:rgba(99, 102, 241, 0.5); }
+  .video-chip:hover { background:rgba(99,102,241,0.28); }
+
+  .video-tooltip { position:absolute; z-index:4000; background:#0e1320; border:1px solid rgba(99,102,241,0.4);
+    border-radius:10px; padding:10px; width:240px; box-shadow:0 20px 50px rgba(0,0,0,0.55); display:none; pointer-events:none; }
+  .video-tooltip.visible { display:block; }
+  .video-tooltip video { width:100%; border-radius:8px; display:block; background:#000; }
+
+  .video-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:4500; }
+  .video-modal.open { display:flex; }
+  .video-modal__backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.72); }
+  .video-modal__content { position:relative; background:#0e1320; border:1px solid var(--line); border-radius:16px; padding:22px;
+    width:min(900px, 92vw); max-height:90vh; display:flex; flex-direction:column; gap:18px; box-shadow:0 28px 60px rgba(0,0,0,0.6); }
+  .video-modal__header { display:flex; align-items:flex-start; justify-content:space-between; }
+  .video-modal__title { font-size:20px; margin:0; }
+  .video-modal__body { display:flex; gap:18px; flex:1; overflow:hidden; }
+  .video-modal__video { flex:0 0 420px; max-width:100%; }
+  .video-modal__video video { width:100%; border-radius:12px; background:#000; display:block; }
+  .video-modal__description { flex:1; color:#c3c9d4; white-space:pre-line; overflow-y:auto; max-height:60vh; padding-right:4px; }
+  .video-modal__footer { display:flex; justify-content:flex-end; }
+
+  @media (max-width:900px) {
+    .video-modal__body { flex-direction:column; }
+    .video-modal__video { flex:0 0 auto; }
+    .video-modal__description { max-height:none; }
+  }
 
   /* NEW: show cursor and subtle hint for inline editable cells */
   td[data-cell="sets"], td[data-cell="reps"], td[data-cell="weight"], td[data-cell="duration"], td[data-cell="notes"] {
@@ -1308,6 +1341,30 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   <div class="actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
     <button class="btn" type="button" id="aeCancel">Cancel</button>
     <button class="btn brand" type="button" id="aeAdd">Add Selected</button>
+  </div>
+</div>
+
+<!-- Exercise video tooltip -->
+<div id="videoTooltip" class="video-tooltip" hidden>
+  <video id="videoTooltipVideo" muted playsinline loop></video>
+</div>
+
+<!-- Exercise video modal -->
+<div id="videoModal" class="video-modal" role="dialog" aria-modal="true" aria-labelledby="videoModalTitle" hidden>
+  <div class="video-modal__backdrop" data-video-modal-close></div>
+  <div class="video-modal__content">
+    <div class="video-modal__header">
+      <a id="videoModalTitle" class="mini-ex-link video-modal__title" href="#">Exercise Video</a>
+    </div>
+    <div class="video-modal__body">
+      <div class="video-modal__video">
+        <video id="videoModalVideo" muted playsinline controls loop></video>
+      </div>
+      <div class="video-modal__description" id="videoModalDescription"></div>
+    </div>
+    <div class="video-modal__footer">
+      <button class="btn" type="button" data-video-modal-close>Close</button>
+    </div>
   </div>
 </div>
 
@@ -1499,6 +1556,15 @@ function renderClientExpansion(uid, body){
           const editedBy   = per && per.updated_by_name ? per.updated_by_name : null;
 
           const exLink = `exercises.php?focus_exercise=${encodeURIComponent(ex.ex_id)}#ex-${encodeURIComponent(ex.ex_id)}`;
+          const videoUrl = ex.video_url || '';
+          const hasVideo = !!videoUrl;
+          const videoAttrs = hasVideo
+            ? ` data-video-url="${escapeHtml(videoUrl)}" data-ex-name="${escapeHtml(ex.name||'')}"`
+              + ` data-ex-desc="${escapeHtml(ex.notes||'')}" data-ex-link="${escapeHtml(exLink)}"`
+            : '';
+          const videoCell = hasVideo
+            ? `<span class="chip video-chip"${videoAttrs}>▶ Video</span>`
+            : '<span class="muted">—</span>';
           const weightAttr = weightRaw === null || weightRaw === undefined || weightRaw === '' ? '' : ` data-raw="${escapeHtml(String(weightRaw))}"`;
           const durAttr = durRaw === null || durRaw === undefined || durRaw === '' ? '' : ` data-raw="${escapeHtml(String(durRaw))}"`;
 
@@ -1507,7 +1573,7 @@ function renderClientExpansion(uid, body){
               <td style="padding:8px 10px">${ex.ex_id}</td>
               <td style="padding:8px 10px"><a href="${exLink}" class="mini-ex-link"><strong>${escapeHtml(ex.name||'')}</strong></a></td>
               <td class="muted" style="padding:8px 10px" data-cell="notes" class="editable">${escapeHtml(showNotes)}</td>
-              <td style="padding:8px 10px">${ex.has_video ? '<span class="chip">▶ Video</span>' : '<span class="muted">—</span>'}</td>
+              <td style="padding:8px 10px">${videoCell}</td>
               <td style="padding:8px 10px" data-cell="sets"      class="editable">${sets}</td>
               <td style="padding:8px 10px" data-cell="reps"      class="editable">${reps}</td>
               <td style="padding:8px 10px" data-cell="weight"    class="editable"${weightAttr}>${escapeHtml(weightDisp)}</td>
@@ -1996,7 +2062,8 @@ document.getElementById('aeAdd')?.addEventListener('click', async ()=>{
         ex_id: ex.ex_id,
         name: ex.name,
         notes: ex.notes || '',
-        has_video: !!ex.has_video,
+        has_video: !!(ex.video_url || ex.has_video),
+        video_url: ex.video_url || '',
         updated_at: ex.updated_at || null,
         updated_by_name: ex.updated_by_name || null
       });
@@ -2013,11 +2080,21 @@ document.getElementById('aeAdd')?.addEventListener('click', async ()=>{
         tr.setAttribute('data-ex-id', String(ex.ex_id));
         tr.setAttribute('data-user-id', __AddEx.userId ? String(__AddEx.userId) : '');
         tr.setAttribute('data-plan-id', String(planId));
+        const exLink = `exercises.php?focus_exercise=${encodeURIComponent(ex.ex_id)}#ex-${encodeURIComponent(ex.ex_id)}`;
+        const videoUrl = ex.video_url || '';
+        const hasVideo = !!videoUrl;
+        const videoAttrs = hasVideo
+          ? ` data-video-url="${escapeHtml(videoUrl)}" data-ex-name="${escapeHtml(ex.name||'')}"`
+            + ` data-ex-desc="${escapeHtml(ex.notes||'')}" data-ex-link="${escapeHtml(exLink)}"`
+          : '';
+        const videoChip = hasVideo
+          ? `<span class="chip video-chip"${videoAttrs}>▶ Video</span>`
+          : '<span class="muted">—</span>';
         tr.innerHTML = `
           <td style="padding:8px 10px">${ex.ex_id}</td>
-          <td style="padding:8px 10px"><strong>${escapeHtml(ex.name||'')}</strong></td>
+          <td style="padding:8px 10px"><a href="${exLink}" class="mini-ex-link"><strong>${escapeHtml(ex.name||'')}</strong></a></td>
           <td style="padding:8px 10px" class="muted" data-cell="notes">—</td>
-          <td style="padding:8px 10px"><span class="muted">—</span></td>
+          <td style="padding:8px 10px">${videoChip}</td>
           <td style="padding:8px 10px" data-cell="sets"     class="editable">—</td>
           <td style="padding:8px 10px" data-cell="reps"     class="editable">—</td>
           <td style="padding:8px 10px" data-cell="weight"   class="editable">—</td>
@@ -2245,6 +2322,149 @@ function closeCellEditor(td, {save=true, saveIfChanged=false}={}){
     saveCell(tr);
   }
 }
+
+const videoTooltip = document.getElementById('videoTooltip');
+const videoTooltipVideo = document.getElementById('videoTooltipVideo');
+let videoTooltipTimer = null;
+
+function hideVideoTooltip(immediate = false) {
+  if (!videoTooltip) return;
+  const execute = () => {
+    videoTooltip.classList.remove('visible');
+    videoTooltip.setAttribute('hidden', 'hidden');
+    if (videoTooltipVideo) {
+      videoTooltipVideo.pause();
+      videoTooltipVideo.removeAttribute('src');
+      videoTooltipVideo.load();
+    }
+  };
+  clearTimeout(videoTooltipTimer);
+  if (immediate) {
+    execute();
+  } else {
+    videoTooltipTimer = setTimeout(execute, 120);
+  }
+}
+
+function positionVideoTooltip(chip) {
+  if (!videoTooltip) return;
+  const rect = chip.getBoundingClientRect();
+  const tooltipRect = videoTooltip.getBoundingClientRect();
+  let top = rect.top + window.scrollY - tooltipRect.height - 10;
+  const minTop = window.scrollY + 12;
+  if (top < minTop) {
+    top = rect.bottom + window.scrollY + 10;
+  }
+  let left = rect.left + window.scrollX + (rect.width / 2) - (tooltipRect.width / 2);
+  const minLeft = window.scrollX + 12;
+  const maxLeft = window.scrollX + window.innerWidth - tooltipRect.width - 12;
+  left = Math.max(minLeft, Math.min(maxLeft, left));
+  videoTooltip.style.top = `${top}px`;
+  videoTooltip.style.left = `${left}px`;
+}
+
+function showVideoTooltip(chip) {
+  if (!videoTooltip || !videoTooltipVideo || !chip) return;
+  const url = chip.dataset.videoUrl;
+  if (!url) return;
+  clearTimeout(videoTooltipTimer);
+
+  if (videoTooltipVideo.getAttribute('src') !== url) {
+    videoTooltipVideo.src = url;
+    videoTooltipVideo.load();
+  }
+
+  videoTooltip.removeAttribute('hidden');
+  videoTooltip.classList.add('visible');
+
+  requestAnimationFrame(() => {
+    positionVideoTooltip(chip);
+    videoTooltipVideo.play().catch(()=>{});
+  });
+}
+
+const videoModal = document.getElementById('videoModal');
+const videoModalVideo = document.getElementById('videoModalVideo');
+const videoModalTitle = document.getElementById('videoModalTitle');
+const videoModalDescription = document.getElementById('videoModalDescription');
+
+function openVideoModal(chip) {
+  if (!videoModal || !videoModalVideo || !chip) return;
+  const url = chip.dataset.videoUrl;
+  if (!url) return;
+
+  const name = chip.dataset.exName || 'Exercise Video';
+  const link = chip.dataset.exLink || '#';
+  const desc = (chip.dataset.exDesc || '').trim();
+
+  if (videoModalTitle) {
+    videoModalTitle.textContent = name;
+    videoModalTitle.href = link;
+  }
+  if (videoModalDescription) {
+    videoModalDescription.textContent = desc !== '' ? desc : 'No description provided.';
+    videoModalDescription.classList.toggle('muted', desc === '');
+  }
+
+  videoModalVideo.src = url;
+  videoModalVideo.load();
+  videoModalVideo.play().catch(()=>{});
+
+  videoModal.removeAttribute('hidden');
+  videoModal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeVideoModal() {
+  if (!videoModal) return;
+  videoModal.classList.remove('open');
+  videoModal.setAttribute('hidden', 'hidden');
+  if (videoModalVideo) {
+    videoModalVideo.pause();
+    videoModalVideo.removeAttribute('src');
+    videoModalVideo.load();
+  }
+  document.body.style.overflow = '';
+}
+
+document.querySelectorAll('[data-video-modal-close]').forEach(el => {
+  el.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    closeVideoModal();
+  });
+});
+
+document.addEventListener('keydown', (ev)=>{
+  if (ev.key === 'Escape' && videoModal && videoModal.classList.contains('open')) {
+    closeVideoModal();
+  }
+});
+
+document.addEventListener('mouseover', (ev)=>{
+  const chip = ev.target.closest('.video-chip');
+  if (!chip) return;
+  if (chip.contains(ev.relatedTarget)) return;
+  showVideoTooltip(chip);
+}, true);
+
+document.addEventListener('mouseout', (ev)=>{
+  const chip = ev.target.closest('.video-chip');
+  if (!chip) return;
+  if (chip.contains(ev.relatedTarget)) return;
+  hideVideoTooltip();
+}, true);
+
+document.addEventListener('click', (ev)=>{
+  const chip = ev.target.closest('.video-chip');
+  if (!chip) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  hideVideoTooltip(true);
+  openVideoModal(chip);
+}, true);
+
+window.addEventListener('resize', ()=>hideVideoTooltip(true));
+document.addEventListener('scroll', ()=>hideVideoTooltip(true), true);
 
 // Activate cell editor on click
 document.addEventListener('click', function(e){
