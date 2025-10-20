@@ -817,6 +817,8 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
           <?php else: ?>
             <?php $index = 1; foreach ($items as $exercise):
               $weightOut = ($exercise['weight_val'] !== null && $exercise['weight_val'] !== '') ? (string)$exercise['weight_val'] : '';
+              $coachNotes = trim((string)($exercise['user_notes'] ?? ''));
+              $defaultCoachNotes = trim((string)($exercise['coach_notes'] ?? ''));
               $coachNotes = trim((string)($exercise['coach_notes'] ?? ''));
               $userNotes  = trim((string)($exercise['user_notes'] ?? ''));
               $durationStr = fmt_dur($exercise['duration_seconds'] ?? null);
@@ -834,6 +836,7 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
               $searchBlob = plan_search_blob([
                 $exercise['exercise_name'] ?? '',
                 $coachNotes,
+                $defaultCoachNotes,
                 $userNotes,
                 $weightOut,
                 $durationStr
@@ -1006,6 +1009,7 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
 
   function exportCSV() {
     const lines = [];
+    lines.push(['Plan Name','Assigned At','#','Exercise','Sets','Reps','Weight','Duration','Coach Notes'].join(','));
     lines.push(['Plan Name','Assigned At','#','Exercise','Sets','Reps','Weight','Duration','Coach Notes','Your Notes'].join(','));
     plans.forEach(section => {
       const planName = section.getAttribute('data-plan-name') || '';
@@ -1029,6 +1033,7 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
           escapeCsv(reps),
           escapeCsv(weight),
           escapeCsv(duration),
+          escapeCsv(coach)
           escapeCsv(coach),
           escapeCsv(user)
         ].join(','));
