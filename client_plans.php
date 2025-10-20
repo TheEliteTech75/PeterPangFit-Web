@@ -242,7 +242,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     main {
-      --page-pad-x: clamp(18px, 7vw, 64px);
+      --page-pad-x: clamp(12px, 2vw, 24px);
       padding: clamp(24px, 5vw, 64px) var(--page-pad-x);
       max-width: 100%;
       margin: 0 auto;
@@ -977,7 +977,9 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
     @media (min-width: 1440px) {
       main {
-        max-width: min(1520px, 100%);
+        max-width: 100%;
+        padding-left: clamp(20px, 1.8vw, 28px);
+        padding-right: clamp(20px, 1.8vw, 28px);
       }
       .hero__wrap {
         grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
