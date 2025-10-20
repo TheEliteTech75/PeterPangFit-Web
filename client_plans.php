@@ -242,8 +242,9 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     main {
-      padding: clamp(24px, 5vw, 64px) clamp(18px, 7vw, 64px);
-      max-width: min(1380px, 100%);
+      --page-pad-x: clamp(18px, 7vw, 64px);
+      padding: clamp(24px, 5vw, 64px) var(--page-pad-x);
+      max-width: 100%;
       margin: 0 auto;
       width: 100%;
     }
@@ -574,11 +575,14 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     .plan-grid {
       display: grid;
       gap: clamp(32px, 4vw, 48px);
-      align-items: start;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: stretch;
+      width: 100%;
     }
 
     .plan-grid > .plan-card {
-      align-self: start;
+      align-self: stretch;
+      width: 100%;
     }
 
     .plan-card {
@@ -937,7 +941,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
     @media (min-width: 1024px) {
       .plan-grid {
-        grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+        grid-template-columns: minmax(0, 1fr);
       }
     }
 
