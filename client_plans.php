@@ -819,6 +819,8 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
               $weightOut = ($exercise['weight_val'] !== null && $exercise['weight_val'] !== '') ? (string)$exercise['weight_val'] : '';
               $coachNotes = trim((string)($exercise['user_notes'] ?? ''));
               $defaultCoachNotes = trim((string)($exercise['coach_notes'] ?? ''));
+              $coachNotes = trim((string)($exercise['coach_notes'] ?? ''));
+              $userNotes  = trim((string)($exercise['user_notes'] ?? ''));
               $durationStr = fmt_dur($exercise['duration_seconds'] ?? null);
               $videoUrl = trim((string)($exercise['video_url'] ?? ''));
               $posterUrl = trim((string)($exercise['video_poster_url'] ?? ''));
@@ -835,6 +837,7 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
                 $exercise['exercise_name'] ?? '',
                 $coachNotes,
                 $defaultCoachNotes,
+                $userNotes,
                 $weightOut,
                 $durationStr
               ]);
@@ -847,6 +850,7 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
                      data-weight="<?php echo h($weightOut); ?>"
                      data-duration="<?php echo h($durationStr); ?>"
                      data-coach-notes="<?php echo h($coachNotes); ?>"
+                     data-user-notes="<?php echo h($userNotes); ?>"
             >
               <div class="exercise-media">
                 <?php if ($videoUrl !== ''): ?>
@@ -901,6 +905,10 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
                 <div class="notes-block<?php echo $coachNotes === '' ? ' empty' : ''; ?>">
                   <h4>Coach notes</h4>
                   <p><?php echo $coachNotes !== '' ? nl2br(h($coachNotes)) : 'No additional coaching notes provided.'; ?></p>
+                </div>
+                <div class="notes-block<?php echo $userNotes === '' ? ' empty' : ''; ?>">
+                  <h4>Your notes</h4>
+                  <p><?php echo $userNotes !== '' ? nl2br(h($userNotes)) : 'Add your own reminders and sensations as you complete this move.'; ?></p>
                 </div>
               </div>
             </article>
@@ -1002,6 +1010,7 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
   function exportCSV() {
     const lines = [];
     lines.push(['Plan Name','Assigned At','#','Exercise','Sets','Reps','Weight','Duration','Coach Notes'].join(','));
+    lines.push(['Plan Name','Assigned At','#','Exercise','Sets','Reps','Weight','Duration','Coach Notes','Your Notes'].join(','));
     plans.forEach(section => {
       const planName = section.getAttribute('data-plan-name') || '';
       const planAssigned = section.getAttribute('data-plan-assigned') || '';
@@ -1014,6 +1023,7 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
         const weight = card.getAttribute('data-weight') || '';
         const duration = card.getAttribute('data-duration') || '';
         const coach = card.getAttribute('data-coach-notes') || '';
+        const user = card.getAttribute('data-user-notes') || '';
         lines.push([
           escapeCsv(planName),
           escapeCsv(planAssigned),
@@ -1024,6 +1034,8 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
           escapeCsv(weight),
           escapeCsv(duration),
           escapeCsv(coach)
+          escapeCsv(coach),
+          escapeCsv(user)
         ].join(','));
       });
     });
