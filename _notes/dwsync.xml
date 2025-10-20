@@ -3,6 +3,9 @@
 <file name="dashboard.php" server="10.0.1.4/peterpangfitness/" local="3843593362" remote="3843593280" Dst="-1" />
 <file name="sys_json.php" server="10.0.1.4/peterpangfitness/" local="3843593341" remote="3843593280" Dst="-1" />
 <file name="clients.php" server="10.0.1.4/peterpangfitness/" local="3843603056" remote="3843603000" Dst="-1" />
-<file name="clients.php" server="peterpang.pwncore.net/peterpangfitness/" local="134054056974316031" remote="134054056800000000" Dst="2" />
+<file name="clients.php" server="peterpang.pwncore.net/peterpangfitness/" local="134054071667980342" remote="134054071800000000" Dst="2" />
 <file name="dashboard.php" server="peterpang.pwncore.net/peterpangfitness/" local="134053644600000000" remote="134053644600000000" Dst="2" />
+<file name="workout_plans.php" server="peterpang.pwncore.net/peterpangfitness/" local="134054122722460910" remote="134054122200000000" Dst="2" />
+<file name="profile.php" server="peterpang.pwncore.net/peterpangfitness/" local="134054071672682350" remote="134054071800000000" Dst="2" />
+<file name="client_plans.php" server="peterpang.pwncore.net/peterpangfitness/" local="134054147094851510" remote="134054146800000000" Dst="2" />
 </dwsync>
