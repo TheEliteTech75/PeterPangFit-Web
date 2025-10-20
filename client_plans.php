@@ -197,74 +197,88 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   <title><?php echo h($pageTitle); ?></title>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f7f8ff;
-      --bg-soft: #ffffff;
-      --card: #ffffff;
-      --card-border: rgba(82, 109, 255, 0.16);
-      --card-border-hover: rgba(82, 109, 255, 0.36);
-      --text: #1c1f3b;
-      --muted: #5d6483;
-      --accent: #4e63ff;
-      --accent-soft: rgba(78, 99, 255, 0.12);
-      --highlight: #0ab4a6;
-      --chip-bg: rgba(78, 99, 255, 0.09);
-      --chip-border: rgba(78, 99, 255, 0.2);
-      --shadow: 0 28px 50px rgba(119, 136, 196, 0.18);
-      --radius: 22px;
+      color-scheme: dark;
+      --bg: #020202;
+      --bg-soft: #050505;
+      --surface: #0a0a0a;
+      --surface-alt: #111111;
+      --card: #161616;
+      --card-border: rgba(0, 191, 255, 0.28);
+      --card-border-subtle: rgba(255, 255, 255, 0.08);
+      --card-border-hover: rgba(0, 191, 255, 0.45);
+      --text: #f3f7ff;
+      --muted: #9ca8bf;
+      --muted-strong: #c4cee0;
+      --accent: #00bfff;
+      --accent-soft: rgba(0, 191, 255, 0.15);
+      --accent-strong: #32cd32;
+      --danger: #ff4c4c;
+      --shadow: 0 28px 50px rgba(0, 0, 0, 0.55);
+      --radius-lg: 28px;
+      --radius: 20px;
       --radius-sm: 14px;
-      --transition: 220ms cubic-bezier(.4,.12,.2,1);
+      --transition: 200ms cubic-bezier(.33,.13,.21,.99);
+      font-family: 'Inter', 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
     }
 
-    * { box-sizing: border-box; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       background:
-        radial-gradient(circle at -10% -20%, rgba(78, 99, 255, 0.18), transparent 54%),
-        radial-gradient(circle at 90% 10%, rgba(10, 180, 166, 0.18), transparent 46%),
-        var(--bg);
+        radial-gradient(circle at 12% 12%, rgba(0, 191, 255, 0.18), transparent 55%),
+        radial-gradient(circle at 88% 8%, rgba(50, 205, 50, 0.1), transparent 50%),
+        linear-gradient(180deg, var(--bg), var(--surface));
       color: var(--text);
-      font-family: 'Inter', 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      font-family: inherit;
       line-height: 1.6;
       min-height: 100vh;
+      padding-bottom: 48px;
     }
 
-    a { color: var(--accent); }
+    a {
+      color: var(--accent);
+    }
 
     main {
-      padding: 28px clamp(18px, 4vw, 60px) 80px;
-      max-width: min(1100px, 100%);
-      margin-left: auto;
-      margin-right: auto;
+      padding: clamp(24px, 6vw, 60px) clamp(16px, 6vw, 48px);
+      max-width: min(1080px, 100%);
+      margin: 0 auto;
     }
 
     .hero {
       position: relative;
-      padding: clamp(32px, 6vw, 64px) clamp(18px, 4vw, 60px);
+      padding: clamp(32px, 6vw, 64px);
+      border-radius: clamp(22px, 7vw, 36px);
       overflow: hidden;
-      border-radius: clamp(26px, 6vw, 40px);
-      background: var(--bg-soft);
+      background:
+        linear-gradient(145deg, rgba(0, 191, 255, 0.22), rgba(0, 0, 0, 0.35)),
+        var(--surface-alt);
+      border: 1px solid var(--card-border-subtle);
       box-shadow: var(--shadow);
-      margin: clamp(12px, 4vw, 36px) auto 0;
     }
 
     .hero::before {
       content: '';
       position: absolute;
-      inset: -120px -180px -80px -180px;
+      inset: -60px -120px;
       background:
-        radial-gradient(circle at 18% 20%, rgba(78, 99, 255, 0.22), transparent 55%),
-        radial-gradient(circle at 80% 10%, rgba(10, 180, 166, 0.18), transparent 50%);
-      z-index: -2;
+        radial-gradient(circle at 15% 20%, rgba(0, 191, 255, 0.36), transparent 60%),
+        radial-gradient(circle at 82% 28%, rgba(255, 76, 76, 0.18), transparent 60%);
+      opacity: 0.65;
+      z-index: 0;
     }
 
     .hero::after {
       content: '';
       position: absolute;
       inset: 0;
-      background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(247, 249, 255, 0.92));
-      opacity: 0.6;
-      z-index: -3;
+      background: linear-gradient(120deg, rgba(0, 0, 0, 0.75), transparent 70%);
+      z-index: 0;
     }
 
     .hero__wrap {
@@ -276,104 +290,110 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
     .hero__intro {
       display: grid;
-      gap: 12px;
-      max-width: 720px;
+      gap: 14px;
+      max-width: 680px;
     }
 
     .hero__eyebrow {
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      padding: 8px 14px;
-      background: rgba(78, 99, 255, 0.1);
-      border: 1px solid rgba(78, 99, 255, 0.24);
+      padding: 8px 16px;
       border-radius: 999px;
+      background: rgba(0, 191, 255, 0.12);
+      border: 1px solid rgba(0, 191, 255, 0.32);
       font-size: 13px;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--accent);
+      color: var(--muted-strong);
       width: fit-content;
+    }
+
+    .hero__eyebrow svg {
+      width: 16px;
+      height: 16px;
+      stroke: var(--accent);
     }
 
     .hero__headline {
       margin: 0;
-      font-size: clamp(34px, 6vw, 50px);
-      line-height: 1.08;
+      font-size: clamp(34px, 7vw, 52px);
+      line-height: 1.1;
       font-weight: 700;
-      color: #131739;
+      color: #ffffff;
     }
 
     .hero__subtitle {
       margin: 0;
-      font-size: clamp(16px, 3.2vw, 20px);
-      max-width: 680px;
-      color: rgba(19, 31, 59, 0.72);
+      font-size: clamp(16px, 3.3vw, 20px);
+      color: rgba(255, 255, 255, 0.72);
+      max-width: 640px;
     }
 
     .hero__status {
       display: grid;
       gap: clamp(16px, 4vw, 28px);
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      align-items: stretch;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     }
 
     .hero-highlight {
-      padding: clamp(18px, 3.5vw, 26px);
-      background: linear-gradient(150deg, rgba(255, 255, 255, 0.92), rgba(233, 239, 255, 0.88));
+      padding: clamp(18px, 3.6vw, 26px);
       border-radius: var(--radius);
-      border: 1px solid rgba(78, 99, 255, 0.18);
+      border: 1px solid var(--card-border);
+      background:
+        linear-gradient(140deg, rgba(0, 0, 0, 0.5), rgba(0, 191, 255, 0.2));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
       display: grid;
-      gap: 10px;
-      box-shadow: 0 20px 45px rgba(126, 144, 212, 0.22);
+      gap: 12px;
     }
 
     .hero-highlight__label {
       font-size: 13px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: rgba(78, 99, 255, 0.75);
+      color: var(--muted);
     }
 
     .hero-highlight__name {
-      font-size: clamp(20px, 3.6vw, 26px);
+      font-size: clamp(20px, 3.5vw, 28px);
       font-weight: 600;
-      line-height: 1.3;
-      color: #0e1b40;
+      color: var(--text);
+      margin: 0;
     }
 
     .hero-highlight__meta {
-      color: rgba(19, 31, 59, 0.7);
+      color: rgba(243, 247, 255, 0.72);
       font-size: 15px;
     }
 
     .hero__stats {
       display: grid;
       gap: 16px;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     }
 
     .hero-stat {
       padding: 18px 20px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid rgba(82, 109, 255, 0.16);
       border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border-subtle);
+      background: rgba(10, 10, 10, 0.8);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
       display: grid;
       gap: 8px;
-      box-shadow: 0 16px 30px rgba(139, 156, 214, 0.18);
     }
 
     .hero-stat strong {
       display: block;
-      font-size: clamp(24px, 4vw, 30px);
+      font-size: clamp(24px, 4.5vw, 32px);
+      color: var(--accent);
       font-weight: 700;
       line-height: 1.15;
-      color: #121942;
     }
 
     .hero-stat__label {
-      color: rgba(28, 31, 59, 0.58);
-      font-size: 13px;
-      letter-spacing: 0.03em;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
     }
 
@@ -381,13 +401,13 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 14px;
-      margin-top: clamp(18px, 3vw, 28px);
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid rgba(82, 109, 255, 0.16);
-      border-radius: 20px;
-      padding: clamp(14px, 3vw, 18px);
-      box-shadow: 0 14px 30px rgba(142, 158, 214, 0.18);
+      gap: 16px;
+      margin-top: clamp(18px, 4vw, 30px);
+      padding: clamp(14px, 3.5vw, 20px);
+      border-radius: var(--radius);
+      background: rgba(8, 8, 8, 0.88);
+      border: 1px solid var(--card-border-subtle);
+      box-shadow: var(--shadow);
     }
 
     .toolbar .search {
@@ -395,15 +415,17 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       display: flex;
       align-items: center;
       gap: 12px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid rgba(82, 109, 255, 0.25);
+      padding: 10px 18px;
       border-radius: 999px;
-      padding: 10px 16px;
-      min-width: 200px;
+      border: 1px solid rgba(0, 191, 255, 0.35);
+      background: rgba(15, 15, 15, 0.9);
       color: var(--muted);
+      min-width: 220px;
     }
 
     .toolbar .search svg {
+      width: 18px;
+      height: 18px;
       stroke: var(--accent);
     }
 
@@ -420,27 +442,30 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 9px 14px;
+      padding: 8px 14px;
       border-radius: 999px;
-      border: 1px solid var(--chip-border);
-      background: var(--chip-bg);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(20, 20, 20, 0.82);
       font-size: 14px;
-      color: rgba(28, 31, 59, 0.82);
+      color: var(--muted-strong);
       white-space: nowrap;
     }
 
     .chip .dot {
       width: 10px;
       height: 10px;
-      border-radius: 50%;
+      border-radius: 999px;
+      background: var(--accent);
     }
 
     .chip strong {
-      color: #121942;
+      color: var(--text);
+      font-weight: 600;
     }
 
-    .chip .dot.blue { background: var(--accent); }
-    .chip .dot.green { background: var(--highlight); }
+    .chip .dot.green {
+      background: var(--accent-strong);
+    }
 
     .actions {
       margin-left: auto;
@@ -454,48 +479,48 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 10px 16px;
+      padding: 10px 18px;
       border-radius: 12px;
-      border: 1px solid rgba(82, 109, 255, 0.26);
-      background: linear-gradient(135deg, #5366ff, #6b7eff);
-      color: #fff;
+      border: 1px solid rgba(0, 191, 255, 0.45);
+      background: linear-gradient(135deg, rgba(0, 191, 255, 0.95), rgba(50, 205, 50, 0.85));
+      color: #001317;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 700;
       font-size: 14px;
       text-decoration: none;
-      transition: background var(--transition), transform var(--transition), border-color var(--transition), box-shadow var(--transition);
       min-width: 140px;
-      box-shadow: 0 12px 20px rgba(105, 125, 210, 0.26);
+      box-shadow: 0 16px 32px rgba(0, 191, 255, 0.28);
+      transition: transform var(--transition), box-shadow var(--transition), filter var(--transition);
     }
 
-    .btn:hover {
-      background: linear-gradient(135deg, #4b5cf7, #6476ff);
-      border-color: rgba(82, 109, 255, 0.36);
-      transform: translateY(-1px);
-      box-shadow: 0 16px 26px rgba(105, 125, 210, 0.32);
+    .btn:hover,
+    .btn:focus-visible {
+      outline: none;
+      transform: translateY(-2px);
+      box-shadow: 0 22px 40px rgba(0, 191, 255, 0.35);
+      filter: brightness(1.05);
     }
 
     .plan-nav {
-      margin-top: clamp(26px, 5vw, 36px);
+      margin-top: clamp(26px, 6vw, 38px);
       display: grid;
       gap: 12px;
     }
 
     .plan-nav__title {
       margin: 0;
-      font-size: 15px;
-      letter-spacing: 0.08em;
+      font-size: 14px;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: rgba(28, 31, 59, 0.6);
+      color: var(--muted);
     }
 
     .plan-nav__rail {
       display: flex;
       gap: 12px;
       overflow-x: auto;
-      padding-bottom: 6px;
+      padding: 2px 4px 6px;
       scrollbar-width: thin;
-      padding-right: 4px;
       scroll-snap-type: x mandatory;
       overscroll-behavior-x: contain;
       -webkit-overflow-scrolling: touch;
@@ -506,161 +531,137 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     .plan-nav__rail::-webkit-scrollbar-thumb {
-      background: rgba(78, 99, 255, 0.26);
+      background: rgba(0, 191, 255, 0.35);
       border-radius: 999px;
     }
 
     .plan-nav__button {
       flex: 0 0 auto;
-      padding: 12px 16px;
-      border-radius: 14px;
-      border: 1px solid rgba(82, 109, 255, 0.22);
-      background: rgba(255, 255, 255, 0.95);
-      color: #1f2550;
+      padding: 12px 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 191, 255, 0.38);
+      background: rgba(16, 20, 24, 0.92);
+      color: var(--text);
       font-weight: 600;
       font-size: 14px;
-      cursor: pointer;
-      transition: background var(--transition), border-color var(--transition), transform var(--transition), box-shadow var(--transition);
-      text-align: left;
-      box-shadow: 0 10px 18px rgba(142, 158, 214, 0.18);
-      scroll-snap-align: start;
+      text-decoration: none;
+      scroll-snap-align: center;
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
     }
 
     .plan-nav__button:hover,
     .plan-nav__button:focus-visible {
       outline: none;
-      background: linear-gradient(120deg, rgba(83, 102, 255, 0.18), rgba(255, 255, 255, 0.95));
-      border-color: rgba(83, 102, 255, 0.42);
-      transform: translateY(-1px);
-      box-shadow: 0 12px 22px rgba(121, 138, 210, 0.22);
+      transform: translateY(-2px);
+      border-color: var(--card-border-hover);
+      box-shadow: 0 16px 32px rgba(0, 191, 255, 0.28);
     }
 
-    .plan-nav__button span {
-      display: block;
-      margin-top: 4px;
-      font-size: 12px;
-      font-weight: 500;
-      color: rgba(31, 37, 80, 0.58);
-    }
-
-    .plan-grid {
-      display: grid;
-      gap: clamp(20px, 3vw, 30px);
-      margin-top: clamp(28px, 4vw, 40px);
+    .plan-section {
+      margin-top: clamp(36px, 8vw, 60px);
     }
 
     .plan-card {
-      position: relative;
-      border-radius: var(--radius);
-      background: var(--card);
-      border: 1px solid var(--card-border);
+      background: var(--surface-alt);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--card-border-subtle);
       box-shadow: var(--shadow);
       overflow: hidden;
-      transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
-    }
-
-    .plan-card:hover {
-      border-color: var(--card-border-hover);
-      transform: translateY(-2px);
-    }
-
-    .plan-card--highlight {
-      border-color: rgba(110, 197, 255, 0.7) !important;
-      box-shadow: 0 0 0 2px rgba(110, 197, 255, 0.4), var(--shadow);
     }
 
     .plan-card__header {
-      padding: 26px clamp(22px, 4vw, 34px) 20px;
+      padding: clamp(22px, 5vw, 32px);
       display: flex;
       flex-wrap: wrap;
-      gap: 18px;
+      gap: 16px 24px;
       align-items: flex-start;
-      border-bottom: 1px solid rgba(82, 109, 255, 0.16);
-      background: linear-gradient(155deg, rgba(83, 102, 255, 0.12), rgba(255, 255, 255, 0.94));
+      background:
+        linear-gradient(130deg, rgba(0, 191, 255, 0.18), rgba(0, 0, 0, 0.6));
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .plan-card__intro {
+      flex: 1 1 240px;
+      display: grid;
+      gap: 6px;
+      min-width: 0;
     }
 
     .plan-card__title {
       margin: 0;
-      font-size: clamp(22px, 3.5vw, 28px);
-      font-weight: 700;
-      color: #121942;
+      font-size: clamp(24px, 4vw, 32px);
+      line-height: 1.2;
+      color: #ffffff;
     }
 
     .plan-card__meta {
-      color: rgba(28, 31, 59, 0.62);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      color: rgba(240, 248, 255, 0.7);
       font-size: 14px;
     }
 
     .plan-card__pills {
       display: flex;
-      gap: 10px;
       flex-wrap: wrap;
-      margin-top: 10px;
+      gap: 8px;
     }
 
     .plan-card__pill {
       padding: 7px 12px;
       border-radius: 999px;
-      border: 1px solid rgba(82, 109, 255, 0.2);
-      background: rgba(82, 109, 255, 0.08);
-      font-size: 13px;
-      color: #1f2550;
+      background: rgba(0, 191, 255, 0.18);
+      border: 1px solid rgba(0, 191, 255, 0.3);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted-strong);
     }
 
     .plan-card__toggle {
+      display: flex;
+      gap: 8px;
       margin-left: auto;
     }
 
     .plan-card__toggle button {
-      all: unset;
-      cursor: pointer;
-      padding: 8px 14px;
+      border: none;
       border-radius: 12px;
-      border: 1px solid rgba(82, 109, 255, 0.28);
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #31417f;
-      background: rgba(255, 255, 255, 0.95);
-      transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
+      padding: 10px 16px;
+      background: rgba(0, 191, 255, 0.16);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background var(--transition), transform var(--transition);
     }
 
-    .plan-card__toggle button:hover {
-      background: linear-gradient(135deg, rgba(83, 102, 255, 0.16), rgba(255, 255, 255, 0.96));
-      border-color: rgba(82, 109, 255, 0.42);
-      box-shadow: 0 10px 20px rgba(124, 142, 210, 0.18);
+    .plan-card__toggle button:hover,
+    .plan-card__toggle button:focus-visible {
+      outline: none;
+      background: rgba(0, 191, 255, 0.24);
+      transform: translateY(-1px);
     }
 
     .plan-card__body {
-      padding: clamp(20px, 4vw, 34px);
       display: grid;
-      gap: 18px;
-      background: rgba(255, 255, 255, 0.88);
-    }
-
-    .plan-card__empty,
-    .plan-card__empty-filter {
-      padding: 18px;
-      border-radius: var(--radius-sm);
-      background: rgba(228, 234, 255, 0.6);
-      border: 1px dashed rgba(82, 109, 255, 0.35);
-      color: rgba(31, 37, 80, 0.7);
-      text-align: center;
-      font-size: 15px;
+      gap: 22px;
+      padding: clamp(22px, 5vw, 34px);
+      background: rgba(8, 8, 8, 0.85);
     }
 
     .exercise-card {
       display: grid;
-      grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
-      gap: 22px;
-      padding: clamp(18px, 3.2vw, 26px);
-      border-radius: var(--radius-sm);
-      background: rgba(255, 255, 255, 0.95);
-      border: 1px solid rgba(82, 109, 255, 0.18);
+      gap: 20px;
+      grid-template-columns: minmax(220px, 1fr) minmax(0, 1.2fr);
+      background: rgba(20, 20, 20, 0.96);
+      border-radius: var(--radius);
+      padding: clamp(18px, 4vw, 28px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
       position: relative;
       overflow: hidden;
-      transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
-      box-shadow: 0 18px 30px rgba(151, 164, 219, 0.2);
+      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55);
+      transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
     }
 
     .exercise-card::after {
@@ -668,15 +669,16 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       position: absolute;
       inset: 0;
       pointer-events: none;
-      background: radial-gradient(circle at 15% 15%, rgba(83, 102, 255, 0.12), transparent 60%);
+      border-radius: inherit;
+      background: radial-gradient(circle at 18% 18%, rgba(0, 191, 255, 0.18), transparent 60%);
       opacity: 0;
       transition: opacity var(--transition);
     }
 
     .exercise-card:hover {
-      border-color: rgba(83, 102, 255, 0.45);
       transform: translateY(-3px);
-      box-shadow: 0 22px 36px rgba(142, 158, 214, 0.28);
+      border-color: var(--card-border);
+      box-shadow: 0 26px 48px rgba(0, 0, 0, 0.6);
     }
 
     .exercise-card:hover::after {
@@ -687,9 +689,9 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       position: relative;
       border-radius: 16px;
       overflow: hidden;
-      background: rgba(239, 244, 255, 0.9);
       min-height: 180px;
-      box-shadow: inset 0 0 0 1px rgba(82, 109, 255, 0.08);
+      background: #000;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
     }
 
     .exercise-media video,
@@ -702,19 +704,18 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
     .exercise-media video {
       aspect-ratio: 16 / 9;
-      background: #000;
     }
 
     .exercise-media__badge {
       position: absolute;
       right: 12px;
       bottom: 12px;
-      background: rgba(19, 31, 59, 0.78);
-      color: #fff;
+      background: rgba(0, 0, 0, 0.65);
+      color: #ffffff;
       border-radius: 999px;
       padding: 6px 12px;
       font-size: 12px;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
@@ -726,52 +727,53 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       align-items: center;
       justify-content: center;
       gap: 10px;
-      color: rgba(31, 37, 80, 0.72);
-      font-size: 14px;
       text-align: center;
-      padding: 20px;
-      background: linear-gradient(145deg, rgba(230, 235, 255, 0.92), rgba(255, 255, 255, 0.92));
-      border: 1px dashed rgba(82, 109, 255, 0.26);
+      padding: 22px;
+      color: var(--muted-strong);
+      background:
+        linear-gradient(160deg, rgba(0, 0, 0, 0.8), rgba(0, 191, 255, 0.18));
+      border: 1px dashed rgba(0, 191, 255, 0.4);
     }
 
     .exercise-media__fallback svg {
       width: 38px;
       height: 38px;
-      opacity: 0.9;
+      stroke: var(--accent);
     }
 
     .exercise-body {
       display: grid;
-      gap: 14px;
+      gap: 16px;
+      min-width: 0;
     }
 
     .exercise-head {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px 16px;
       align-items: baseline;
+      gap: 12px 18px;
     }
 
     .exercise-index {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 34px;
-      height: 34px;
+      width: 36px;
+      height: 36px;
       border-radius: 12px;
-      background: rgba(83, 102, 255, 0.12);
-      border: 1px solid rgba(83, 102, 255, 0.32);
+      background: rgba(0, 191, 255, 0.16);
+      border: 1px solid rgba(0, 191, 255, 0.3);
       font-weight: 600;
       font-size: 15px;
-      color: #31417f;
+      color: var(--text);
     }
 
     .exercise-name {
-      font-size: clamp(20px, 3vw, 24px);
-      font-weight: 600;
       margin: 0;
+      font-size: clamp(20px, 3.5vw, 26px);
+      font-weight: 600;
+      color: var(--text);
       flex: 1 1 auto;
-      color: #141c45;
     }
 
     .exercise-meta {
@@ -784,64 +786,65 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 11px;
+      padding: 6px 12px;
       border-radius: 999px;
-      background: rgba(229, 235, 255, 0.8);
-      border: 1px solid rgba(82, 109, 255, 0.3);
+      background: rgba(0, 191, 255, 0.16);
+      border: 1px solid rgba(0, 191, 255, 0.35);
       font-size: 13px;
-      color: #1f2550;
+      color: var(--muted-strong);
     }
 
     .badge svg {
       width: 16px;
       height: 16px;
-      opacity: 0.85;
+      stroke: currentColor;
     }
 
     .notes-block {
-      background: rgba(235, 240, 255, 0.85);
-      border: 1px solid rgba(82, 109, 255, 0.18);
-      border-radius: 14px;
+      background: rgba(16, 18, 20, 0.9);
+      border: 1px solid rgba(0, 191, 255, 0.18);
+      border-radius: var(--radius-sm);
       padding: 16px 18px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
     }
 
     .notes-block h4 {
       margin: 0 0 8px;
-      font-size: 13px;
+      font-size: 12px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: rgba(31, 37, 80, 0.72);
+      color: var(--muted);
     }
 
     .notes-block p {
       margin: 0;
-      color: #1f2550;
+      color: var(--muted-strong);
       white-space: pre-line;
       font-size: 15px;
     }
 
     .notes-block.empty p {
-      color: rgba(31, 37, 80, 0.48);
+      color: rgba(156, 168, 191, 0.55);
       font-style: italic;
     }
 
     .plan-footnote {
       margin-top: 6px;
-      font-size: 13px;
-      color: rgba(31, 37, 80, 0.56);
+      font-size: 12px;
+      color: rgba(156, 168, 191, 0.65);
       text-align: right;
     }
 
     .page-empty {
       margin-top: 40px;
-      padding: 28px;
-      background: rgba(235, 240, 255, 0.8);
-      border: 1px dashed rgba(82, 109, 255, 0.3);
-      border-radius: var(--radius);
-      text-align: center;
+      padding: 30px;
+      border-radius: var(--radius-lg);
+      border: 1px dashed rgba(0, 191, 255, 0.3);
+      background: rgba(12, 12, 12, 0.88);
+      color: var(--muted-strong);
       font-size: 18px;
-      color: #1f2550;
-      box-shadow: 0 20px 38px rgba(150, 162, 216, 0.18);
+      text-align: center;
+      box-shadow: var(--shadow);
     }
 
     @media (max-width: 1100px) {
@@ -852,84 +855,60 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         grid-template-columns: minmax(0, 1fr);
       }
       .exercise-media {
-        min-height: 200px;
         order: -1;
+        min-height: 200px;
       }
       .exercise-body {
         order: 2;
       }
     }
 
-    @media (max-width: 720px) {
+    @media (max-width: 760px) {
       main {
-        padding: 22px clamp(14px, 6vw, 32px) 70px;
+        padding: clamp(20px, 6vw, 36px) clamp(14px, 6vw, 26px) 80px;
       }
       .hero {
-        padding: clamp(26px, 7vw, 42px) clamp(14px, 6vw, 32px);
-        border-radius: clamp(20px, 8vw, 30px);
-      }
-      .hero__status {
-        gap: 16px;
+        border-radius: clamp(18px, 9vw, 28px);
+        padding: clamp(26px, 8vw, 40px);
       }
       .toolbar {
         flex-direction: column;
         align-items: stretch;
-        gap: 12px;
-      }
-      .toolbar .search {
-        width: 100%;
       }
       .actions {
         width: 100%;
         justify-content: center;
-        gap: 8px;
       }
       .actions .btn {
         flex: 1 1 auto;
-        justify-content: center;
         min-width: 0;
       }
       .plan-nav {
         position: sticky;
-        top: calc(68px + env(safe-area-inset-top, 0px));
-        z-index: 5;
-        padding: 14px clamp(14px, 6vw, 24px);
-        background: linear-gradient(180deg, rgba(247, 249, 255, 0.92), rgba(247, 249, 255, 0.6));
-        margin-left: calc(-1 * clamp(14px, 6vw, 24px));
-        margin-right: calc(-1 * clamp(14px, 6vw, 24px));
-        box-shadow: 0 18px 30px rgba(151, 164, 219, 0.18);
-      }
-      .plan-nav__rail {
-        padding-bottom: 6px;
+        top: calc(64px + env(safe-area-inset-top, 0px));
+        z-index: 10;
+        background: rgba(5, 5, 5, 0.94);
+        backdrop-filter: blur(14px);
+        padding: 14px clamp(14px, 6vw, 22px);
+        margin-left: calc(-1 * clamp(14px, 6vw, 22px));
+        margin-right: calc(-1 * clamp(14px, 6vw, 22px));
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
       }
       .plan-card__header {
         flex-direction: column;
-      }
-      .plan-card__pills {
-        width: 100%;
       }
       .plan-card__toggle {
         width: 100%;
       }
       .plan-card__toggle button {
         width: 100%;
-        text-align: center;
       }
       .exercise-card {
-        padding: 18px;
+        padding: clamp(18px, 7vw, 24px);
         gap: 18px;
       }
-      .exercise-head {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-      .exercise-index {
-        width: 30px;
-        height: 30px;
-        font-size: 14px;
-      }
-      .notes-block {
-        padding: 14px 16px;
+      .plan-footnote {
+        text-align: left;
       }
     }
   </style>
