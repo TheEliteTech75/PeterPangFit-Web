@@ -242,9 +242,10 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     main {
-      padding: clamp(24px, 6vw, 60px) clamp(16px, 6vw, 48px);
-      max-width: min(1080px, 100%);
+      padding: clamp(24px, 5vw, 64px) clamp(18px, 7vw, 64px);
+      max-width: min(1380px, 100%);
       margin: 0 auto;
+      width: 100%;
     }
 
     .hero {
@@ -331,6 +332,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       display: grid;
       gap: clamp(16px, 4vw, 28px);
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      align-content: start;
     }
 
     .hero-highlight {
@@ -398,9 +400,10 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 16px;
+      justify-content: space-between;
+      gap: 16px 20px;
       margin-top: clamp(18px, 4vw, 30px);
-      padding: clamp(14px, 3.5vw, 20px);
+      padding: clamp(14px, 3.5vw, 22px);
       border-radius: var(--radius);
       background: rgba(8, 8, 8, 0.88);
       border: 1px solid var(--card-border-subtle);
@@ -534,6 +537,10 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
     .plan-nav__button {
       flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: flex-start;
       padding: 12px 18px;
       border-radius: 999px;
       border: 1px solid rgba(0, 191, 255, 0.38);
@@ -554,8 +561,18 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       box-shadow: 0 16px 32px rgba(0, 191, 255, 0.28);
     }
 
+    .plan-nav__button span {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
     .plan-section {
       margin-top: clamp(36px, 8vw, 60px);
+    }
+
+    .plan-grid {
+      display: grid;
+      gap: clamp(32px, 4vw, 48px);
     }
 
     .plan-card {
@@ -564,6 +581,8 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       border: 1px solid var(--card-border-subtle);
       box-shadow: var(--shadow);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .plan-card__header {
@@ -645,6 +664,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       gap: 22px;
       padding: clamp(22px, 5vw, 34px);
       background: rgba(8, 8, 8, 0.85);
+      flex: 1 1 auto;
     }
 
     .exercise-card {
@@ -906,6 +926,93 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
       .plan-footnote {
         text-align: left;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .plan-grid {
+        grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+      }
+    }
+
+    @media (min-width: 1200px) {
+      .hero__wrap {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+        grid-template-areas:
+          'intro status'
+          'toolbar status';
+      }
+      .hero__intro {
+        grid-area: intro;
+      }
+      .hero__status {
+        grid-area: status;
+      }
+      .toolbar {
+        grid-area: toolbar;
+        justify-content: flex-start;
+      }
+      .plan-nav__rail {
+        overflow-x: visible;
+        flex-wrap: wrap;
+        row-gap: 16px;
+        scroll-snap-type: none;
+      }
+      .plan-nav__button {
+        min-width: 220px;
+      }
+      .hero__status {
+        align-self: stretch;
+      }
+    }
+
+    @media (min-width: 1440px) {
+      main {
+        max-width: min(1520px, 100%);
+      }
+      .hero__wrap {
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      }
+    }
+
+    @media (max-width: 600px) {
+      .plan-nav__rail {
+        flex-direction: column;
+        overflow-x: visible;
+        scroll-snap-type: none;
+        gap: 10px;
+      }
+      .plan-nav__button {
+        width: 100%;
+        text-align: left;
+      }
+      .chip {
+        width: 100%;
+        justify-content: center;
+      }
+      .actions {
+        width: 100%;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .actions .btn {
+        width: 100%;
+      }
+    }
+
+    .plan-card--highlight {
+      animation: planPulse 1.1s ease;
+    }
+
+    @keyframes planPulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(0, 191, 255, 0.45);
+      }
+      60% {
+        box-shadow: 0 0 0 14px rgba(0, 191, 255, 0.02);
+      }
+      100% {
+        box-shadow: var(--shadow);
       }
     }
   </style>
