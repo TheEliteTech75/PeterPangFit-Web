@@ -175,15 +175,12 @@ $latestPlanAssignedStr = $latestPlan && !empty($latestPlan['assigned_at'])
   ? date('M j, Y', strtotime($latestPlan['assigned_at']))
   : null;
 
-$heroHeadline = $isSelfView
-  ? ($clientFirst !== '' ? ('Welcome back, ' . $clientFirst . '!') : 'Welcome back!')
-  : ($clientName !== '' ? ('Viewing ' . $clientName . '\'s workouts') : 'Workout plans overview');
+$heroHeadlineName = $clientFirst !== '' ? $clientFirst : ($clientName !== '' ? $clientName : null);
+$heroHeadline = $heroHeadlineName ? ('Welcome back, ' . $heroHeadlineName . '!') : 'Welcome back!';
 
-$heroLine = $isSelfView
-  ? ($latestPlanAssignedStr
-      ? 'Your workouts, videos, and coaching cues are queued up below. Open a plan to see exactly what to focus on today.'
-      : 'As soon as your coach publishes a plan it’ll land here with videos, descriptions, and notes ready to go.')
-  : 'Preview the client experience exactly as they see it—videos, descriptions, and coaching notes included.';
+$heroLine = $latestPlanAssignedStr
+  ? 'Your workouts, videos, and coaching cues are queued up below. Open a plan to see exactly what to focus on today.'
+  : 'As soon as your coach publishes a plan it’ll land here with videos, descriptions, and notes ready to go.';
 
 $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
 $latestPlanName = $latestPlan['plan_name'] ?? '';
@@ -918,7 +915,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 <div class="hero">
   <div class="hero__wrap">
     <div class="hero__intro">
-      <span class="hero__eyebrow"><?php echo $isSelfView ? 'Your training home' : 'Viewing as client'; ?></span>
+      <span class="hero__eyebrow">Your training home</span>
       <h1 class="hero__headline"><?php echo h($heroHeadline); ?></h1>
       <p class="hero__subtitle"><?php echo h($heroLine); ?></p>
     </div>
@@ -936,11 +933,11 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
           <strong><?php echo count($plans); ?></strong>
         </div>
         <div class="hero-stat">
-          <span class="hero-stat__label">Exercises to review</span>
+          <span class="hero-stat__label">Exercises ready</span>
           <strong><?php echo $totalExercises; ?></strong>
         </div>
         <div class="hero-stat">
-          <span class="hero-stat__label">First plan dropped</span>
+          <span class="hero-stat__label">First plan posted</span>
           <strong><?php echo h($firstDate); ?></strong>
         </div>
       </div>
@@ -956,7 +953,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       <span class="chip"><span class="dot green"></span><span>Exercises shown</span> <strong id="chipItems" data-total="<?php echo $totalExercises; ?>"><?php echo $totalExercises; ?></strong></span>
       <div class="actions">
         <button class="btn" type="button" id="btnExpandAll">Open all workouts</button>
-        <button class="btn" type="button" id="btnCollapseAll">Close all</button>
+        <button class="btn" type="button" id="btnCollapseAll">Close all workouts</button>
       </div>
     </div>
   </div>
@@ -967,7 +964,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     <div class="page-empty">No workout plans have been assigned yet. Check back soon!</div>
   <?php else: ?>
     <section class="plan-nav">
-      <h2 class="plan-nav__title"><?php echo $isSelfView ? 'Jump to a plan' : 'Client plan navigator'; ?></h2>
+      <h2 class="plan-nav__title">Jump to a plan</h2>
       <div class="plan-nav__rail">
         <?php foreach ($plans as $planNav):
           $navId = (int)$planNav['user_plan_id'];
@@ -1007,7 +1004,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
             </div>
           </div>
           <div class="plan-card__toggle">
-            <button type="button" data-plan-toggle aria-expanded="true" data-target="#plan-body-<?php echo $pid; ?>">Hide details</button>
+            <button type="button" data-plan-toggle aria-expanded="true" data-target="#plan-body-<?php echo $pid; ?>">Hide workout</button>
           </div>
         </div>
         <div class="plan-card__body" id="plan-body-<?php echo $pid; ?>">
@@ -1110,7 +1107,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
             <?php $index++; endforeach; ?>
           <?php endif; ?>
           <div class="plan-card__empty-filter" style="display:none;">No exercises match your search in this plan.</div>
-          <div class="plan-footnote">Need a quick review? Use the global search to instantly spotlight exercises across plans.</div>
+          <div class="plan-footnote">Need to find something fast? Use the search above to spotlight exercises across your plans.</div>
         </div>
       </section>
       <?php endforeach; ?>
@@ -1135,7 +1132,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     body.style.display = open ? '' : 'none';
     if (toggle) {
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-      toggle.textContent = open ? 'Hide details' : 'Show details';
+      toggle.textContent = open ? 'Hide workout' : 'Show workout';
     }
   }
 
@@ -1180,7 +1177,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         const toggle = section.querySelector('[data-plan-toggle]');
         if (toggle) {
           toggle.setAttribute('aria-expanded', 'true');
-          toggle.textContent = 'Hide details';
+          toggle.textContent = 'Hide workout';
         }
       }
     });
