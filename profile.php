@@ -201,6 +201,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // SAVE PROFILE FIELDS (no direct file input here)
     if ($action === 'save_profile') {
       try {
+        $normalize = function($value) {
+          if ($value === null) return null;
+          $str = trim((string)$value);
+          return $str === '' ? null : $str;
+        };
+
+        $beforeSnapshot = [
+          'email' => $normalize($me['email'] ?? null),
+          'phone' => $normalize($me['phone'] ?? null),
+          'birthdate' => $normalize($me['birthdate'] ?? null),
+          'gender' => $normalize($me['gender'] ?? null),
+          'first_name' => $normalize($me['first_name'] ?? null),
+          'middle_name' => $normalize($me['middle_name'] ?? null),
+          'last_name' => $normalize($me['last_name'] ?? null),
+          'height_ft' => $normalize($me['height_ft'] ?? null),
+          'height_in' => $normalize($me['height_in'] ?? null),
+          'weight_lbs' => $normalize($me['weight_lbs'] ?? null),
+        ];
+
         $first_name  = trim($_POST['first_name'] ?? '');
         $middle_name = trim($_POST['middle_name'] ?? '');
         $last_name   = trim($_POST['last_name'] ?? '');
@@ -241,7 +260,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->close();
 
         $flash = 'Profile updated.'; $flash_type = 'ok';
-        ppf_log_safe($conn, $uid, $email, $userRole, 'profile_updated', 'fields_only=1');
+        $afterSnapshot = [
+          'email' => $normalize($email),
+          'phone' => $normalize($phone),
+          'birthdate' => $normalize($birthdate),
+          'gender' => $normalize($gender),
+          'first_name' => $normalize($first_name),
+          'middle_name' => $normalize($middle_name),
+          'last_name' => $normalize($last_name),
+          'height_ft' => $normalize($hf),
+          'height_in' => $normalize($hi),
+          'weight_lbs' => $normalize($wl),
+        ];
+
+        $changes = [];
+        foreach ($afterSnapshot as $field => $newVal) {
+          $oldVal = $beforeSnapshot[$field] ?? null;
+          if ($oldVal !== $newVal) {
+            $changes[$field] = ['old' => $oldVal, 'new' => $newVal];
+          }
+        }
+
+        $detailPayload = [
+          'self_update' => true,
+          'changed_fields' => array_keys($changes),
+        ];
+        if (!empty($changes)) {
+          $detailPayload['changes'] = $changes;
+        }
+        $detailJson = json_encode($detailPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($detailJson === false) { $detailJson = 'self_update=1'; }
+        ppf_log_safe($conn, $uid, $email, $userRole, 'profile_updated', $detailJson);
 
         // Refresh $me
         $q = "SELECT first_name, middle_name, last_name, email, phone, birthdate, gender, height_ft, height_in, weight_lbs"
