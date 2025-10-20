@@ -586,6 +586,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     .plan-card {
+      position: relative;
       background: var(--surface-alt);
       border-radius: var(--radius-lg);
       border: 1px solid var(--card-border-subtle);
@@ -593,6 +594,54 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      will-change: transform, box-shadow;
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    }
+
+    .plan-card::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(140deg, rgba(0, 191, 255, 0.18), rgba(0, 0, 0, 0));
+      opacity: 0;
+      transition: opacity var(--transition);
+      z-index: 0;
+    }
+
+    .plan-card > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .plan-card.plan-card--open {
+      border-color: var(--card-border);
+      box-shadow: 0 30px 58px rgba(0, 0, 0, 0.6);
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      .plan-card:hover {
+        transform: translateY(-6px) scale(1.01);
+        border-color: var(--card-border-hover);
+        box-shadow: 0 32px 64px rgba(0, 0, 0, 0.62);
+      }
+
+      .plan-card:hover::after {
+        opacity: 1;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .plan-card,
+      .plan-card::after {
+        transition-duration: 0ms !important;
+        transition-property: none !important;
+      }
+
+      .plan-card:hover {
+        transform: none;
+      }
     }
 
     .plan-card__header {
@@ -604,6 +653,14 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       background:
         linear-gradient(130deg, rgba(0, 191, 255, 0.18), rgba(0, 0, 0, 0.6));
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition);
+    }
+
+    .plan-card.plan-card--open .plan-card__header {
+      border-bottom-color: rgba(0, 191, 255, 0.25);
+      background:
+        linear-gradient(130deg, rgba(0, 191, 255, 0.24), rgba(0, 0, 0, 0.6));
     }
 
     .plan-card__intro {
@@ -1109,7 +1166,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         $durStr = total_duration_str($items);
         $assignedStr = $plan['assigned_at'] ? date('M j, Y g:ia', strtotime($plan['assigned_at'])) : '—';
       ?>
-      <section class="plan-card" id="plan-<?php echo $pid; ?>" data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($plan['plan_name']); ?>" data-plan-assigned="<?php echo h($assignedStr); ?>">
+      <section class="plan-card plan-card--open" id="plan-<?php echo $pid; ?>" data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($plan['plan_name']); ?>" data-plan-assigned="<?php echo h($assignedStr); ?>">
         <div class="plan-card__header">
           <div>
             <h2 class="plan-card__title"><?php echo h($plan['plan_name']); ?></h2>
@@ -1241,13 +1298,108 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   const chipTotal = parseInt(chipItems?.dataset?.total || '0', 10);
   const btnExpand = document.getElementById('btnExpandAll');
   const btnCollapse = document.getElementById('btnCollapseAll');
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  function setPlanVisibility(section, open) {
+  function cleanupAnimation(body) {
+    if (body._transitionHandler) {
+      body.removeEventListener('transitionend', body._transitionHandler);
+      body._transitionHandler = null;
+    }
+    body.style.transition = '';
+    body.style.maxHeight = '';
+    body.style.opacity = '';
+    body.style.overflow = '';
+  }
+
+  function setPlanVisibility(section, open, options = {}) {
     const targetSel = section.querySelector('[data-plan-toggle]')?.getAttribute('data-target');
     const body = targetSel ? document.querySelector(targetSel) : section.querySelector('.plan-card__body');
     const toggle = section.querySelector('[data-plan-toggle]');
+    const { skipAnimation = false } = options;
     if (!body) return;
-    body.style.display = open ? '' : 'none';
+
+    const isOpen = section.classList.contains('plan-card--open');
+    const shouldAnimate = !skipAnimation && !prefersReducedMotion;
+
+    cleanupAnimation(body);
+
+    if (open === isOpen) {
+      if (toggle) {
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.textContent = open ? 'Hide workout' : 'Show workout';
+      }
+      section.setAttribute('data-open', open ? 'true' : 'false');
+      if (open && body.style.display === 'none') {
+        body.style.display = 'grid';
+      }
+      return;
+    }
+
+    if (open) {
+      section.classList.add('plan-card--open');
+      section.setAttribute('data-open', 'true');
+      if (shouldAnimate) {
+        body.style.display = 'grid';
+        const fullHeight = body.scrollHeight;
+        body.style.overflow = 'hidden';
+        body.style.maxHeight = '0px';
+        body.style.opacity = '0';
+        requestAnimationFrame(() => {
+          body.style.transition = 'max-height 0.45s ease, opacity 0.3s ease';
+          body.style.maxHeight = fullHeight + 'px';
+          body.style.opacity = '1';
+        });
+        const onEnd = (event) => {
+          if (event.propertyName !== 'max-height') return;
+          body.style.transition = '';
+          body.style.maxHeight = '';
+          body.style.opacity = '';
+          body.style.overflow = '';
+          body.removeEventListener('transitionend', onEnd);
+          body._transitionHandler = null;
+        };
+        body._transitionHandler = onEnd;
+        body.addEventListener('transitionend', onEnd);
+      } else {
+        body.style.display = 'grid';
+        body.style.maxHeight = '';
+        body.style.opacity = '';
+        body.style.overflow = '';
+      }
+    } else {
+      section.classList.remove('plan-card--open');
+      section.setAttribute('data-open', 'false');
+      if (shouldAnimate) {
+        body.style.display = 'grid';
+        const fullHeight = body.scrollHeight;
+        body.style.overflow = 'hidden';
+        body.style.maxHeight = fullHeight + 'px';
+        body.style.opacity = '1';
+        requestAnimationFrame(() => {
+          body.style.transition = 'max-height 0.4s ease, opacity 0.25s ease';
+          body.style.maxHeight = '0px';
+          body.style.opacity = '0';
+        });
+        const onEnd = (event) => {
+          if (event.propertyName !== 'max-height') return;
+          body.style.transition = '';
+          body.style.display = 'none';
+          body.style.maxHeight = '';
+          body.style.opacity = '';
+          body.style.overflow = '';
+          body.removeEventListener('transitionend', onEnd);
+          body._transitionHandler = null;
+        };
+        body._transitionHandler = onEnd;
+        body.addEventListener('transitionend', onEnd);
+      } else {
+        body.style.display = 'none';
+        body.style.maxHeight = '';
+        body.style.opacity = '';
+        body.style.overflow = '';
+      }
+    }
+
     if (toggle) {
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       toggle.textContent = open ? 'Hide workout' : 'Show workout';
@@ -1255,19 +1407,26 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   }
 
   plans.forEach(section => {
+    section.setAttribute('data-open', 'true');
     const toggle = section.querySelector('[data-plan-toggle]');
-    if (!toggle) return;
-    toggle.addEventListener('click', () => {
-      const targetSel = toggle.getAttribute('data-target');
-      const body = targetSel ? document.querySelector(targetSel) : section.querySelector('.plan-card__body');
-      if (!body) return;
-      const isVisible = body.style.display !== 'none';
-      setPlanVisibility(section, !isVisible);
+    if (toggle) {
+      toggle.addEventListener('click', event => {
+        event.stopPropagation();
+        const isOpen = section.classList.contains('plan-card--open');
+        setPlanVisibility(section, !isOpen);
+      });
+    }
+
+    section.addEventListener('click', event => {
+      if (event.target.closest('[data-plan-toggle]')) return;
+      if (event.target.closest('.plan-card__body')) return;
+      const isOpen = section.classList.contains('plan-card--open');
+      setPlanVisibility(section, !isOpen);
     });
   });
 
-  btnExpand?.addEventListener('click', () => plans.forEach(section => setPlanVisibility(section, true)));
-  btnCollapse?.addEventListener('click', () => plans.forEach(section => setPlanVisibility(section, false)));
+  btnExpand?.addEventListener('click', () => plans.forEach(section => setPlanVisibility(section, true, { skipAnimation: true })));
+  btnCollapse?.addEventListener('click', () => plans.forEach(section => setPlanVisibility(section, false, { skipAnimation: true })));
 
   function applySearch() {
     if (!chipItems) return;
@@ -1289,14 +1448,8 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       if (emptyMsg) {
         emptyMsg.style.display = matches === 0 && term ? '' : 'none';
       }
-      const body = section.querySelector('.plan-card__body');
-      if (body && !matches && term) {
-        body.style.display = '';
-        const toggle = section.querySelector('[data-plan-toggle]');
-        if (toggle) {
-          toggle.setAttribute('aria-expanded', 'true');
-          toggle.textContent = 'Hide workout';
-        }
+      if (!matches && term) {
+        setPlanVisibility(section, true, { skipAnimation: true });
       }
     });
     if (term) {
@@ -1316,7 +1469,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       if (!targetId) return;
       const section = document.getElementById(targetId);
       if (!section) return;
-      setPlanVisibility(section, true);
+      setPlanVisibility(section, true, { skipAnimation: true });
       section.scrollIntoView({behavior: 'smooth', block: 'start'});
       section.classList.add('plan-card--highlight');
       setTimeout(() => section.classList.remove('plan-card--highlight'), 1200);
