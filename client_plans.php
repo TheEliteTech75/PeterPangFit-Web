@@ -689,6 +689,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       overflow: hidden;
       box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55);
       transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+      align-items: start;
     }
 
     .exercise-card::after {
@@ -716,9 +717,11 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       position: relative;
       border-radius: 16px;
       overflow: hidden;
-      min-height: 180px;
       background: #000;
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+      aspect-ratio: 16 / 9;
+      align-self: start;
+      min-height: 0;
     }
 
     .exercise-media video,
@@ -727,10 +730,6 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       height: 100%;
       object-fit: cover;
       display: block;
-    }
-
-    .exercise-media video {
-      aspect-ratio: 16 / 9;
     }
 
     .exercise-media__badge {
