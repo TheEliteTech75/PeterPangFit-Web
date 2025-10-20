@@ -4,11 +4,45 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/ppf_lockout.php'; // unlock action
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function is_trainer_admin($role){ return in_array($role ?? 'guest', ['trainer','admin'], true); }
 if (!is_trainer_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
+
+if (!function_exists('ppf_clients_log_encode')) {
+  function ppf_clients_log_encode(array $details): ?string {
+    if (!$details) return json_encode((object)[], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $json = json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return ($json === false) ? null : $json;
+  }
+}
+
+if (!function_exists('ppf_log_user_admin_action')) {
+  function ppf_log_user_admin_action(mysqli $conn, string $action, ?int $targetUserId, array $details = []): void {
+    if (!function_exists('ppf_log')) return;
+    $json = ppf_clients_log_encode($details ?? []);
+    @ppf_log(
+      $conn,
+      null,
+      null,
+      null,
+      $action,
+      'user',
+      ($targetUserId && $targetUserId > 0) ? (string)$targetUserId : null,
+      $json
+    );
+  }
+}
+
+if (!function_exists('ppf_clients_normalize_log_value')) {
+  function ppf_clients_normalize_log_value($value) {
+    if ($value === null) return null;
+    $str = trim((string)$value);
+    return $str === '' ? null : $str;
+  }
+}
 
 // --- Ensure is_active exists ---
 function ensure_is_active_column(mysqli $conn): void {
@@ -261,53 +295,113 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       if ($action === 'update_client') {
-        if ($uid <= 0) throw new Exception('Invalid client.');
-        $email      = trim($_POST['email'] ?? '');
-        $phone      = trim($_POST['phone'] ?? '');
-        $birthdate  = trim($_POST['birthdate'] ?? '');
-        $gender     = trim($_POST['gender'] ?? '');
-        $first_name = trim($_POST['first_name'] ?? '');
-        $middle_name= trim($_POST['middle_name'] ?? '');
-        $last_name  = trim($_POST['last_name'] ?? '');
+        try {
+          if ($uid <= 0) throw new Exception('Invalid client.');
 
-        $height_ft  = isset($_POST['height_ft'])  ? trim($_POST['height_ft'])  : '';
-        $height_in  = isset($_POST['height_in'])  ? trim($_POST['height_in'])  : '';
-        $weight_lbs = isset($_POST['weight_lbs']) ? trim($_POST['weight_lbs']) : '';
+          $existingStmt = $conn->prepare("SELECT email, phone, birthdate, gender, first_name, middle_name, last_name, height_ft, height_in, weight_lbs FROM users WHERE id = ? AND (role='client' OR is_client=1) LIMIT 1");
+          if (!$existingStmt) throw new Exception('Failed to load client.');
+          $existingStmt->bind_param("i", $uid);
+          $existingStmt->execute();
+          $existingRes = $existingStmt->get_result();
+          $existingRow = $existingRes ? $existingRes->fetch_assoc() : null;
+          $existingStmt->close();
+          if (!$existingRow) throw new Exception('Client not found.');
 
-        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new Exception('Valid email required.');
-        if ($birthdate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $birthdate)) throw new Exception('Birthdate must be YYYY-MM-DD.');
+          $email      = trim($_POST['email'] ?? '');
+          $phone      = trim($_POST['phone'] ?? '');
+          $birthdate  = trim($_POST['birthdate'] ?? '');
+          $gender     = trim($_POST['gender'] ?? '');
+          $first_name = trim($_POST['first_name'] ?? '');
+          $middle_name= trim($_POST['middle_name'] ?? '');
+          $last_name  = trim($_POST['last_name'] ?? '');
 
-        $stmt = $conn->prepare("SELECT id FROM users WHERE email = ? AND id <> ?");
-        $stmt->bind_param("si", $email, $uid);
-        $stmt->execute(); $stmt->store_result();
-        if ($stmt->num_rows > 0) { $stmt->close(); throw new Exception('Email already in use by another user.'); }
-        $stmt->close();
+          $height_ft  = isset($_POST['height_ft'])  ? trim($_POST['height_ft'])  : '';
+          $height_in  = isset($_POST['height_in'])  ? trim($_POST['height_in'])  : '';
+          $weight_lbs = isset($_POST['weight_lbs']) ? trim($_POST['weight_lbs']) : '';
 
-        $hf = ($height_ft === '' ? null : (int)$height_ft);
-        $hi = ($height_in === '' ? null : (int)$height_in);
-        if ($hi !== null) { if ($hi < 0) $hi = 0; if ($hi > 11) $hi = 11; }
-        if ($hf !== null) { if ($hf < 0) $hf = 0; if ($hf > 8) $hf = 8; }
-        $wl = ($weight_lbs === '' ? null : (float)$weight_lbs);
-        if ($wl !== null && $wl <= 0) $wl = null;
+          if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new Exception('Valid email required.');
+          if ($birthdate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $birthdate)) throw new Exception('Birthdate must be YYYY-MM-DD.');
 
-        $stmt = $conn->prepare("
-          UPDATE users
-          SET email=?, phone=?, birthdate=?, gender=?, first_name=?, middle_name=?, last_name=?, height_ft=?, height_in=?, weight_lbs=?
-          WHERE id=? AND (role='client' OR is_client=1)
-        ");
-        if (!$stmt) throw new Exception('Failed to prepare update.');
+          $stmt = $conn->prepare("SELECT id FROM users WHERE email = ? AND id <> ?");
+          $stmt->bind_param("si", $email, $uid);
+          $stmt->execute(); $stmt->store_result();
+          if ($stmt->num_rows > 0) { $stmt->close(); throw new Exception('Email already in use by another user.'); }
+          $stmt->close();
 
-        $bdate = ($birthdate ?: null);
-        $gend  = ($gender ?: null);
-        $fn    = ($first_name ?: null);
-        $mn    = ($middle_name ?: null);
-        $ln    = ($last_name ?: null);
+          $hf = ($height_ft === '' ? null : (int)$height_ft);
+          $hi = ($height_in === '' ? null : (int)$height_in);
+          if ($hi !== null) { if ($hi < 0) $hi = 0; if ($hi > 11) $hi = 11; }
+          if ($hf !== null) { if ($hf < 0) $hf = 0; if ($hf > 8) $hf = 8; }
+          $wl = ($weight_lbs === '' ? null : (float)$weight_lbs);
+          if ($wl !== null && $wl <= 0) $wl = null;
 
-        $stmt->bind_param("sssssssiidi", $email, $phone, $bdate, $gend, $fn, $mn, $ln, $hf, $hi, $wl, $uid);
-        if (!$stmt->execute()) { $stmt->close(); throw new Exception('Failed to update client.'); }
-        $stmt->close();
+          $stmt = $conn->prepare("
+            UPDATE users
+            SET email=?, phone=?, birthdate=?, gender=?, first_name=?, middle_name=?, last_name=?, height_ft=?, height_in=?, weight_lbs=?
+            WHERE id=? AND (role='client' OR is_client=1)
+          ");
+          if (!$stmt) throw new Exception('Failed to prepare update.');
 
-        $flash = 'Client updated.'; $flash_type = 'ok';
+          $bdate = ($birthdate ?: null);
+          $gend  = ($gender ?: null);
+          $fn    = ($first_name ?: null);
+          $mn    = ($middle_name ?: null);
+          $ln    = ($last_name ?: null);
+
+          $stmt->bind_param("sssssssiidi", $email, $phone, $bdate, $gend, $fn, $mn, $ln, $hf, $hi, $wl, $uid);
+          if (!$stmt->execute()) { $stmt->close(); throw new Exception('Failed to update client.'); }
+          $stmt->close();
+
+          $normalize = 'ppf_clients_normalize_log_value';
+          $beforeSnapshot = [
+            'email' => $normalize($existingRow['email'] ?? null),
+            'phone' => $normalize($existingRow['phone'] ?? null),
+            'birthdate' => $normalize($existingRow['birthdate'] ?? null),
+            'gender' => $normalize($existingRow['gender'] ?? null),
+            'first_name' => $normalize($existingRow['first_name'] ?? null),
+            'middle_name' => $normalize($existingRow['middle_name'] ?? null),
+            'last_name' => $normalize($existingRow['last_name'] ?? null),
+            'height_ft' => $normalize($existingRow['height_ft'] ?? null),
+            'height_in' => $normalize($existingRow['height_in'] ?? null),
+            'weight_lbs' => $normalize($existingRow['weight_lbs'] ?? null),
+          ];
+          $afterSnapshot = [
+            'email' => $normalize($email),
+            'phone' => $normalize($phone),
+            'birthdate' => $normalize($bdate),
+            'gender' => $normalize($gend),
+            'first_name' => $normalize($first_name),
+            'middle_name' => $normalize($middle_name),
+            'last_name' => $normalize($last_name),
+            'height_ft' => $normalize($hf),
+            'height_in' => $normalize($hi),
+            'weight_lbs' => $normalize($wl),
+          ];
+          $changes = [];
+          foreach ($afterSnapshot as $field => $newVal) {
+            $oldVal = $beforeSnapshot[$field] ?? null;
+            if ($oldVal !== $newVal) {
+              $changes[$field] = ['old' => $oldVal, 'new' => $newVal];
+            }
+          }
+
+          ppf_log_user_admin_action($conn, 'user_profile_updated_admin', $uid, [
+            'changed_fields' => array_keys($changes),
+            'changes' => $changes,
+            'client_id' => $uid,
+            'values_before' => $beforeSnapshot,
+            'values_after' => $afterSnapshot,
+          ]);
+
+          $flash = 'Client updated.'; $flash_type = 'ok';
+        } catch (Throwable $e) {
+          ppf_log_user_admin_action($conn, 'user_profile_update_failed', $uid, [
+            'client_id' => $uid,
+            'error' => $e->getMessage(),
+            'input_email' => isset($email) ? $email : null,
+          ]);
+          throw $e;
+        }
       }
 
       // Append one or more exercises to an existing plan (AJAX, no navigation)
@@ -443,13 +537,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Save per-client exercise settings (AJAX) — NOW also supports user_notes
         if ($action === 'save_user_exercise') {
+          $plan_id     = (int)($_POST['plan_id'] ?? 0);
+          $exercise_id = (int)($_POST['exercise_id'] ?? 0);
+          $up_id = null;
+          $existingRow = null;
           try {
             if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
               throw new Exception('You do not have permission to edit exercise settings.');
             }
 
-            $plan_id     = (int)($_POST['plan_id'] ?? 0);
-            $exercise_id = (int)($_POST['exercise_id'] ?? 0);
             if ($uid <= 0 || $plan_id <= 0 || $exercise_id <= 0) {
               throw new Exception('Invalid input.');
             }
@@ -482,7 +578,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notesVal = ($user_notes === '' ? null : $user_notes);
 
             // Find the user_plans.id for (user, plan)
-            $up_id = null;
             $q1 = $conn->prepare("SELECT id FROM user_plans WHERE user_id=? AND plan_id=? LIMIT 1");
             $q1->bind_param("ii", $uid, $plan_id);
             $q1->execute();
@@ -494,11 +589,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Does a row exist for this exercise?
             $upe_id = null;
-            $q2 = $conn->prepare("SELECT id FROM user_plan_exercises WHERE user_plan_id=? AND exercise_id=? LIMIT 1");
+            $q2 = $conn->prepare("SELECT id, sets, reps, weight_lbs, duration_seconds, user_notes FROM user_plan_exercises WHERE user_plan_id=? AND exercise_id=? LIMIT 1");
             $q2->bind_param("ii", $up_id, $exercise_id);
             $q2->execute();
             $res2 = $q2->get_result();
-            if ($row = $res2->fetch_assoc()) $upe_id = (int)$row['id'];
+            if ($row = $res2->fetch_assoc()) {
+              $upe_id = (int)$row['id'];
+              $existingRow = $row;
+            }
             $q2->close();
 
             $updaterId = isset($USER_ID) ? (int)$USER_ID : null;
@@ -643,6 +741,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $weightDisplay = $wtVal !== null ? ppf_format_weight_lbs($wtVal) : null;
             $durationDisplay = $durVal !== null ? ppf_format_duration_display($durVal) : null;
 
+            $normalize = 'ppf_clients_normalize_log_value';
+            $beforeSnapshot = $existingRow ? [
+              'sets' => $normalize($existingRow['sets'] ?? null),
+              'reps' => $normalize($existingRow['reps'] ?? null),
+              'weight_lbs' => $normalize($existingRow['weight_lbs'] ?? null),
+              'duration_seconds' => $normalize($existingRow['duration_seconds'] ?? null),
+              'user_notes' => $normalize($existingRow['user_notes'] ?? null),
+            ] : [];
+            $afterSnapshot = [
+              'sets' => $normalize($setsVal),
+              'reps' => $normalize($repsVal),
+              'weight_lbs' => $normalize($wtVal),
+              'duration_seconds' => $normalize($durVal),
+              'user_notes' => $normalize($notesVal),
+            ];
+
+            $changes = [];
+            foreach ($afterSnapshot as $field => $newVal) {
+              $oldVal = $beforeSnapshot[$field] ?? null;
+              if ($oldVal !== $newVal) {
+                $changes[$field] = ['old' => $oldVal, 'new' => $newVal];
+              }
+            }
+
+            ppf_log_user_admin_action($conn, 'user_exercise_settings_updated', $uid, [
+              'client_id' => $uid,
+              'plan_id' => $plan_id,
+              'user_plan_id' => $up_id,
+              'exercise_id' => $exercise_id,
+              'operation' => $existingRow ? 'update' : 'insert',
+              'changed_fields' => array_keys($changes),
+              'changes' => $changes,
+              'values_before' => $existingRow ? $beforeSnapshot : null,
+              'values_after' => $afterSnapshot,
+              'meta_updated_at' => $metaUpdatedAt,
+              'meta_updated_by' => $metaUpdatedById,
+            ]);
+
             header('Content-Type: application/json');
             echo json_encode([
               'ok' => true,
@@ -660,6 +796,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             exit;
           } catch (Throwable $e) {
+            ppf_log_user_admin_action($conn, 'user_exercise_settings_failed', $uid, [
+              'client_id' => $uid,
+              'plan_id' => $plan_id,
+              'user_plan_id' => $up_id,
+              'exercise_id' => $exercise_id,
+              'error' => $e->getMessage(),
+              'input_sets' => isset($setsVal) ? $setsVal : null,
+              'input_reps' => isset($repsVal) ? $repsVal : null,
+              'input_weight' => isset($weight_lbs) ? $weight_lbs : null,
+              'input_duration' => isset($duration_seconds) ? $duration_seconds : null,
+            ]);
             header('Content-Type: application/json');
             http_response_code(400);
             echo json_encode(['ok' => false, 'error' => $e->getMessage()]);

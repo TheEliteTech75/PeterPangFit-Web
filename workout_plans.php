@@ -4,9 +4,37 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/logs.php';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function is_trainer_admin($role){ return in_array($role ?? 'guest', ['trainer','admin'], true); }
+
+if (!function_exists('ppf_workout_log_encode')) {
+  function ppf_workout_log_encode(array $details): ?string {
+    if (!$details) {
+      return json_encode((object)[], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+    $json = json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return $json === false ? null : $json;
+  }
+}
+
+if (!function_exists('ppf_log_workout_plan_event')) {
+  function ppf_log_workout_plan_event(mysqli $conn, string $action, ?int $planId, array $details = []): void {
+    if (!function_exists('ppf_log')) return;
+    $json = ppf_workout_log_encode($details ?? []);
+    @ppf_log(
+      $conn,
+      null,
+      null,
+      null,
+      $action,
+      'workout_plan',
+      ($planId && $planId > 0) ? (string)$planId : null,
+      $json
+    );
+  }
+}
 
 // Small helpers ---------------------------------------------------------------
 function parse_duration_to_seconds($input) {
@@ -106,6 +134,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $stmt->close();
         }
         $conn->commit();
+        ppf_log_workout_plan_event($conn, 'workout_plan_created', (int)$plan_id, [
+          'name' => $title,
+          'exercise_ids' => $exercise_ids,
+          'exercise_count' => count($exercise_ids),
+        ]);
         header('Location: workout_plans.php?created=1'); exit;
       }
 
@@ -127,6 +160,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($plan_id <= 0) throw new Exception('Invalid plan.');
         if ($title === '') throw new Exception('Plan name is required.');
+
+        $existingName = null;
+        $existingExercises = [];
+        if ($stmtInfo = $conn->prepare("SELECT name FROM workout_plans WHERE id = ? LIMIT 1")) {
+          $stmtInfo->bind_param("i", $plan_id);
+          $stmtInfo->execute();
+          $resInfo = $stmtInfo->get_result();
+          $rowInfo = $resInfo ? $resInfo->fetch_assoc() : null;
+          $stmtInfo->close();
+          if (!$rowInfo) throw new Exception('Plan not found.');
+          $existingName = (string)($rowInfo['name'] ?? '');
+        } else {
+          throw new Exception('Failed to load plan.');
+        }
+        if ($stmtOld = $conn->prepare("SELECT exercise_id FROM plan_exercises WHERE plan_id = ? ORDER BY position ASC, exercise_id ASC")) {
+          $stmtOld->bind_param("i", $plan_id);
+          $stmtOld->execute();
+          $resOld = $stmtOld->get_result();
+          while ($oldRow = $resOld->fetch_assoc()) {
+            $existingExercises[] = (int)$oldRow['exercise_id'];
+          }
+          $stmtOld->close();
+        }
 
         $conn->begin_transaction();
 
@@ -159,6 +215,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $conn->commit();
+        ppf_log_workout_plan_event($conn, 'workout_plan_updated', $plan_id, [
+          'name_before' => $existingName,
+          'name_after' => $title,
+          'exercises_before' => $existingExercises,
+          'exercises_after' => $exercise_ids,
+          'exercise_count_before' => count($existingExercises),
+          'exercise_count_after' => count($exercise_ids),
+        ]);
         header('Location: workout_plans.php?updated=1'); exit;
       }
 
@@ -166,6 +230,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($action === 'delete_plan_modal') {
         $plan_id = (int)($_POST['plan_id'] ?? 0);
         if ($plan_id <= 0) throw new Exception('Invalid plan.');
+        $existingName = null;
+        $existingExercises = [];
+        $assignedCount = 0;
+        if ($stmtInfo = $conn->prepare("SELECT name FROM workout_plans WHERE id = ? LIMIT 1")) {
+          $stmtInfo->bind_param("i", $plan_id);
+          $stmtInfo->execute();
+          $resInfo = $stmtInfo->get_result();
+          $rowInfo = $resInfo ? $resInfo->fetch_assoc() : null;
+          $stmtInfo->close();
+          if (!$rowInfo) throw new Exception('Plan not found.');
+          $existingName = (string)($rowInfo['name'] ?? '');
+        } else {
+          throw new Exception('Failed to load plan.');
+        }
+        if ($stmtOld = $conn->prepare("SELECT exercise_id FROM plan_exercises WHERE plan_id = ? ORDER BY position ASC, exercise_id ASC")) {
+          $stmtOld->bind_param("i", $plan_id);
+          $stmtOld->execute();
+          $resOld = $stmtOld->get_result();
+          while ($oldRow = $resOld->fetch_assoc()) {
+            $existingExercises[] = (int)$oldRow['exercise_id'];
+          }
+          $stmtOld->close();
+        }
+        if ($stmtAssign = $conn->prepare("SELECT COUNT(*) AS c FROM user_plans WHERE plan_id = ?")) {
+          $stmtAssign->bind_param("i", $plan_id);
+          $stmtAssign->execute();
+          $resAssign = $stmtAssign->get_result();
+          if ($rowAssign = $resAssign->fetch_assoc()) {
+            $assignedCount = (int)($rowAssign['c'] ?? 0);
+          }
+          $stmtAssign->close();
+        }
         $conn->begin_transaction();
         $stmt = $conn->prepare("DELETE FROM user_plans WHERE plan_id = ?");
         $stmt->bind_param("i", $plan_id); $stmt->execute(); $stmt->close();
@@ -176,6 +272,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$stmt->execute()) { $conn->rollback(); throw new Exception('Failed to delete plan.'); }
         $stmt->close();
         $conn->commit();
+        ppf_log_workout_plan_event($conn, 'workout_plan_deleted', $plan_id, [
+          'name' => $existingName,
+          'exercises_before' => $existingExercises,
+          'exercise_count_before' => count($existingExercises),
+          'assigned_count' => $assignedCount,
+        ]);
         header('Location: workout_plans.php?deleted=1'); exit;
       }
 
@@ -299,6 +401,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
     } catch (Throwable $e) {
+      if (in_array($action, ['create_plan_modal','edit_plan_modal','delete_plan_modal'], true)) {
+        $logPlanId = isset($plan_id) ? (int)$plan_id : 0;
+        if (!$logPlanId && isset($_POST['plan_id'])) {
+          $logPlanId = (int)$_POST['plan_id'];
+        }
+        $detail = [
+          'action' => $action,
+          'error' => $e->getMessage(),
+        ];
+        if (isset($title)) $detail['plan_title'] = $title;
+        if (isset($exercise_ids)) $detail['exercise_ids'] = $exercise_ids;
+        ppf_log_workout_plan_event($conn, 'workout_plan_action_failed', $logPlanId > 0 ? $logPlanId : null, $detail);
+      }
       $flash = $e->getMessage(); $flash_type = 'err';
     }
   }
