@@ -163,30 +163,16 @@ foreach ($plans as $p) {
 $weightLabel = $WEIGHT_COL === 'weight_lbs' ? 'Weight (lb)' : ($WEIGHT_COL ? 'Weight' : 'Weight');
 
 $clientName = trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''));
-$clientFirst = trim((string)($client['first_name'] ?? ''));
-$isSelfView = ($client_id === $VIEWER_ID && !is_trainer_admin($VIEWER_ROLE));
-
-$pageTitle = $isSelfView
+$pageTitle = ($client_id === $VIEWER_ID && !is_trainer_admin($VIEWER_ROLE))
   ? 'My Workout Plans'
   : ('Workout Plans — ' . ($clientName !== '' ? $clientName : ('Client #' . $client_id)));
 
-$latestPlan = $plans[0] ?? null;
-$latestPlanAssignedStr = $latestPlan && !empty($latestPlan['assigned_at'])
-  ? date('M j, Y', strtotime($latestPlan['assigned_at']))
-  : null;
+$heroLine = ($client_id === $VIEWER_ID && !is_trainer_admin($VIEWER_ROLE))
+  ? 'Every movement was hand-crafted for you. Explore the videos, cues, and your personal notes for each exercise.'
+  : 'A polished view of every plan you\'ve crafted for ' . ($clientName !== '' ? $clientName : 'this client') . '.';
 
-$heroHeadline = $isSelfView
-  ? ($clientFirst !== '' ? ('Welcome back, ' . $clientFirst . '!') : 'Welcome back!')
-  : ($clientName !== '' ? ('Viewing ' . $clientName . '\'s workouts') : 'Workout plans overview');
-
-$heroLine = $isSelfView
-  ? ($latestPlanAssignedStr
-      ? 'Here’s everything waiting for you. Tap a plan to see the videos, cues, and notes your coach left for this phase.'
-      : 'Your coach will drop your plans right here. As soon as one arrives, you’ll see the videos and coaching notes ready to go.')
-  : 'This is the client-facing view. Preview how every exercise, video, and note appears for them.';
-
+$newestDate = $latestAssignedTs ? date('M j, Y', $latestAssignedTs) : '—';
 $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
-$latestPlanName = $latestPlan['plan_name'] ?? '';
 
 ?>
 <!DOCTYPE html>
@@ -266,13 +252,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       position: relative;
       z-index: 1;
       display: grid;
-      gap: clamp(24px, 5vw, 40px);
-    }
-
-    .hero__intro {
-      display: grid;
-      gap: 12px;
-      max-width: 720px;
+      gap: clamp(20px, 5vw, 36px);
     }
 
     .hero__eyebrow {
@@ -290,7 +270,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       width: fit-content;
     }
 
-    .hero__headline {
+    .hero__title {
       margin: 0;
       font-size: clamp(34px, 6vw, 50px);
       line-height: 1.08;
@@ -300,69 +280,33 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     .hero__subtitle {
       margin: 0;
       font-size: clamp(16px, 3.2vw, 20px);
-      max-width: 680px;
+      max-width: 720px;
       color: #d7dcf7;
-    }
-
-    .hero__status {
-      display: grid;
-      gap: 20px;
-      grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
-      align-items: stretch;
-    }
-
-    .hero-highlight {
-      padding: clamp(18px, 3.5vw, 26px);
-      background: linear-gradient(150deg, rgba(28, 39, 96, 0.88), rgba(12, 20, 50, 0.7));
-      border-radius: var(--radius);
-      border: 1px solid rgba(118, 138, 255, 0.32);
-      display: grid;
-      gap: 10px;
-      box-shadow: 0 18px 40px rgba(5, 8, 27, 0.55);
-    }
-
-    .hero-highlight__label {
-      font-size: 13px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: rgba(191, 204, 255, 0.88);
-    }
-
-    .hero-highlight__name {
-      font-size: clamp(20px, 3.6vw, 26px);
-      font-weight: 600;
-      line-height: 1.3;
-    }
-
-    .hero-highlight__meta {
-      color: rgba(214, 222, 255, 0.82);
-      font-size: 15px;
     }
 
     .hero__stats {
       display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 16px;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     }
 
     .hero-stat {
+      position: relative;
       padding: 18px 20px;
       background: rgba(9, 15, 34, 0.82);
       border: 1px solid rgba(132, 151, 255, 0.22);
       border-radius: var(--radius-sm);
       backdrop-filter: blur(12px);
-      display: grid;
-      gap: 8px;
     }
 
     .hero-stat strong {
       display: block;
-      font-size: clamp(24px, 4vw, 30px);
+      font-size: 28px;
       font-weight: 700;
       line-height: 1.15;
     }
 
-    .hero-stat__label {
+    .hero-stat span {
       color: var(--muted);
       font-size: 13px;
       letter-spacing: 0.03em;
@@ -375,18 +319,14 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       align-items: center;
       gap: 14px;
       margin-top: clamp(18px, 3vw, 28px);
-      background: rgba(8, 12, 30, 0.68);
-      border: 1px solid rgba(105, 130, 255, 0.25);
-      border-radius: 20px;
-      padding: clamp(14px, 3vw, 18px);
     }
 
     .toolbar .search {
-      flex: 1 1 260px;
+      flex: 1 1 240px;
       display: flex;
       align-items: center;
       gap: 12px;
-      background: rgba(11, 16, 32, 0.9);
+      background: rgba(11, 16, 32, 0.82);
       border: 1px solid rgba(110,139,255,0.28);
       border-radius: 999px;
       padding: 10px 16px;
@@ -434,7 +374,6 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     .btn {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
       gap: 8px;
       padding: 10px 16px;
       border-radius: 12px;
@@ -446,65 +385,12 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       font-size: 14px;
       text-decoration: none;
       transition: background var(--transition), transform var(--transition), border-color var(--transition);
-      min-width: 140px;
     }
 
     .btn:hover {
       background: rgba(14, 21, 48, 0.98);
       border-color: rgba(130, 156, 255, 0.55);
       transform: translateY(-1px);
-    }
-
-    .plan-nav {
-      margin-top: clamp(26px, 5vw, 36px);
-      display: grid;
-      gap: 14px;
-    }
-
-    .plan-nav__title {
-      margin: 0;
-      font-size: 15px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: rgba(206, 214, 255, 0.78);
-    }
-
-    .plan-nav__rail {
-      display: flex;
-      gap: 12px;
-      overflow-x: auto;
-      padding-bottom: 6px;
-      scrollbar-width: thin;
-    }
-
-    .plan-nav__button {
-      flex: 0 0 auto;
-      padding: 10px 16px;
-      border-radius: 14px;
-      border: 1px solid rgba(122, 144, 255, 0.35);
-      background: rgba(9, 15, 36, 0.82);
-      color: #e1e6ff;
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-      transition: background var(--transition), border-color var(--transition), transform var(--transition);
-      text-align: left;
-    }
-
-    .plan-nav__button:hover,
-    .plan-nav__button:focus-visible {
-      outline: none;
-      background: rgba(26, 36, 80, 0.9);
-      border-color: rgba(145, 168, 255, 0.6);
-      transform: translateY(-1px);
-    }
-
-    .plan-nav__button span {
-      display: block;
-      margin-top: 4px;
-      font-size: 12px;
-      font-weight: 500;
-      color: rgba(199, 210, 255, 0.72);
     }
 
     .plan-grid {
@@ -520,17 +406,12 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       border: 1px solid var(--card-border);
       box-shadow: var(--shadow);
       overflow: hidden;
-      transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+      transition: border-color var(--transition), transform var(--transition);
     }
 
     .plan-card:hover {
       border-color: var(--card-border-hover);
       transform: translateY(-2px);
-    }
-
-    .plan-card--highlight {
-      border-color: rgba(110, 197, 255, 0.7) !important;
-      box-shadow: 0 0 0 2px rgba(110, 197, 255, 0.4), var(--shadow);
     }
 
     .plan-card__header {
@@ -797,9 +678,6 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     @media (max-width: 1100px) {
-      .hero__status {
-        grid-template-columns: minmax(0, 1fr);
-      }
       .exercise-card {
         grid-template-columns: minmax(0, 1fr);
       }
@@ -819,9 +697,6 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       .hero {
         padding: clamp(26px, 7vw, 42px) clamp(14px, 6vw, 32px);
       }
-      .hero__status {
-        gap: 16px;
-      }
       .toolbar {
         flex-direction: column;
         align-items: stretch;
@@ -831,14 +706,11 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
       .actions {
         width: 100%;
-        justify-content: center;
+        justify-content: space-between;
       }
       .actions .btn {
         flex: 1 1 auto;
         justify-content: center;
-      }
-      .plan-nav__rail {
-        padding-bottom: 2px;
       }
       .plan-card__header {
         flex-direction: column;
@@ -866,32 +738,25 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
 <div class="hero">
   <div class="hero__wrap">
-    <div class="hero__intro">
-      <span class="hero__eyebrow"><?php echo $isSelfView ? 'My workout hub' : 'Client preview'; ?></span>
-      <h1 class="hero__headline"><?php echo h($heroHeadline); ?></h1>
-      <p class="hero__subtitle"><?php echo h($heroLine); ?></p>
-    </div>
-    <div class="hero__status">
-      <div class="hero-highlight">
-        <div class="hero-highlight__label">Latest plan</div>
-        <div class="hero-highlight__name"><?php echo $latestPlanName !== '' ? h($latestPlanName) : 'Waiting for your coach'; ?></div>
-        <div class="hero-highlight__meta">
-          <?php if ($latestPlanAssignedStr): ?>Assigned <?php echo h($latestPlanAssignedStr); ?><?php else: ?>No plan assigned yet<?php endif; ?>
-        </div>
+    <span class="hero__eyebrow">My Workout Plans</span>
+    <h1 class="hero__title"><?php echo h($pageTitle); ?></h1>
+    <p class="hero__subtitle"><?php echo h($heroLine); ?></p>
+    <div class="hero__stats">
+      <div class="hero-stat">
+        <strong><?php echo count($plans); ?></strong>
+        <span>Total Plans</span>
       </div>
-      <div class="hero__stats">
-        <div class="hero-stat">
-          <span class="hero-stat__label">Active plans</span>
-          <strong><?php echo count($plans); ?></strong>
-        </div>
-        <div class="hero-stat">
-          <span class="hero-stat__label">Exercises to review</span>
-          <strong><?php echo $totalExercises; ?></strong>
-        </div>
-        <div class="hero-stat">
-          <span class="hero-stat__label">First plan dropped</span>
-          <strong><?php echo h($firstDate); ?></strong>
-        </div>
+      <div class="hero-stat">
+        <strong><?php echo $totalExercises; ?></strong>
+        <span>Total Exercises</span>
+      </div>
+      <div class="hero-stat">
+        <strong><?php echo h($newestDate); ?></strong>
+        <span>Newest Plan</span>
+      </div>
+      <div class="hero-stat">
+        <strong><?php echo h($firstDate); ?></strong>
+        <span>First Assignment</span>
       </div>
     </div>
     <div class="toolbar">
@@ -899,13 +764,14 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M21 21l-3.8-3.8m1.8-5.2a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" stroke="#b4c0ff" stroke-width="2" stroke-linecap="round" />
         </svg>
-        <input id="globalSearch" type="search" placeholder="Search your workouts" autocomplete="off" />
+        <input id="globalSearch" type="search" placeholder="Search by exercise, cue, or note..." autocomplete="off" />
       </div>
-      <span class="chip"><span class="dot blue"></span><span>Plans</span> <strong id="chipPlans"><?php echo count($plans); ?></strong></span>
+      <span class="chip"><span class="dot blue"></span><span>Total plans</span> <strong id="chipPlans"><?php echo count($plans); ?></strong></span>
       <span class="chip"><span class="dot green"></span><span>Exercises shown</span> <strong id="chipItems" data-total="<?php echo $totalExercises; ?>"><?php echo $totalExercises; ?></strong></span>
       <div class="actions">
-        <button class="btn" type="button" id="btnExpandAll">Open all workouts</button>
-        <button class="btn" type="button" id="btnCollapseAll">Close all</button>
+        <button class="btn" type="button" id="btnExpandAll">Expand all</button>
+        <button class="btn" type="button" id="btnCollapseAll">Collapse all</button>
+        <button class="btn" type="button" id="btnExportCSV">Export CSV</button>
       </div>
     </div>
   </div>
@@ -915,20 +781,6 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   <?php if (!$plans): ?>
     <div class="page-empty">No workout plans have been assigned yet. Check back soon!</div>
   <?php else: ?>
-    <section class="plan-nav">
-      <h2 class="plan-nav__title"><?php echo $isSelfView ? 'Jump to a plan' : 'Client plan navigator'; ?></h2>
-      <div class="plan-nav__rail">
-        <?php foreach ($plans as $planNav):
-          $navId = (int)$planNav['user_plan_id'];
-          $navAssigned = !empty($planNav['assigned_at']) ? date('M j, Y', strtotime($planNav['assigned_at'])) : 'No date set';
-        ?>
-          <button type="button" class="plan-nav__button" data-plan-nav data-target="plan-<?php echo $navId; ?>">
-            <?php echo h($planNav['plan_name']); ?>
-            <span><?php echo h($navAssigned); ?></span>
-          </button>
-        <?php endforeach; ?>
-      </div>
-    </section>
     <div class="plan-grid" id="plansGrid">
       <?php foreach ($plans as $plan):
         $pid   = (int)$plan['user_plan_id'];
@@ -943,7 +795,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         $durStr = total_duration_str($items);
         $assignedStr = $plan['assigned_at'] ? date('M j, Y g:ia', strtotime($plan['assigned_at'])) : '—';
       ?>
-      <section class="plan-card" id="plan-<?php echo $pid; ?>" data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($plan['plan_name']); ?>" data-plan-assigned="<?php echo h($assignedStr); ?>">
+      <section class="plan-card" data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($plan['plan_name']); ?>" data-plan-assigned="<?php echo h($assignedStr); ?>">
         <div class="plan-card__header">
           <div>
             <h2 class="plan-card__title"><?php echo h($plan['plan_name']); ?></h2>
@@ -956,7 +808,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
             </div>
           </div>
           <div class="plan-card__toggle">
-            <button type="button" data-plan-toggle aria-expanded="true" data-target="#plan-body-<?php echo $pid; ?>">Hide details</button>
+            <button type="button" data-plan-toggle aria-expanded="true" data-target="#plan-body-<?php echo $pid; ?>">Collapse plan</button>
           </div>
         </div>
         <div class="plan-card__body" id="plan-body-<?php echo $pid; ?>">
@@ -1075,6 +927,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   const chipTotal = parseInt(chipItems?.dataset?.total || '0', 10);
   const btnExpand = document.getElementById('btnExpandAll');
   const btnCollapse = document.getElementById('btnCollapseAll');
+  const btnExport = document.getElementById('btnExportCSV');
 
   function setPlanVisibility(section, open) {
     const targetSel = section.querySelector('[data-plan-toggle]')?.getAttribute('data-target');
@@ -1084,7 +937,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     body.style.display = open ? '' : 'none';
     if (toggle) {
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-      toggle.textContent = open ? 'Hide details' : 'Show details';
+      toggle.textContent = open ? 'Collapse plan' : 'Expand plan';
     }
   }
 
@@ -1129,7 +982,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         const toggle = section.querySelector('[data-plan-toggle]');
         if (toggle) {
           toggle.setAttribute('aria-expanded', 'true');
-          toggle.textContent = 'Hide details';
+          toggle.textContent = 'Collapse plan';
         }
       }
     });
@@ -1142,20 +995,55 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
   searchInput?.addEventListener('input', applySearch);
 
-  const planNavButtons = document.querySelectorAll('[data-plan-nav]');
+  function escapeCsv(str) {
+    const s = String(str ?? '');
+    if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
 
-  planNavButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetId = btn.getAttribute('data-target');
-      if (!targetId) return;
-      const section = document.getElementById(targetId);
-      if (!section) return;
-      setPlanVisibility(section, true);
-      section.scrollIntoView({behavior: 'smooth', block: 'start'});
-      section.classList.add('plan-card--highlight');
-      setTimeout(() => section.classList.remove('plan-card--highlight'), 1200);
+  function exportCSV() {
+    const lines = [];
+    lines.push(['Plan Name','Assigned At','#','Exercise','Sets','Reps','Weight','Duration','Coach Notes'].join(','));
+    plans.forEach(section => {
+      const planName = section.getAttribute('data-plan-name') || '';
+      const planAssigned = section.getAttribute('data-plan-assigned') || '';
+      const cards = Array.from(section.querySelectorAll('.exercise-card'));
+      cards.forEach(card => {
+        const order = card.getAttribute('data-order') || '';
+        const name = card.getAttribute('data-name') || '';
+        const sets = card.getAttribute('data-sets') || '';
+        const reps = card.getAttribute('data-reps') || '';
+        const weight = card.getAttribute('data-weight') || '';
+        const duration = card.getAttribute('data-duration') || '';
+        const coach = card.getAttribute('data-coach-notes') || '';
+        lines.push([
+          escapeCsv(planName),
+          escapeCsv(planAssigned),
+          escapeCsv(order),
+          escapeCsv(name),
+          escapeCsv(sets),
+          escapeCsv(reps),
+          escapeCsv(weight),
+          escapeCsv(duration),
+          escapeCsv(coach)
+        ].join(','));
+      });
     });
-  });
+    const blob = new Blob([lines.join('\r\n')], {type: 'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    a.href = url;
+    a.download = 'client_plans_<?php echo (int)$client_id; ?>_' + stamp + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  btnExport?.addEventListener('click', exportCSV);
 })();
 </script>
 
