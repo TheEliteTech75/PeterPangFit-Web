@@ -503,6 +503,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
     .plan-nav {
       margin-top: clamp(26px, 6vw, 38px);
+      margin-bottom: clamp(28px, 7vw, 48px);
       display: grid;
       gap: 12px;
     }
@@ -573,6 +574,11 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     .plan-grid {
       display: grid;
       gap: clamp(32px, 4vw, 48px);
+      align-items: start;
+    }
+
+    .plan-grid > .plan-card {
+      align-self: start;
     }
 
     .plan-card {
