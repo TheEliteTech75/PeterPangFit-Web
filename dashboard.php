@@ -1147,6 +1147,7 @@ $CAT_PALETTE = [
       --spark-bar-2:#8e7df0;
 
       --border:#1b2332; --radius:14px;
+      --dash-header-offset:72px;
     }
 
     @media (max-width: 520px){
@@ -1171,6 +1172,10 @@ $CAT_PALETTE = [
       align-items: stretch;
       position:relative;
     }
+    .cards.cols-1{
+      --card-min: 100%;
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
     .cards.cols-2{ --card-min: min(100%, calc((100% - var(--card-gap)) / 2)); }
     .cards.cols-3{ --card-min: min(100%, calc((100% - (var(--card-gap) * 2)) / 3)); }
     .cards.cols-4{ --card-min: min(100%, calc((100% - (var(--card-gap) * 3)) / 4)); }
@@ -1181,7 +1186,9 @@ $CAT_PALETTE = [
       .cards{ --card-min: min(100%, 360px); }
     }
 
-    .card{
+    body.dashboard-mobile .cards{ grid-template-columns: repeat(1, minmax(0, 1fr)); }
+
+    .card{ 
       --card-span: 1;
       display:flex; flex-direction:column; justify-content:flex-start;
       background:var(--c-card); border:1px solid var(--border); border-radius:var(--radius);
@@ -1252,6 +1259,7 @@ $CAT_PALETTE = [
       transition:border-color .2s ease, background .2s ease, color .2s ease, opacity .2s ease;
       z-index:5;
     }
+    body.dashboard-mobile .card-resize{ display:none !important; }
     .card-resize:focus-visible{ outline:2px solid var(--c-accent); outline-offset:2px; }
     .card-resize svg{ width:12px; height:12px; pointer-events:none; }
     .card:not(:hover) .card-resize{ opacity:0.6; }
@@ -1297,7 +1305,10 @@ $CAT_PALETTE = [
 
     .dash-settings-overlay{
       position:fixed;
-      inset:0;
+      top:var(--dash-header-offset);
+      right:0;
+      bottom:0;
+      left:0;
       background:rgba(5, 10, 20, 0.55);
       backdrop-filter:blur(2px);
       opacity:0;
@@ -1309,11 +1320,11 @@ $CAT_PALETTE = [
 
     .dash-settings{
       position:fixed;
-      top:0;
+      top:var(--dash-header-offset);
       right:0;
       width:320px;
       max-width:90vw;
-      height:100vh;
+      height:calc(100vh - var(--dash-header-offset));
       background:rgba(13,18,31,0.98);
       border-left:1px solid var(--border);
       box-shadow:-16px 0 48px rgba(0,0,0,0.45);
@@ -1325,21 +1336,29 @@ $CAT_PALETTE = [
     }
     .dash-settings.is-open{ transform:translateX(0); }
     .dash-settings__inner{ padding:20px 20px 24px; display:flex; flex-direction:column; gap:20px; overflow-y:auto; flex:1; }
-    .dash-settings__header{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .dash-settings__header{ display:flex; align-items:center; justify-content:space-between; gap:12px; position:relative; }
     .dash-settings__header h2{ margin:0; font-size:16px; }
     .dash-settings__close{
       border:1px solid var(--border);
       background:#111a2c;
       color:var(--c-text);
       border-radius:999px;
-      padding:6px 12px;
+      width:34px;
+      height:34px;
+      padding:0;
       font-size:12px;
       text-transform:uppercase;
       letter-spacing:0.05em;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:6px;
       cursor:pointer;
       transition:background .2s ease, border-color .2s ease;
     }
     .dash-settings__close:is(:hover,:focus-visible){ background:#182338; border-color:#2a3650; }
+    .dash-settings__close-icon{ font-size:18px; line-height:1; }
+    .dash-settings__close-text{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
     .dash-settings__section{ display:flex; flex-direction:column; gap:12px; }
     .dash-settings__section h3{ margin:0; font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:#f3f6ff; }
     .dash-settings__columns{ display:flex; gap:10px; flex-wrap:wrap; }
@@ -1372,6 +1391,10 @@ $CAT_PALETTE = [
       background:linear-gradient(90deg, var(--c-accent), var(--c-accent-2));
       border-color:transparent;
       color:#fff;
+    }
+    .dash-settings__columns label.is-disabled span{
+      opacity:0.45;
+      background:#0d1320;
     }
     .dash-settings__columns label input:focus-visible + span{ outline:2px solid var(--c-accent); outline-offset:2px; }
 
@@ -1408,6 +1431,15 @@ $CAT_PALETTE = [
     .dash-settings__option.is-locked{ opacity:0.6; cursor:not-allowed; }
     .dash-settings__option.is-locked input{ pointer-events:none; }
     .dash-settings__empty{ font-size:13px; color:var(--c-muted); }
+    .dash-settings__hint{
+      font-size:12px;
+      color:var(--c-muted);
+      margin:2px 0 0;
+    }
+
+    @media (max-width: 640px){
+      body.dashboard-mobile .wrap{ padding-inline: 12px; }
+    }
 
     @media (max-width: 768px){
       .dashboard-head{ flex-direction:column; align-items:stretch; }
@@ -2014,7 +2046,10 @@ $CAT_PALETTE = [
     <div class="dash-settings__inner">
       <div class="dash-settings__header">
         <h2>Dashboard Options</h2>
-        <button type="button" class="dash-settings__close" data-close-settings>Close</button>
+        <button type="button" class="dash-settings__close" data-close-settings aria-label="Close dashboard options" title="Close dashboard options">
+          <span class="dash-settings__close-icon" aria-hidden="true">&times;</span>
+          <span class="dash-settings__close-text">Close</span>
+        </button>
       </div>
       <div class="dash-settings__section">
         <h3>Cards per row</h3>
@@ -2032,6 +2067,7 @@ $CAT_PALETTE = [
             <span>4 per row</span>
           </label>
         </div>
+        <p class="dash-settings__hint" data-columns-mobile-hint hidden>Layout is locked to one column on smaller screens.</p>
       </div>
       <div class="dash-settings__section">
         <h3>Visible cards</h3>
@@ -2046,6 +2082,22 @@ $CAT_PALETTE = [
       const userScope = <?php echo json_encode('uid-' . ($USER_ID ?? 'guest')); ?>;
       const containers = Array.from(document.querySelectorAll('.cards'));
       if (!containers.length) return;
+
+      const topbar = document.querySelector('.ppf-topbar');
+      const updateHeaderOffset = () => {
+        if (!topbar) return;
+        const rect = topbar.getBoundingClientRect();
+        const height = Math.max(0, Math.round(rect.height));
+        document.documentElement.style.setProperty('--dash-header-offset', `${height}px`);
+      };
+      updateHeaderOffset();
+      window.addEventListener('resize', updateHeaderOffset, { passive: true });
+
+      const MOBILE_BREAKPOINT = 640;
+      const mobileMedia = typeof window.matchMedia === 'function'
+        ? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`)
+        : null;
+      let isMobileView = mobileMedia ? mobileMedia.matches : (window.innerWidth <= MOBILE_BREAKPOINT);
 
       const layoutKey = `ppf-dashboard-layout::${userScope}`;
       const layoutState = loadLayoutState();
@@ -2062,10 +2114,13 @@ $CAT_PALETTE = [
       const cardListEl = settingsPanel ? settingsPanel.querySelector('[data-settings-card-list]') : null;
       const emptyStateEl = settingsPanel ? settingsPanel.querySelector('[data-settings-empty]') : null;
       const columnRadios = settingsPanel ? Array.from(settingsPanel.querySelectorAll('input[name="dash-columns"]')) : [];
+      const columnsHint = settingsPanel ? settingsPanel.querySelector('[data-columns-mobile-hint]') : null;
 
       const initialColumns = clampColumns(layoutState.columns);
       layoutState.columns = initialColumns;
+      updateBodyMobileClass();
       applyColumnClass(initialColumns);
+      updateColumnControlsState();
 
       containers.forEach((container, containerIndex) => {
         const cards = Array.from(container.querySelectorAll(':scope > .card'));
@@ -2123,6 +2178,19 @@ $CAT_PALETTE = [
       bindSettingsPanel();
       syncVisibilityControls();
 
+      if (mobileMedia) {
+        if (typeof mobileMedia.addEventListener === 'function') {
+          mobileMedia.addEventListener('change', evt => handleMobileChange(evt.matches));
+        } else if (typeof mobileMedia.addListener === 'function') {
+          mobileMedia.addListener(evt => handleMobileChange(evt.matches));
+        }
+      } else if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        const onResize = () => handleMobileChange(window.innerWidth <= MOBILE_BREAKPOINT);
+        window.addEventListener('resize', onResize);
+      }
+
+      updateColumnControlsState();
+
       function ensureCardKey(card, idx, seenKeys){
         let key = (card.getAttribute('data-card-key') || card.dataset.cardKey || '').trim();
         if (key && !seenKeys.has(key)) {
@@ -2171,8 +2239,12 @@ $CAT_PALETTE = [
         return Math.min(max, Math.max(1, Math.round(num)));
       }
 
+      function getEffectiveColumns(){
+        return isMobileView ? 1 : clampColumns(layoutState.columns);
+      }
+
       function getColumnMetrics(container){
-        const columns = clampColumns(layoutState.columns);
+        const columns = getEffectiveColumns();
         const rect = container ? container.getBoundingClientRect() : null;
         const styles = container ? window.getComputedStyle(container) : null;
         let gap = styles ? parseFloat(styles.columnGap) : NaN;
@@ -2356,10 +2428,16 @@ $CAT_PALETTE = [
       }
 
       function applySpanToCardElement(card, span){
-        card.dataset.cardSpan = String(span);
-        card.style.setProperty('--card-span', span);
+        if (!card) return;
+        const effective = isMobileView ? 1 : span;
+        card.dataset.cardSpanStored = String(span);
+        card.dataset.cardSpan = String(effective);
+        card.style.setProperty('--card-span', effective);
         const handle = card.querySelector('[data-resize-handle]');
-        if (handle) updateResizeHandleLabel(handle, span);
+        if (handle) {
+          updateResizeHandleLabel(handle, span);
+          setResizeHandleEnabled(handle, !isMobileView);
+        }
       }
 
       function installResizeHandle(card, containerIndex, span){
@@ -2380,11 +2458,26 @@ $CAT_PALETTE = [
         handle.dataset.containerIndex = String(containerIndex);
         handle.dataset.cardKey = card.dataset.cardKey || '';
         updateResizeHandleLabel(handle, span);
+        setResizeHandleEnabled(handle, !isMobileView);
+      }
+
+      function setResizeHandleEnabled(handle, enabled){
+        if (!handle) return;
+        handle.hidden = !enabled;
+        if (enabled) {
+          handle.removeAttribute('disabled');
+          handle.tabIndex = 0;
+          handle.setAttribute('aria-hidden', 'false');
+        } else {
+          handle.setAttribute('disabled', 'disabled');
+          handle.tabIndex = -1;
+          handle.setAttribute('aria-hidden', 'true');
+        }
       }
 
       function updateResizeHandleLabel(handle, span){
         if (!handle) return;
-        const max = layoutState.columns || 4;
+        const max = clampColumns(layoutState.columns || 4);
         handle.setAttribute('aria-label', `Resize card width (current ${span} of ${max} columns)`);
         handle.setAttribute('title', `Span ${span} of ${max}`);
       }
@@ -2410,6 +2503,7 @@ $CAT_PALETTE = [
       }
 
       function startResizePointer(evt, card, containerIndex){
+        if (isMobileView) return;
         if (!card || !containers[containerIndex]) return;
         if (evt.button !== undefined && evt.button !== 0 && evt.pointerType !== 'touch') return;
         evt.preventDefault();
@@ -2543,6 +2637,7 @@ $CAT_PALETTE = [
       }
 
       function handleResizeKey(evt, card, containerIndex){
+        if (isMobileView) return;
         if (!card) return;
         const key = card.dataset.cardKey;
         if (!key) return;
@@ -2937,7 +3032,6 @@ $CAT_PALETTE = [
           }
         });
         columnRadios.forEach(radio => {
-          radio.checked = Number(radio.value) === layoutState.columns;
           radio.addEventListener('change', () => {
             if (radio.checked) updateColumns(Number(radio.value));
           });
@@ -2980,18 +3074,41 @@ $CAT_PALETTE = [
         if (layoutState.columns === columns) return;
         layoutState.columns = columns;
         applyColumnClass(columns);
+        updateColumnControlsState();
         refreshAllSpans();
         saveLayoutState();
       }
 
       function applyColumnClass(columns){
+        const effective = isMobileView ? 1 : clampColumns(columns);
         containers.forEach(container => {
-          container.classList.remove('cols-2', 'cols-3', 'cols-4');
-          container.classList.add(`cols-${columns}`);
+          container.classList.remove('cols-1', 'cols-2', 'cols-3', 'cols-4');
+          container.classList.add(`cols-${effective}`);
         });
+      }
+
+      function updateBodyMobileClass(){
+        document.body.classList.toggle('dashboard-mobile', isMobileView);
+      }
+
+      function handleMobileChange(matches){
+        const next = !!matches;
+        if (next === isMobileView) return;
+        isMobileView = next;
+        updateBodyMobileClass();
+        applyColumnClass(layoutState.columns);
+        updateColumnControlsState();
+        refreshAllSpans();
+      }
+
+      function updateColumnControlsState(){
         columnRadios.forEach(radio => {
-          radio.checked = Number(radio.value) === columns;
+          radio.checked = Number(radio.value) === layoutState.columns;
+          radio.disabled = isMobileView;
+          const label = radio.closest('label');
+          if (label) label.classList.toggle('is-disabled', isMobileView);
         });
+        if (columnsHint) columnsHint.hidden = !isMobileView;
       }
 
       function isCardHidden(containerIndex, key){
