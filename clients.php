@@ -3292,6 +3292,13 @@ function applyUserExerciseData(tr, data){
       : (('duration' in data && typeof data.duration === 'string') ? data.duration : null)
   };
   const display = computeExerciseSetDisplay(setDetailsIncoming, fallback);
+  const {
+    repsValue,
+    weightRaw,
+    weightDisplay,
+    durationRaw,
+    durationDisplay
+  } = display;
 
   if (cells.sets) {
     cells.sets.innerHTML = display.setsHtml;
