@@ -224,6 +224,13 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       box-sizing: border-box;
     }
 
+    html.plan-nav-locked,
+    body.plan-nav-locked {
+      overflow: hidden;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+
     body {
       margin: 0;
       background:
@@ -1062,8 +1069,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         margin-left: calc(50% - 50vw);
         margin-right: calc(50% - 50vw);
         width: 100vw;
-        padding-left: calc(env(safe-area-inset-left, 0px) + clamp(18px, 6vw, 24px));
-        padding-right: calc(env(safe-area-inset-right, 0px) + clamp(18px, 6vw, 24px));
+        padding: 0;
       }
       .plan-nav--mobile.plan-nav--collapsed {
         position: sticky;
@@ -1076,32 +1082,39 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         bottom: 0;
         margin: 0;
         width: 100vw;
-        padding: var(--plan-nav-offset) calc(env(safe-area-inset-right, 0px) + clamp(18px, 6vw, 24px)) calc(env(safe-area-inset-bottom, 0px) + clamp(28px, 8vw, 36px)) calc(env(safe-area-inset-left, 0px) + clamp(18px, 6vw, 24px));
-        background: rgba(0, 0, 0, 0.82);
-        backdrop-filter: blur(18px);
+        padding: 0;
+        background: rgba(0, 0, 0, 0.88);
+        backdrop-filter: blur(22px);
         z-index: 130;
         display: flex;
         flex-direction: column;
-        gap: clamp(18px, 6vw, 24px);
+        align-items: stretch;
+        justify-content: flex-start;
+        gap: 0;
+        touch-action: none;
       }
       .plan-nav--mobile .plan-nav__mobile-bar {
         display: flex;
         width: 100%;
+        padding-left: calc(env(safe-area-inset-left, 0px) + clamp(14px, 5vw, 22px));
+        padding-right: calc(env(safe-area-inset-right, 0px) + clamp(14px, 5vw, 22px));
+        padding-bottom: clamp(6px, 2vw, 10px);
       }
       .plan-nav__mobile-trigger {
         border-radius: clamp(18px, 7vw, 22px);
-        padding: clamp(12px, 5vw, 16px) clamp(16px, 6vw, 22px);
+        padding: clamp(12px, 5vw, 16px) clamp(20px, 6vw, 26px);
         font-size: clamp(14px, 4vw, 16px);
       }
       .plan-nav--mobile .plan-nav__panel {
-        background: rgba(5, 5, 5, 0.94);
-        backdrop-filter: blur(14px);
-        border-radius: clamp(18px, 8vw, 26px);
+        position: relative;
+        background: rgba(8, 8, 8, 0.96);
+        backdrop-filter: blur(16px);
+        border-radius: clamp(22px, 8vw, 28px);
         border: 1px solid var(--card-border-subtle);
-        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
-        padding: clamp(16px, 6vw, 24px);
+        box-shadow: 0 22px 46px rgba(0, 0, 0, 0.6);
+        padding: clamp(20px, 7vw, 28px);
         width: 100%;
-        max-height: min(70vh, 420px);
+        max-height: min(72vh, 460px);
         overflow-y: auto;
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
@@ -1111,16 +1124,34 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       .plan-nav--mobile.plan-nav--expanded .plan-nav__panel {
         flex: 1 1 auto;
         max-height: none;
-        height: auto;
-        padding: clamp(22px, 7vw, 30px);
-        border-radius: clamp(22px, 8vw, 30px);
+        height: 100%;
+        padding: calc(var(--plan-nav-offset) + clamp(22px, 8vw, 32px)) clamp(20px, 7vw, 30px) calc(env(safe-area-inset-bottom, 0px) + clamp(30px, 9vw, 40px));
+        border-radius: 0;
+        border: none;
         box-shadow: none;
+        display: flex;
+        flex-direction: column;
+        gap: clamp(22px, 7vw, 30px);
       }
       .plan-nav--mobile .plan-nav__panel-head {
         margin-bottom: 10px;
       }
       .plan-nav--mobile .plan-nav__close {
         display: inline-flex;
+      }
+      .plan-nav--mobile.plan-nav--expanded .plan-nav__panel-head {
+        padding-top: 0;
+      }
+      .plan-nav--mobile.plan-nav--expanded .plan-nav__rail {
+        flex: 1 1 auto;
+        flex-direction: column;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scroll-snap-type: none;
+        padding-bottom: clamp(20px, 7vw, 28px);
+      }
+      .plan-nav--mobile.plan-nav--expanded .plan-nav__button {
+        width: 100%;
       }
       .plan-nav--mobile.plan-nav--collapsed .plan-nav__panel {
         display: none;
@@ -1129,7 +1160,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         display: flex;
       }
       .plan-nav--mobile.plan-nav--expanded .plan-nav__panel {
-        display: grid;
+        display: flex;
       }
       .plan-nav--mobile.plan-nav--expanded .plan-nav__mobile-bar {
         display: none;
@@ -1487,6 +1518,35 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   const navMobileQuery = window.matchMedia('(max-width: 760px)');
   let navSkipNextScroll = false;
   let navScrollHoldTimer = null;
+  let navScrollLockY = 0;
+
+  function lockBodyForNav() {
+    if (!navMobileQuery.matches) return;
+    if (document.body.classList.contains('plan-nav-locked')) return;
+    navScrollLockY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+    document.documentElement.classList.add('plan-nav-locked');
+    document.body.classList.add('plan-nav-locked');
+    document.body.dataset.planNavScrollY = String(navScrollLockY);
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${navScrollLockY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+  }
+
+  function unlockBodyForNav() {
+    if (!document.body.classList.contains('plan-nav-locked')) return;
+    const stored = parseInt(document.body.dataset.planNavScrollY || '0', 10);
+    document.documentElement.classList.remove('plan-nav-locked');
+    document.body.classList.remove('plan-nav-locked');
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    delete document.body.dataset.planNavScrollY;
+    window.scrollTo(0, stored);
+  }
 
   function holdNavScrollBuffer(duration = 260) {
     navSkipNextScroll = true;
@@ -1511,6 +1571,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       navSection.classList.add('plan-nav--expanded');
       navSkipNextScroll = false;
       navOpenTrigger?.setAttribute('aria-expanded', 'true');
+      unlockBodyForNav();
     }
   }
 
@@ -1524,6 +1585,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       window.clearTimeout(navScrollHoldTimer);
       navScrollHoldTimer = null;
     }
+    unlockBodyForNav();
   }
 
   function expandPlanNav(manual = false) {
@@ -1531,14 +1593,32 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     navSection.classList.add('plan-nav--expanded');
     navSection.classList.remove('plan-nav--collapsed');
     navOpenTrigger?.setAttribute('aria-expanded', 'true');
-    if (manual && navSection.classList.contains('plan-nav--mobile')) {
-      holdNavScrollBuffer(420);
+    if (navSection.classList.contains('plan-nav--mobile')) {
+      lockBodyForNav();
+      if (manual) {
+        holdNavScrollBuffer(420);
+      }
+    } else {
+      unlockBodyForNav();
     }
   }
 
   applyNavResponsiveState();
+  if (navSection) {
+    if (navSection.classList.contains('plan-nav--mobile')) {
+      collapsePlanNav();
+    } else {
+      expandPlanNav(false);
+    }
+  }
+
   navMobileQuery.addEventListener('change', () => {
     applyNavResponsiveState();
+    if (navSection?.classList.contains('plan-nav--mobile')) {
+      collapsePlanNav();
+    } else if (navSection) {
+      expandPlanNav(false);
+    }
   });
 
   navOpenTrigger?.addEventListener('click', () => {
