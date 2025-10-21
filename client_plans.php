@@ -416,12 +416,13 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 10px 18px;
-      border-radius: 999px;
+      padding: clamp(10px, 1.8vw, 14px) clamp(18px, 3vw, 26px);
+      border-radius: clamp(24px, 4vw, 999px);
       border: 1px solid rgba(0, 191, 255, 0.35);
       background: rgba(15, 15, 15, 0.9);
       color: var(--muted);
       min-width: 220px;
+      min-height: clamp(46px, 9vw, 56px);
     }
 
     .toolbar .search svg {
@@ -435,7 +436,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       border: none;
       background: transparent;
       color: var(--text);
-      font-size: 15px;
+      font-size: clamp(14px, 3.5vw, 16px);
       outline: none;
     }
 
@@ -507,6 +508,19 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       margin-bottom: clamp(28px, 7vw, 48px);
       display: grid;
       gap: 12px;
+      position: relative;
+    }
+
+    .plan-nav__panel {
+      display: grid;
+      gap: 12px;
+    }
+
+    .plan-nav__panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
 
     .plan-nav__title {
@@ -515,6 +529,73 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--muted);
+    }
+
+    .plan-nav__close {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: rgba(0, 191, 255, 0.14);
+      color: var(--text);
+      border-radius: 999px;
+      width: 34px;
+      height: 34px;
+      cursor: pointer;
+      transition: background var(--transition), transform var(--transition);
+    }
+
+    .plan-nav__close span {
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .plan-nav__close:hover,
+    .plan-nav__close:focus-visible {
+      outline: none;
+      background: rgba(0, 191, 255, 0.24);
+      transform: translateY(-1px);
+    }
+
+    .plan-nav__mobile-bar {
+      display: none;
+    }
+
+    .plan-nav__mobile-trigger {
+      width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(0, 191, 255, 0.35);
+      background: rgba(10, 10, 10, 0.94);
+      color: var(--text);
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.5);
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    }
+
+    .plan-nav__mobile-trigger svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      transition: transform var(--transition);
+    }
+
+    .plan-nav__mobile-trigger[aria-expanded="true"] svg {
+      transform: rotate(180deg);
+    }
+
+    .plan-nav__mobile-trigger:hover,
+    .plan-nav__mobile-trigger:focus-visible {
+      outline: none;
+      transform: translateY(-1px);
+      border-color: rgba(0, 191, 255, 0.55);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
     }
 
     .plan-nav__rail {
@@ -968,14 +1049,49 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
       .plan-nav {
         position: sticky;
-        top: calc(64px + env(safe-area-inset-top, 0px));
-        z-index: 10;
-        background: rgba(5, 5, 5, 0.94);
-        backdrop-filter: blur(14px);
-        padding: 14px clamp(14px, 6vw, 22px);
+        top: calc(60px + env(safe-area-inset-top, 0px));
+        z-index: 12;
+        gap: 10px;
+      }
+      .plan-nav--mobile .plan-nav__mobile-bar,
+      .plan-nav--mobile .plan-nav__panel {
         margin-left: calc(-1 * clamp(14px, 6vw, 22px));
         margin-right: calc(-1 * clamp(14px, 6vw, 22px));
+      }
+      .plan-nav--mobile .plan-nav__mobile-bar {
+        display: flex;
+        padding: 0 clamp(14px, 6vw, 22px);
+      }
+      .plan-nav__mobile-trigger {
+        border-radius: clamp(18px, 7vw, 22px);
+        padding: clamp(12px, 5vw, 16px) clamp(16px, 6vw, 22px);
+        font-size: clamp(14px, 4vw, 16px);
+      }
+      .plan-nav--mobile .plan-nav__panel {
+        background: rgba(5, 5, 5, 0.94);
+        backdrop-filter: blur(14px);
+        border-radius: clamp(18px, 8vw, 26px);
+        border: 1px solid var(--card-border-subtle);
         box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+        padding: clamp(16px, 6vw, 24px);
+      }
+      .plan-nav--mobile .plan-nav__panel-head {
+        margin-bottom: 10px;
+      }
+      .plan-nav--mobile .plan-nav__close {
+        display: inline-flex;
+      }
+      .plan-nav--mobile.plan-nav--collapsed .plan-nav__panel {
+        display: none;
+      }
+      .plan-nav--mobile.plan-nav--collapsed .plan-nav__mobile-bar {
+        display: flex;
+      }
+      .plan-nav--mobile.plan-nav--expanded .plan-nav__panel {
+        display: grid;
+      }
+      .plan-nav--mobile.plan-nav--expanded .plan-nav__mobile-bar {
+        display: none;
       }
       .plan-card__header {
         flex-direction: column;
@@ -986,9 +1102,18 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       .plan-card__toggle button {
         width: 100%;
       }
+      .plan-card__body {
+        padding: clamp(18px, 7vw, 28px);
+      }
       .exercise-card {
         padding: clamp(18px, 7vw, 24px);
         gap: 18px;
+      }
+      .exercise-media video,
+      .exercise-media img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
       }
       .plan-footnote {
         text-align: left;
@@ -1138,9 +1263,23 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   <?php if (!$plans): ?>
     <div class="page-empty">No workout plans have been assigned yet. Check back soon!</div>
   <?php else: ?>
-    <section class="plan-nav">
-      <h2 class="plan-nav__title">Jump to a plan</h2>
-      <div class="plan-nav__rail">
+    <section class="plan-nav plan-nav--expanded" data-plan-nav-container>
+      <div class="plan-nav__mobile-bar" data-plan-nav-bar>
+        <button type="button" class="plan-nav__mobile-trigger" data-plan-nav-open aria-expanded="true" aria-controls="planNavPanel">
+          <span>Jump to a plan</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m6 9 6 6 6-6"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="plan-nav__panel" id="planNavPanel" data-plan-nav-panel>
+        <div class="plan-nav__panel-head">
+          <h2 class="plan-nav__title">Jump to a plan</h2>
+          <button type="button" class="plan-nav__close" data-plan-nav-close aria-label="Close plan navigation">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="plan-nav__rail">
         <?php foreach ($plans as $planNav):
           $navId = (int)$planNav['user_plan_id'];
           $navAssigned = !empty($planNav['assigned_at']) ? date('M j, Y', strtotime($planNav['assigned_at'])) : 'No date set';
@@ -1150,6 +1289,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
             <span><?php echo h($navAssigned); ?></span>
           </button>
         <?php endforeach; ?>
+        </div>
       </div>
     </section>
     <div class="plan-grid" id="plansGrid">
@@ -1299,6 +1439,70 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   const btnExpand = document.getElementById('btnExpandAll');
   const btnCollapse = document.getElementById('btnCollapseAll');
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const navSection = document.querySelector('[data-plan-nav-container]');
+  const navOpenTrigger = navSection?.querySelector('[data-plan-nav-open]');
+  const navCloseBtn = navSection?.querySelector('[data-plan-nav-close]');
+  const navMobileQuery = window.matchMedia('(max-width: 760px)');
+  let navSkipNextScroll = false;
+
+  function applyNavResponsiveState() {
+    if (!navSection) return;
+    if (navMobileQuery.matches) {
+      navSection.classList.add('plan-nav--mobile');
+      if (!navSection.classList.contains('plan-nav--collapsed') && !navSection.classList.contains('plan-nav--expanded')) {
+        navSection.classList.add('plan-nav--expanded');
+      }
+    } else {
+      navSection.classList.remove('plan-nav--mobile', 'plan-nav--collapsed');
+      navSection.classList.add('plan-nav--expanded');
+      navSkipNextScroll = false;
+      navOpenTrigger?.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function collapsePlanNav() {
+    if (!navSection || !navSection.classList.contains('plan-nav--mobile')) return;
+    navSection.classList.add('plan-nav--collapsed');
+    navSection.classList.remove('plan-nav--expanded');
+    navOpenTrigger?.setAttribute('aria-expanded', 'false');
+    navSkipNextScroll = false;
+  }
+
+  function expandPlanNav(manual = false) {
+    if (!navSection) return;
+    navSection.classList.add('plan-nav--expanded');
+    navSection.classList.remove('plan-nav--collapsed');
+    navOpenTrigger?.setAttribute('aria-expanded', 'true');
+    if (manual && navSection.classList.contains('plan-nav--mobile')) {
+      navSkipNextScroll = true;
+    }
+  }
+
+  applyNavResponsiveState();
+  navMobileQuery.addEventListener('change', () => {
+    applyNavResponsiveState();
+  });
+
+  navOpenTrigger?.addEventListener('click', () => {
+    expandPlanNav(true);
+  });
+
+  navCloseBtn?.addEventListener('click', () => {
+    collapsePlanNav();
+  });
+
+  window.addEventListener('scroll', () => {
+    if (!navSection || !navMobileQuery.matches) return;
+    if (navSkipNextScroll) {
+      navSkipNextScroll = false;
+      return;
+    }
+    if (window.scrollY > 40) {
+      collapsePlanNav();
+    } else {
+      expandPlanNav(false);
+    }
+  }, { passive: true });
 
   function cleanupAnimation(body) {
     if (body._transitionHandler) {
@@ -1473,6 +1677,9 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       section.scrollIntoView({behavior: 'smooth', block: 'start'});
       section.classList.add('plan-card--highlight');
       setTimeout(() => section.classList.remove('plan-card--highlight'), 1200);
+      if (navMobileQuery.matches) {
+        collapsePlanNav();
+      }
     });
   });
 })();
