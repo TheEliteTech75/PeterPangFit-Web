@@ -2623,19 +2623,22 @@ function renderClientExpansion(uid, body){
             if (!Number.isNaN(parsed)) setsCount = parsed;
           }
           if (setsCount === null) setsCount = setDetails.length;
-          let setsSummary = renderSetSummary(setDetails);
-          if ((!setDetails || !setDetails.length) && setsCount > 0) {
-            setsSummary = `<span>${escapeHtml(String(setsCount))} set${setsCount === 1 ? '' : 's'}</span>`;
-          }
-
-          const firstSet = firstSetDetails(setDetails);
-          const reps = (firstSet && firstSet.reps != null && firstSet.reps !== '') ? String(firstSet.reps) : (per?.reps ?? '—');
-          const weightValue = (firstSet && firstSet.weight_value != null) ? firstSet.weight_value : (per?.weight_value ?? null);
-          const weightDisplay = computeWeightDisplay(weightValue, (firstSet && firstSet.weight_display) ? firstSet.weight_display : (per?.weight_display ?? null)) ?? '—';
-          const durationValue = (firstSet && firstSet.duration_seconds != null) ? firstSet.duration_seconds : (per?.duration_seconds ?? null);
-          const durationDisplay = computeDurationDisplay(durationValue, (firstSet && firstSet.duration_display) ? firstSet.duration_display : (per?.duration_display ?? null)) ?? '—';
-          const weightRaw = weightValue != null ? weightValue : '';
-          const durRaw = durationValue != null ? durationValue : '';
+          const fallback = {
+            setsCount,
+            reps: per?.reps ?? null,
+            weightValue: toNumberOrNull(per?.weight_value ?? (per?.weight ?? null)),
+            weightDisplay: per?.weight_display ?? (typeof per?.weight === 'string' ? per.weight : null),
+            durationSeconds: toNumberOrNull(per?.duration_seconds ?? (per?.duration ?? null)),
+            durationDisplay: per?.duration_display ?? (typeof per?.duration === 'string' ? per.duration : null)
+          };
+          const display = computeExerciseSetDisplay(setDetails, fallback);
+          const setsSummary = display.setsHtml;
+          const repsHtml = display.repsHtml;
+          const weightHtml = display.weightHtml;
+          const durationHtml = display.durationHtml;
+          const setsAttr = display.setsRaw != null ? ` data-raw="${escapeHtml(String(display.setsRaw))}"` : '';
+          const weightAttr = display.weightRaw != null ? ` data-raw="${escapeHtml(String(display.weightRaw))}"` : '';
+          const durAttr = display.durationRaw != null ? ` data-raw="${escapeHtml(String(display.durationRaw))}"` : '';
 
           // ONLY user-specific notes; show dash if empty
           const userNoteRaw = (per && per.notes != null) ? String(per.notes) : '';
@@ -2655,9 +2658,6 @@ function renderClientExpansion(uid, body){
           const videoCell = hasVideo
             ? `<span class="chip video-chip"${videoAttrs}>▶ Video</span>`
             : '<span class="muted">—</span>';
-          const weightAttr = weightRaw === null || weightRaw === undefined || weightRaw === '' ? '' : ` data-raw="${escapeHtml(String(weightRaw))}"`;
-          const durAttr = durRaw === null || durRaw === undefined || durRaw === '' ? '' : ` data-raw="${escapeHtml(String(durRaw))}"`;
-
           exHtml += `
             <tr class="mini-ex-row" data-ex-id="${ex.ex_id}" data-user-id="${uid}" data-plan-id="${p.id}">
               <td style="padding:8px 10px">${ex.ex_id}</td>
@@ -2665,10 +2665,10 @@ function renderClientExpansion(uid, body){
               <td class="muted" style="padding:8px 10px" data-cell="notes">${escapeHtml(showNotes)}</td>
               <td style="padding:8px 10px" data-cell="categories">${catDisplay}</td>
               <td style="padding:8px 10px">${videoCell}</td>
-              <td style="padding:8px 10px" data-cell="sets">${setsSummary}</td>
-              <td style="padding:8px 10px" data-cell="reps">${escapeHtml(reps ?? '—')}</td>
-              <td style="padding:8px 10px" data-cell="weight"${weightAttr}>${escapeHtml(weightDisplay ?? '—')}</td>
-              <td style="padding:8px 10px" data-cell="duration"${durAttr}>${escapeHtml(durationDisplay ?? '—')}</td>
+              <td style="padding:8px 10px" data-cell="sets"${setsAttr}>${setsSummary}</td>
+              <td style="padding:8px 10px" data-cell="reps">${repsHtml}</td>
+              <td style="padding:8px 10px" data-cell="weight"${weightAttr}>${weightHtml}</td>
+              <td style="padding:8px 10px" data-cell="duration"${durAttr}>${durationHtml}</td>
               <td class="muted" style="padding:8px 10px" data-cell="edited">${editedAt ? escapeHtml(editedAt) : '—'}</td>
               <td class="muted" style="padding:8px 10px" data-cell="edited_by">${editedBy ? escapeHtml(editedBy) : '—'}</td>
               <td style="padding:8px 10px" data-cell="actions">
@@ -3010,6 +3010,12 @@ function normalizeEmpty(value){
   return (value === null || value === undefined || value === '') ? null : value;
 }
 
+function toNumberOrNull(value){
+  if (value === null || value === undefined || value === '') return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
 function computeWeightDisplay(raw, provided){
   if (provided) return String(provided);
   if (raw === null || raw === undefined || raw === '') return null;
@@ -3060,17 +3066,165 @@ function formatSetLine(detail){
   return `${label}: ${parts.join(' · ')}`;
 }
 
-function renderSetSummary(details){
-  const list = ensureArray(details);
-  if (!list.length) return '<span class="muted">—</span>';
-  const lines = list.map(formatSetLine).filter(Boolean);
-  if (!lines.length) return '<span class="muted">—</span>';
-  return lines.map(line => `<div>${escapeHtml(line)}</div>`).join('');
-}
+function computeExerciseSetDisplay(details, fallback = {}){
+  const list = ensureArray(details).map((row, idx) => {
+    const detail = row && typeof row === 'object' ? row : {};
+    let setNumber = detail.set_number;
+    if (setNumber === null || setNumber === undefined || setNumber === '') {
+      setNumber = idx + 1;
+    }
+    setNumber = Number(setNumber);
+    if (!Number.isFinite(setNumber)) setNumber = idx + 1;
 
-function firstSetDetails(details){
-  const list = ensureArray(details);
-  return list.length ? list[0] : null;
+    const reps = detail.reps != null && detail.reps !== '' ? String(detail.reps) : null;
+
+    let weightValue = toNumberOrNull(detail.weight_value);
+    if (weightValue === null) weightValue = toNumberOrNull(detail.weight_lbs);
+    let weightDisplay = detail.weight_display != null && detail.weight_display !== '' ? String(detail.weight_display) : null;
+    if (!weightDisplay && weightValue !== null) {
+      weightDisplay = computeWeightDisplay(weightValue);
+    }
+
+    let durationValue = toNumberOrNull(detail.duration_seconds);
+    if (durationValue === null) durationValue = toNumberOrNull(detail.duration);
+    let durationDisplay = detail.duration_display != null && detail.duration_display !== '' ? String(detail.duration_display) : null;
+    if (!durationDisplay && durationValue !== null) {
+      durationDisplay = computeDurationDisplay(durationValue);
+    }
+
+    return {
+      set_number: setNumber,
+      reps,
+      weight_value: weightValue,
+      weight_display: weightDisplay,
+      duration_seconds: durationValue,
+      duration_display: durationDisplay
+    };
+  });
+
+  const fallbackSetsRaw = toNumberOrNull(fallback && fallback.setsCount !== undefined ? fallback.setsCount : null);
+  const fallbackReps = fallback && fallback.reps != null && fallback.reps !== '' ? String(fallback.reps) : null;
+  let fallbackWeightValue = toNumberOrNull(fallback && Object.prototype.hasOwnProperty.call(fallback, 'weightValue') ? fallback.weightValue : null);
+  if (fallbackWeightValue === null && fallback && Object.prototype.hasOwnProperty.call(fallback, 'weight_value')) {
+    fallbackWeightValue = toNumberOrNull(fallback.weight_value);
+  }
+  let fallbackWeightDisplay = fallback && fallback.weightDisplay != null && fallback.weightDisplay !== '' ? String(fallback.weightDisplay) : null;
+  if (!fallbackWeightDisplay && fallbackWeightValue !== null) {
+    fallbackWeightDisplay = computeWeightDisplay(fallbackWeightValue);
+  }
+
+  let fallbackDurationValue = toNumberOrNull(fallback && Object.prototype.hasOwnProperty.call(fallback, 'durationSeconds') ? fallback.durationSeconds : null);
+  if (fallbackDurationValue === null && fallback && Object.prototype.hasOwnProperty.call(fallback, 'duration_seconds')) {
+    fallbackDurationValue = toNumberOrNull(fallback.duration_seconds);
+  }
+  let fallbackDurationDisplay = fallback && fallback.durationDisplay != null && fallback.durationDisplay !== '' ? String(fallback.durationDisplay) : null;
+  if (!fallbackDurationDisplay && fallbackDurationValue !== null) {
+    fallbackDurationDisplay = computeDurationDisplay(fallbackDurationValue);
+  }
+
+  const count = list.length;
+  const hasDetails = count > 0;
+  const setsRaw = hasDetails ? (fallbackSetsRaw !== null ? fallbackSetsRaw : count) : fallbackSetsRaw;
+  const mutedDash = '<span class="muted">—</span>';
+
+  if (!hasDetails) {
+    return {
+      uniform: true,
+      setsHtml: setsRaw !== null ? `<span>${escapeHtml(String(setsRaw))} set${setsRaw === 1 ? '' : 's'}</span>` : `<span class="muted">—</span>`,
+      setsRaw,
+      repsHtml: fallbackReps != null ? `<span>${escapeHtml(String(fallbackReps))}</span>` : `<span class="muted">—</span>`,
+      weightHtml: fallbackWeightDisplay ? `<span>${escapeHtml(String(fallbackWeightDisplay))}</span>` : `<span class="muted">—</span>`,
+      durationHtml: fallbackDurationDisplay ? `<span>${escapeHtml(String(fallbackDurationDisplay))}</span>` : `<span class="muted">—</span>`,
+      weightRaw: fallbackWeightValue,
+      weightDisplay: fallbackWeightDisplay,
+      durationRaw: fallbackDurationValue,
+      durationDisplay: fallbackDurationDisplay,
+      repsValue: fallbackReps
+    };
+  }
+
+  const first = list[0] || {};
+  const uniform = list.every((row, idx) => {
+    if (idx === 0) return true;
+    const repsEqual = (row.reps ?? null) === (first.reps ?? null);
+    const weightEqual = (row.weight_value ?? null) === (first.weight_value ?? null);
+    const durationEqual = (row.duration_seconds ?? null) === (first.duration_seconds ?? null);
+    return repsEqual && weightEqual && durationEqual;
+  });
+
+  if (uniform) {
+    const repsValue = first.reps != null && first.reps !== '' ? String(first.reps) : fallbackReps;
+    const weightValue = first.weight_value !== null && first.weight_value !== undefined ? first.weight_value : fallbackWeightValue;
+    let weightDisplay = first.weight_display != null && first.weight_display !== '' ? String(first.weight_display) : null;
+    if (!weightDisplay && weightValue !== null) {
+      weightDisplay = computeWeightDisplay(weightValue);
+    }
+    if (!weightDisplay && fallbackWeightDisplay) {
+      weightDisplay = fallbackWeightDisplay;
+    }
+
+    const durationValue = first.duration_seconds !== null && first.duration_seconds !== undefined ? first.duration_seconds : fallbackDurationValue;
+    let durationDisplay = first.duration_display != null && first.duration_display !== '' ? String(first.duration_display) : null;
+    if (!durationDisplay && durationValue !== null) {
+      durationDisplay = computeDurationDisplay(durationValue);
+    }
+    if (!durationDisplay && fallbackDurationDisplay) {
+      durationDisplay = fallbackDurationDisplay;
+    }
+
+    return {
+      uniform: true,
+      setsHtml: `<span>${escapeHtml(String(setsRaw !== null ? setsRaw : count))} set${(setsRaw !== null ? setsRaw : count) === 1 ? '' : 's'}</span>`,
+      setsRaw: setsRaw !== null ? setsRaw : count,
+      repsHtml: repsValue != null ? `<span>${escapeHtml(String(repsValue))}</span>` : `<span class="muted">—</span>`,
+      weightHtml: weightDisplay ? `<span>${escapeHtml(String(weightDisplay))}</span>` : `<span class="muted">—</span>`,
+      durationHtml: durationDisplay ? `<span>${escapeHtml(String(durationDisplay))}</span>` : `<span class="muted">—</span>`,
+      weightRaw: weightValue !== undefined ? weightValue : null,
+      weightDisplay: weightDisplay || null,
+      durationRaw: durationValue !== undefined ? durationValue : null,
+      durationDisplay: durationDisplay || null,
+      repsValue
+    };
+  }
+
+  const setsLines = list.map((row, idx) => {
+    const num = row.set_number != null && row.set_number !== '' ? row.set_number : (idx + 1);
+    return `<div>Set ${escapeHtml(String(num))}</div>`;
+  });
+
+  const repsLines = list.map(row => {
+    const value = row.reps;
+    return value != null && value !== '' ? `<div>${escapeHtml(String(value))}</div>` : `<div>${mutedDash}</div>`;
+  });
+
+  const weightLines = list.map(row => {
+    const display = row.weight_display || (row.weight_value != null ? computeWeightDisplay(row.weight_value) : null);
+    return display ? `<div>${escapeHtml(String(display))}</div>` : `<div>${mutedDash}</div>`;
+  });
+
+  const durationLines = list.map(row => {
+    const display = row.duration_display || (row.duration_seconds != null ? computeDurationDisplay(row.duration_seconds) : null);
+    return display ? `<div>${escapeHtml(String(display))}</div>` : `<div>${mutedDash}</div>`;
+  });
+
+  const setsHtml = setsLines.length ? setsLines.join('') : `<span class="muted">—</span>`;
+  const repsHtml = repsLines.length ? repsLines.join('') : `<div>${mutedDash}</div>`;
+  const weightHtml = weightLines.length ? weightLines.join('') : `<div>${mutedDash}</div>`;
+  const durationHtml = durationLines.length ? durationLines.join('') : `<div>${mutedDash}</div>`;
+
+  return {
+    uniform: false,
+    setsHtml,
+    setsRaw: setsRaw !== null ? setsRaw : count,
+    repsHtml,
+    weightHtml,
+    durationHtml,
+    weightRaw: null,
+    weightDisplay: null,
+    durationRaw: null,
+    durationDisplay: null,
+    repsValue: null
+  };
 }
 
 function setCellValue(cell, raw, display, type = 'text'){
@@ -3121,36 +3275,53 @@ function applyUserExerciseData(tr, data){
   const setsCountIncoming = ('sets_count' in data && data.sets_count != null)
     ? Number(data.sets_count)
     : (('sets' in data && data.sets != null && data.sets !== '') ? Number(data.sets) : setDetailsIncoming.length);
+  const fallback = {
+    setsCount: !Number.isNaN(setsCountIncoming) && setsCountIncoming !== null ? setsCountIncoming : null,
+    reps: ('reps' in data) ? data.reps : null,
+    weightValue: toNumberOrNull(
+      ('weight_value' in data) ? data.weight_value
+        : (('weight' in data && typeof data.weight === 'number') ? data.weight : null)
+    ),
+    weightDisplay: ('weight_display' in data) ? data.weight_display
+      : (('weight' in data && typeof data.weight === 'string') ? data.weight : null),
+    durationSeconds: toNumberOrNull(
+      ('duration_seconds' in data) ? data.duration_seconds
+        : (('duration' in data && typeof data.duration === 'number') ? data.duration : null)
+    ),
+    durationDisplay: ('duration_display' in data) ? data.duration_display
+      : (('duration' in data && typeof data.duration === 'string') ? data.duration : null)
+  };
+  const display = computeExerciseSetDisplay(setDetailsIncoming, fallback);
+
   if (cells.sets) {
-    const summary = renderSetSummary(setDetailsIncoming);
-    cells.sets.innerHTML = summary;
-    if (!Number.isNaN(setsCountIncoming) && setsCountIncoming !== null) {
-      cells.sets.dataset.raw = String(setsCountIncoming);
+    cells.sets.innerHTML = display.setsHtml;
+    if (display.setsRaw != null) {
+      cells.sets.dataset.raw = String(display.setsRaw);
     } else {
       delete cells.sets.dataset.raw;
     }
   }
 
-  const firstSet = firstSetDetails(setDetailsIncoming);
-  const repsValue = (firstSet && firstSet.reps != null && firstSet.reps !== '') ? firstSet.reps : (data.reps ?? null);
-  if (cells.reps) setCellValue(cells.reps, repsValue, repsValue);
-
-  const weightRaw = (firstSet && firstSet.weight_value != null) ? firstSet.weight_value
-    : (('weight_value' in data) ? data.weight_value : (('weight' in data && typeof data.weight === 'number') ? data.weight : (('weight' in data) ? data.weight : undefined)));
-  const weightDisplay = (firstSet && firstSet.weight_display != null)
-    ? firstSet.weight_display
-    : (('weight_display' in data) ? data.weight_display : (('weight' in data && typeof data.weight === 'string') ? data.weight : undefined));
-  if (cells.weight && (weightRaw !== undefined || weightDisplay !== undefined)) {
-    setCellValue(cells.weight, weightRaw, weightDisplay, 'weight');
+  if (cells.reps) {
+    cells.reps.innerHTML = display.repsHtml;
   }
 
-  const durationRaw = (firstSet && firstSet.duration_seconds != null) ? firstSet.duration_seconds
-    : (('duration_seconds' in data) ? data.duration_seconds : (('duration' in data && typeof data.duration === 'number') ? data.duration : (('duration' in data) ? data.duration : undefined)));
-  const durationDisplay = (firstSet && firstSet.duration_display != null)
-    ? firstSet.duration_display
-    : (('duration_display' in data) ? data.duration_display : (('duration' in data && typeof data.duration === 'string') ? data.duration : undefined));
-  if (cells.duration && (durationRaw !== undefined || durationDisplay !== undefined)) {
-    setCellValue(cells.duration, durationRaw, durationDisplay, 'duration');
+  if (cells.weight) {
+    cells.weight.innerHTML = display.weightHtml;
+    if (display.weightRaw != null) {
+      cells.weight.dataset.raw = String(display.weightRaw);
+    } else {
+      delete cells.weight.dataset.raw;
+    }
+  }
+
+  if (cells.duration) {
+    cells.duration.innerHTML = display.durationHtml;
+    if (display.durationRaw != null) {
+      cells.duration.dataset.raw = String(display.durationRaw);
+    } else {
+      delete cells.duration.dataset.raw;
+    }
   }
 
   if (cells.notes && 'notes' in data) {
