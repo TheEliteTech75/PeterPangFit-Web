@@ -84,6 +84,9 @@ function ensure_user_plan_exercise_tracking_columns(mysqli $conn): void {
   if (!ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_by')) {
     @$conn->query("ALTER TABLE user_plan_exercises ADD COLUMN updated_by INT NULL");
   }
+  if (!ppf_column_exists_uncached($conn, 'user_plan_exercises', 'set_details_json')) {
+    @$conn->query("ALTER TABLE user_plan_exercises ADD COLUMN set_details_json LONGTEXT NULL");
+  }
 }
 
 function ppf_parse_duration_to_seconds($input): ?int {
@@ -195,6 +198,89 @@ function ppf_parse_category_concat(string $raw): array {
     $out[] = ['id' => $id, 'name' => $name];
   }
 
+  return $out;
+}
+
+function ppf_clients_decode_set_details(?string $json): array {
+  if ($json === null || trim($json) === '') return [];
+  $decoded = json_decode($json, true);
+  if (!is_array($decoded)) return [];
+  $out = [];
+  foreach ($decoded as $entry) {
+    if (!is_array($entry)) continue;
+    $reps = isset($entry['reps']) ? trim((string)$entry['reps']) : '';
+    $weight = $entry['weight_lbs'] ?? ($entry['weight'] ?? null);
+    $duration = $entry['duration_seconds'] ?? ($entry['duration'] ?? null);
+
+    $repsVal = ($reps === '') ? null : $reps;
+    $weightVal = (is_numeric($weight)) ? (float)$weight : null;
+    $durationVal = (is_numeric($duration)) ? (int)$duration : null;
+
+    $out[] = [
+      'set_number' => count($out) + 1,
+      'reps' => $repsVal,
+      'weight_lbs' => $weightVal,
+      'duration_seconds' => $durationVal,
+    ];
+  }
+  return $out;
+}
+
+function ppf_clients_build_legacy_set_details($sets, $reps, $weight, $duration): array {
+  $count = null;
+  if ($sets !== null && $sets !== '') {
+    $count = (int)$sets;
+  }
+  if ($count === null || $count <= 0) {
+    if (($reps !== null && $reps !== '') || $weight !== null || $duration !== null) {
+      $count = 1;
+    } else {
+      $count = 0;
+    }
+  }
+
+  $repsVal = ($reps !== null && $reps !== '') ? (string)$reps : null;
+  $weightVal = null;
+  if ($weight !== null && $weight !== '') {
+    $weightVal = is_numeric($weight) ? (float)$weight : null;
+  }
+  $durationVal = null;
+  if ($duration !== null && $duration !== '') {
+    $durationVal = is_numeric($duration) ? (int)$duration : null;
+  }
+
+  $rows = [];
+  for ($i = 0; $i < $count; $i++) {
+    $rows[] = [
+      'set_number' => $i + 1,
+      'reps' => $repsVal,
+      'weight_lbs' => $weightVal,
+      'duration_seconds' => $durationVal,
+    ];
+  }
+  return $rows;
+}
+
+function ppf_clients_get_set_details($json, $sets, $reps, $weight, $duration): array {
+  $fromJson = ppf_clients_decode_set_details($json);
+  if ($fromJson) return $fromJson;
+  return ppf_clients_build_legacy_set_details($sets, $reps, $weight, $duration);
+}
+
+function ppf_clients_enrich_set_details(array $rows): array {
+  $out = [];
+  foreach ($rows as $idx => $row) {
+    $weightVal = array_key_exists('weight_lbs', $row) ? $row['weight_lbs'] : null;
+    $durationVal = array_key_exists('duration_seconds', $row) ? $row['duration_seconds'] : null;
+    $out[] = [
+      'set_number' => ($row['set_number'] ?? ($idx + 1)),
+      'reps' => $row['reps'] ?? null,
+      'weight_value' => ($weightVal !== null) ? (float)$weightVal : null,
+      'weight_display' => ($weightVal !== null) ? ppf_format_weight_lbs((float)$weightVal) : null,
+      'duration_seconds' => ($durationVal !== null) ? (int)$durationVal : null,
+      'duration_display' => ($durationVal !== null) ? ppf_format_duration_display((int)$durationVal) : null,
+    ];
+  }
   return $out;
 }
 
@@ -550,32 +636,121 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               throw new Exception('Invalid input.');
             }
 
-            $sets  = trim($_POST['sets'] ?? '');
-            $reps  = trim($_POST['reps'] ?? '');
-            $weight_lbs = trim($_POST['weight_lbs'] ?? '');
-            $duration_seconds = trim($_POST['duration_seconds'] ?? '');
-            $user_notes = isset($_POST['user_notes']) ? trim($_POST['user_notes']) : '';
+            $setsInput      = trim($_POST['sets'] ?? '');
+            $repsInput      = trim($_POST['reps'] ?? '');
+            $weightInput    = trim($_POST['weight_lbs'] ?? '');
+            $durationInput  = trim($_POST['duration_seconds'] ?? '');
+            $setPayloadRaw  = $_POST['set_payload'] ?? '';
+            $user_notes     = isset($_POST['user_notes']) ? trim($_POST['user_notes']) : '';
 
-            $setsVal = ($sets === '' ? null : $sets);
-            $repsVal = ($reps === '' ? null : $reps);
+            $notesVal = ($user_notes === '' ? null : $user_notes);
 
-            $wtVal = null;
-            if ($weight_lbs !== '') {
-              $wtVal = ppf_parse_weight_to_float($weight_lbs);
-              if ($wtVal === null) {
+            $wtValLegacy = null;
+            if ($weightInput !== '') {
+              $wtValLegacy = ppf_parse_weight_to_float($weightInput);
+              if ($wtValLegacy === null) {
                 throw new Exception('Weight must be numeric (digits with optional decimal).');
               }
             }
 
-            $durVal = null;
-            if ($duration_seconds !== '') {
-              $durVal = ppf_parse_duration_to_seconds($duration_seconds);
-              if ($durVal === null) {
+            $durValLegacy = null;
+            if ($durationInput !== '') {
+              $durValLegacy = ppf_parse_duration_to_seconds($durationInput);
+              if ($durValLegacy === null) {
                 throw new Exception('Duration must be seconds or mm:ss (for example 90 or 1:30).');
               }
             }
 
-            $notesVal = ($user_notes === '' ? null : $user_notes);
+            $parsedSetRows = [];
+            if (is_string($setPayloadRaw) && trim($setPayloadRaw) !== '') {
+              $decoded = json_decode($setPayloadRaw, true);
+              if ($decoded === null && json_last_error() !== JSON_ERROR_NONE) {
+                throw new Exception('Invalid set details payload.');
+              }
+              if (is_array($decoded)) {
+                foreach ($decoded as $entry) {
+                  if (!is_array($entry)) continue;
+                  $repStr = isset($entry['reps']) ? trim((string)$entry['reps']) : '';
+                  $weightStr = isset($entry['weight']) ? trim((string)$entry['weight']) : '';
+                  $durationStr = isset($entry['duration']) ? trim((string)$entry['duration']) : '';
+
+                  $weightVal = null;
+                  if ($weightStr !== '') {
+                    $weightVal = ppf_parse_weight_to_float($weightStr);
+                    if ($weightVal === null) {
+                      throw new Exception('Each set weight must be numeric (digits with optional decimal).');
+                    }
+                  }
+
+                  $durationVal = null;
+                  if ($durationStr !== '') {
+                    $durationVal = ppf_parse_duration_to_seconds($durationStr);
+                    if ($durationVal === null) {
+                      throw new Exception('Each set duration must be seconds or mm:ss (for example 90 or 1:30).');
+                    }
+                  }
+
+                  if ($repStr === '' && $weightVal === null && $durationVal === null) {
+                    continue;
+                  }
+
+                  $parsedSetRows[] = [
+                    'set_number' => count($parsedSetRows) + 1,
+                    'reps' => $repStr === '' ? null : $repStr,
+                    'weight_lbs' => $weightVal,
+                    'duration_seconds' => $durationVal,
+                  ];
+                }
+              }
+            }
+
+            if (!$parsedSetRows) {
+              $setsLegacy = ($setsInput === '' ? null : $setsInput);
+              $repsLegacy = ($repsInput === '' ? null : $repsInput);
+              $parsedSetRows = ppf_clients_build_legacy_set_details($setsLegacy, $repsLegacy, $wtValLegacy, $durValLegacy);
+            }
+
+            $normalizedSetRows = [];
+            foreach ($parsedSetRows as $row) {
+              if (!is_array($row)) continue;
+              $repVal = isset($row['reps']) ? trim((string)$row['reps']) : '';
+              $weightVal = $row['weight_lbs'] ?? null;
+              $durationVal = $row['duration_seconds'] ?? null;
+
+              $repOut = ($repVal === '') ? null : $repVal;
+              $weightOut = ($weightVal !== null && $weightVal !== '') ? (float)$weightVal : null;
+              $durationOut = ($durationVal !== null && $durationVal !== '') ? (int)$durationVal : null;
+
+              if ($repOut === null && $weightOut === null && $durationOut === null) {
+                continue;
+              }
+
+              $normalizedSetRows[] = [
+                'set_number' => count($normalizedSetRows) + 1,
+                'reps' => $repOut,
+                'weight_lbs' => $weightOut,
+                'duration_seconds' => $durationOut,
+              ];
+            }
+
+            $setDetailsJson = json_encode(array_map(function($row){
+              return [
+                'set_number' => $row['set_number'],
+                'reps' => $row['reps'],
+                'weight_lbs' => $row['weight_lbs'],
+                'duration_seconds' => $row['duration_seconds'],
+              ];
+            }, $normalizedSetRows));
+            if ($setDetailsJson === false) {
+              throw new Exception('Failed to encode set details.');
+            }
+
+            $setsCount = count($normalizedSetRows);
+            $setsVal = $setsCount > 0 ? (string)$setsCount : null;
+            $firstSet = $normalizedSetRows[0] ?? null;
+            $repsVal = $firstSet['reps'] ?? null;
+            $wtVal = $firstSet['weight_lbs'] ?? null;
+            $durVal = $firstSet['duration_seconds'] ?? null;
 
             // Find the user_plans.id for (user, plan)
             $q1 = $conn->prepare("SELECT id FROM user_plans WHERE user_id=? AND plan_id=? LIMIT 1");
@@ -589,7 +764,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Does a row exist for this exercise?
             $upe_id = null;
-            $q2 = $conn->prepare("SELECT id, sets, reps, weight_lbs, duration_seconds, user_notes FROM user_plan_exercises WHERE user_plan_id=? AND exercise_id=? LIMIT 1");
+            $q2 = $conn->prepare("SELECT id, sets, reps, weight_lbs, duration_seconds, user_notes, set_details_json FROM user_plan_exercises WHERE user_plan_id=? AND exercise_id=? LIMIT 1");
             $q2->bind_param("ii", $up_id, $exercise_id);
             $q2->execute();
             $res2 = $q2->get_result();
@@ -606,48 +781,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($updaterId) {
                   $q3 = $conn->prepare("
                     UPDATE user_plan_exercises
-                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW(), updated_by=?
+                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, set_details_json=?, updated_at=NOW(), updated_by=?
                     WHERE id=?
                   ");
-                  $q3->bind_param("ssdisii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId, $upe_id);
+                  $q3->bind_param("ssdissii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson, $updaterId, $upe_id);
                 } else {
                   $q3 = $conn->prepare("
                     UPDATE user_plan_exercises
-                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW(), updated_by=NULL
+                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, set_details_json=?, updated_at=NOW(), updated_by=NULL
                     WHERE id=?
                   ");
-                  $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+                  $q3->bind_param("ssdissi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson, $upe_id);
                 }
               } elseif ($HAS_UPE_UPDATED_AT) {
                 $q3 = $conn->prepare("
                   UPDATE user_plan_exercises
-                  SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_at=NOW()
+                  SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, set_details_json=?, updated_at=NOW()
                   WHERE id=?
                 ");
-                $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+                $q3->bind_param("ssdissi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson, $upe_id);
               } elseif ($HAS_UPE_UPDATED_BY) {
                 if ($updaterId) {
                   $q3 = $conn->prepare("
                     UPDATE user_plan_exercises
-                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_by=?
+                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, set_details_json=?, updated_by=?
                     WHERE id=?
                   ");
-                  $q3->bind_param("ssdisii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId, $upe_id);
+                  $q3->bind_param("ssdissii", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson, $updaterId, $upe_id);
                 } else {
                   $q3 = $conn->prepare("
                     UPDATE user_plan_exercises
-                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, updated_by=NULL
+                    SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, set_details_json=?, updated_by=NULL
                     WHERE id=?
                   ");
-                  $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+                  $q3->bind_param("ssdissi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson, $upe_id);
                 }
               } else {
                 $q3 = $conn->prepare("
                   UPDATE user_plan_exercises
-                  SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?
+                  SET sets=?, reps=?, weight_lbs=?, duration_seconds=?, user_notes=?, set_details_json=?
                   WHERE id=?
                 ");
-                $q3->bind_param("ssdisi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $upe_id);
+                $q3->bind_param("ssdissi", $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson, $upe_id);
               }
               if (!$q3) throw new Exception('Failed to prepare update.');
               if (!$q3->execute()) {
@@ -660,43 +835,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               if ($HAS_UPE_UPDATED_AT && $HAS_UPE_UPDATED_BY) {
                 if ($updaterId) {
                   $q4 = $conn->prepare("
-                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at, updated_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, set_details_json, updated_at, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
                   ");
-                  $q4->bind_param("iissdisi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId);
+                  $q4->bind_param("iissdissi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson, $updaterId);
                 } else {
                   $q4 = $conn->prepare("
-                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at, updated_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NULL)
+                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, set_details_json, updated_at, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NULL)
                   ");
-                  $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+                  $q4->bind_param("iissdiss", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson);
                 }
               } elseif ($HAS_UPE_UPDATED_AT) {
                 $q4 = $conn->prepare("
-                  INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                  INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, set_details_json, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
                 ");
-                $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+                $q4->bind_param("iissdiss", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson);
               } elseif ($HAS_UPE_UPDATED_BY) {
                 if ($updaterId) {
                   $q4 = $conn->prepare("
-                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, set_details_json, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                   ");
-                  $q4->bind_param("iissdisi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $updaterId);
+                  $q4->bind_param("iissdissi", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson, $updaterId);
                 } else {
                   $q4 = $conn->prepare("
-                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, updated_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+                    INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, set_details_json, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
                   ");
-                  $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+                  $q4->bind_param("iissdiss", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson);
                 }
               } else {
                 $q4 = $conn->prepare("
-                  INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                  INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, weight_lbs, duration_seconds, user_notes, set_details_json)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $q4->bind_param("iissdis", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal);
+                $q4->bind_param("iissdiss", $up_id, $exercise_id, $setsVal, $repsVal, $wtVal, $durVal, $notesVal, $setDetailsJson);
               }
               if (!$q4) throw new Exception('Failed to prepare save.');
               if (!$q4->execute()) {
@@ -740,6 +915,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $weightDisplay = $wtVal !== null ? ppf_format_weight_lbs($wtVal) : null;
             $durationDisplay = $durVal !== null ? ppf_format_duration_display($durVal) : null;
+            $setDetailsForOutput = ppf_clients_enrich_set_details($normalizedSetRows);
 
             $normalize = 'ppf_clients_normalize_log_value';
             $beforeSnapshot = $existingRow ? [
@@ -748,6 +924,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               'weight_lbs' => $normalize($existingRow['weight_lbs'] ?? null),
               'duration_seconds' => $normalize($existingRow['duration_seconds'] ?? null),
               'user_notes' => $normalize($existingRow['user_notes'] ?? null),
+              'set_details_json' => $normalize($existingRow['set_details_json'] ?? null),
             ] : [];
             $afterSnapshot = [
               'sets' => $normalize($setsVal),
@@ -755,6 +932,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               'weight_lbs' => $normalize($wtVal),
               'duration_seconds' => $normalize($durVal),
               'user_notes' => $normalize($notesVal),
+              'set_details_json' => $normalize($setDetailsJson),
             ];
 
             $changes = [];
@@ -784,6 +962,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               'ok' => true,
               'data' => [
                 'sets' => $setsVal,
+                'sets_count' => $setsCount,
                 'reps' => $repsVal,
                 'weight_value' => $wtVal,
                 'weight_display' => $weightDisplay,
@@ -791,7 +970,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'duration_display' => $durationDisplay,
                 'notes' => $notesVal,
                 'updated_at' => $editedAtDisp,
-                'updated_by_name' => $editedByName
+                'updated_by_name' => $editedByName,
+                'set_details' => $setDetailsForOutput,
+                'set_details_json' => $setDetailsJson
               ]
             ]);
             exit;
@@ -806,6 +987,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               'input_reps' => isset($repsVal) ? $repsVal : null,
               'input_weight' => isset($weight_lbs) ? $weight_lbs : null,
               'input_duration' => isset($duration_seconds) ? $duration_seconds : null,
+              'input_set_payload_raw' => isset($setPayloadRaw) ? $setPayloadRaw : null,
+              'normalized_set_details_json' => isset($setDetailsJson) ? $setDetailsJson : null,
+              'normalized_set_count' => isset($setsCount) ? $setsCount : null,
             ]);
             header('Content-Type: application/json');
             http_response_code(400);
@@ -1095,6 +1279,7 @@ $sqlUserEx = "
     upe.weight_lbs AS weight_value,
     upe.duration_seconds AS duration_seconds,
     upe.user_notes AS notes,
+    upe.set_details_json AS set_details_json,
     " . ($HAS_UPE_UPDATED_AT ? "upe.updated_at" : "NULL AS updated_at") . ",
     " . ($HAS_UPE_UPDATED_BY ? "upe.updated_by" : "NULL AS updated_by") . "
   FROM user_plans up
@@ -1130,18 +1315,32 @@ if ($rs = $conn->query($sqlUserEx)) {
       $updatedByName = user_display_name($conn, (int)$r['updated_by']);
     }
 
-    $weightValue = isset($r['weight_value']) && $r['weight_value'] !== null ? (float)$r['weight_value'] : null;
-    $weightDisplay = $weightValue !== null ? ppf_format_weight_lbs($weightValue) : null;
-    $durationSeconds = isset($r['duration_seconds']) && $r['duration_seconds'] !== null ? (int)$r['duration_seconds'] : null;
-    $durationDisplay = $durationSeconds !== null ? ppf_format_duration_display($durationSeconds) : null;
+    $setRows = ppf_clients_get_set_details(
+      $r['set_details_json'] ?? null,
+      $r['sets'] ?? null,
+      $r['reps'] ?? null,
+      $r['weight_value'] ?? null,
+      $r['duration_seconds'] ?? null
+    );
+    $enrichedSets = ppf_clients_enrich_set_details($setRows);
+    $setsCount = count($enrichedSets);
+    $firstSet = $enrichedSets[0] ?? null;
+
+    $weightValue = $firstSet['weight_value'] ?? null;
+    $weightDisplay = $firstSet['weight_display'] ?? null;
+    $durationSeconds = $firstSet['duration_seconds'] ?? null;
+    $durationDisplay = $firstSet['duration_display'] ?? null;
+    $repsDisplay = $firstSet['reps'] ?? null;
 
     $userExByUserPlan[$u][$p][$ex] = [
-      'sets'             => isset($r['sets'])     ? (string)$r['sets']     : null,
-      'reps'             => isset($r['reps'])     ? (string)$r['reps']     : null,
+      'sets'             => $setsCount > 0 ? (string)$setsCount : null,
+      'sets_count'       => $setsCount,
+      'reps'             => $repsDisplay,
       'weight_value'     => $weightValue,
       'weight_display'   => $weightDisplay,
       'duration_seconds' => $durationSeconds,
       'duration_display' => $durationDisplay,
+      'set_details'      => $enrichedSets,
       'notes'            => isset($r['notes'])    ? (string)$r['notes']    : null,
       'updated_at'       => $updatedAtDisp,
       'updated_by_name'  => $updatedByName,
@@ -1703,6 +1902,28 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   </div>
 </div>
 
+<!-- Edit per-user exercise modal -->
+<div class="backdrop" id="bdEditExercise" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000"></div>
+<div class="modal" id="mdEditExercise" role="dialog" aria-modal="true" aria-labelledby="eeTitle"
+     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,96vw);
+            background:#151923;border:1px solid var(--line);border-radius:14px;padding:18px;display:none;z-index:3001">
+  <h3 id="eeTitle" style="margin:0 0 8px 0;font-size:16px">Edit Exercise</h3>
+  <div class="fine" id="eeContext" style="margin-bottom:12px;color:#9aa3b2"></div>
+  <div class="box" style="border:1px solid var(--line);border-radius:10px;padding:12px;max-height:360px;overflow:auto">
+    <div id="eeSetList"></div>
+    <button class="btn small" type="button" id="eeAddSet" style="margin-top:10px">Add Set</button>
+  </div>
+  <div style="margin-top:12px">
+    <label class="fine" for="eeNotes" style="display:block;margin-bottom:6px;color:#9aa3b2">User Notes</label>
+    <textarea class="input" id="eeNotes" rows="3" placeholder="Any user-specific instructions…"></textarea>
+  </div>
+  <div id="eeError" class="muted" style="color:#ff6b6b;margin-top:8px;display:none"></div>
+  <div class="actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+    <button class="btn" type="button" id="eeCancel">Cancel</button>
+    <button class="btn brand" type="button" id="eeSave">Save Changes</button>
+  </div>
+</div>
+
 <!-- Exercise video tooltip -->
 <div id="videoTooltip" class="video-tooltip" hidden>
   <video id="videoTooltipVideo" muted playsinline loop></video>
@@ -1863,6 +2084,7 @@ const CLIENT_SORT_TYPES = {
         if (per) {
           parts.push(
             per.sets || '',
+            per.sets_count != null ? String(per.sets_count) : '',
             per.reps || '',
             per.weight_display || per.weight_value || '',
             per.duration_display || per.duration_seconds || '',
@@ -1870,6 +2092,15 @@ const CLIENT_SORT_TYPES = {
             per.updated_by_name || '',
             per.updated_at || ''
           );
+          if (Array.isArray(per.set_details)) {
+            per.set_details.forEach(detail => {
+              if (!detail || typeof detail !== 'object') return;
+              const reps = detail.reps || '';
+              const w = detail.weight_display || (detail.weight_value != null ? String(detail.weight_value) : '');
+              const d = detail.duration_display || (detail.duration_seconds != null ? String(detail.duration_seconds) : '');
+              parts.push(reps, w, d);
+            });
+          }
         }
       });
     });
@@ -2385,12 +2616,26 @@ function renderClientExpansion(uid, body){
       } else {
         exs.forEach(ex=>{
           const per = (userEx[p.id] && userEx[p.id][ex.ex_id]) || {};
-          const sets = per?.sets ?? '—';
-          const reps = per?.reps ?? '—';
-          const weightRaw = per?.weight_value ?? '';
-          const weightDisp = per?.weight_display ?? '—';
-          const durRaw = per?.duration_seconds ?? '';
-          const durDisp = per?.duration_display ?? '—';
+          const setDetails = Array.isArray(per?.set_details) ? per.set_details : [];
+          let setsCount = Number.isFinite(per?.sets_count) ? per.sets_count : null;
+          if (setsCount === null && per?.sets != null && per.sets !== '') {
+            const parsed = Number(per.sets);
+            if (!Number.isNaN(parsed)) setsCount = parsed;
+          }
+          if (setsCount === null) setsCount = setDetails.length;
+          let setsSummary = renderSetSummary(setDetails);
+          if ((!setDetails || !setDetails.length) && setsCount > 0) {
+            setsSummary = `<span>${escapeHtml(String(setsCount))} set${setsCount === 1 ? '' : 's'}</span>`;
+          }
+
+          const firstSet = firstSetDetails(setDetails);
+          const reps = (firstSet && firstSet.reps != null && firstSet.reps !== '') ? String(firstSet.reps) : (per?.reps ?? '—');
+          const weightValue = (firstSet && firstSet.weight_value != null) ? firstSet.weight_value : (per?.weight_value ?? null);
+          const weightDisplay = computeWeightDisplay(weightValue, (firstSet && firstSet.weight_display) ? firstSet.weight_display : (per?.weight_display ?? null)) ?? '—';
+          const durationValue = (firstSet && firstSet.duration_seconds != null) ? firstSet.duration_seconds : (per?.duration_seconds ?? null);
+          const durationDisplay = computeDurationDisplay(durationValue, (firstSet && firstSet.duration_display) ? firstSet.duration_display : (per?.duration_display ?? null)) ?? '—';
+          const weightRaw = weightValue != null ? weightValue : '';
+          const durRaw = durationValue != null ? durationValue : '';
 
           // ONLY user-specific notes; show dash if empty
           const userNoteRaw = (per && per.notes != null) ? String(per.notes) : '';
@@ -2420,10 +2665,10 @@ function renderClientExpansion(uid, body){
               <td class="muted" style="padding:8px 10px" data-cell="notes">${escapeHtml(showNotes)}</td>
               <td style="padding:8px 10px" data-cell="categories">${catDisplay}</td>
               <td style="padding:8px 10px">${videoCell}</td>
-              <td style="padding:8px 10px" data-cell="sets"      class="editable">${sets}</td>
-              <td style="padding:8px 10px" data-cell="reps"      class="editable">${reps}</td>
-              <td style="padding:8px 10px" data-cell="weight"    class="editable"${weightAttr}>${escapeHtml(weightDisp)}</td>
-              <td style="padding:8px 10px" data-cell="duration"  class="editable"${durAttr}>${escapeHtml(durDisp)}</td>
+              <td style="padding:8px 10px" data-cell="sets">${setsSummary}</td>
+              <td style="padding:8px 10px" data-cell="reps">${escapeHtml(reps ?? '—')}</td>
+              <td style="padding:8px 10px" data-cell="weight"${weightAttr}>${escapeHtml(weightDisplay ?? '—')}</td>
+              <td style="padding:8px 10px" data-cell="duration"${durAttr}>${escapeHtml(durationDisplay ?? '—')}</td>
               <td class="muted" style="padding:8px 10px" data-cell="edited">${editedAt ? escapeHtml(editedAt) : '—'}</td>
               <td class="muted" style="padding:8px 10px" data-cell="edited_by">${editedBy ? escapeHtml(editedBy) : '—'}</td>
               <td style="padding:8px 10px" data-cell="actions">
@@ -2533,19 +2778,6 @@ document.addEventListener('click', function(e){
   }
 });
 
-// ====== Legacy row-level edit (kept) ======
-function makeInput(value, { type='text', step=null, min=null, placeholder='', width='120px' } = {}) {
-  const input = document.createElement('input');
-  input.className = 'input';
-  input.style.width = width;
-  input.type = type;
-  if (step !== null) input.step = step;
-  if (min !== null) input.min = min;
-  input.placeholder = placeholder;
-  input.value = value ?? '';
-  return input;
-}
-
 function setActionsToEdit(tr){
   const cell = tr?.querySelector('[data-cell="actions"]');
   if (!cell) return;
@@ -2558,6 +2790,221 @@ function setActionsToEdit(tr){
   btn.textContent = 'Edit';
   cell.appendChild(btn);
 }
+
+const ExerciseEditor = {
+  row: null,
+  userId: null,
+  planId: null,
+  exerciseId: null
+};
+
+const eeModal = document.getElementById('mdEditExercise');
+const eeBackdrop = document.getElementById('bdEditExercise');
+const eeSetList = document.getElementById('eeSetList');
+const eeAddSetBtn = document.getElementById('eeAddSet');
+const eeNotes = document.getElementById('eeNotes');
+const eeTitle = document.getElementById('eeTitle');
+const eeContext = document.getElementById('eeContext');
+const eeSaveBtn = document.getElementById('eeSave');
+const eeCancelBtn = document.getElementById('eeCancel');
+const eeErrorBox = document.getElementById('eeError');
+
+function eeClearError(){
+  if (!eeErrorBox) return;
+  eeErrorBox.textContent = '';
+  eeErrorBox.style.display = 'none';
+}
+
+function eeShowError(message){
+  if (!eeErrorBox) return;
+  eeErrorBox.textContent = message || '';
+  eeErrorBox.style.display = message ? 'block' : 'none';
+}
+
+function eeUpdateSetNumbers(){
+  if (!eeSetList) return;
+  const rows = Array.from(eeSetList.querySelectorAll('.ee-set-row'));
+  rows.forEach((row, idx) => {
+    const num = row.querySelector('[data-set-index]');
+    if (num) num.textContent = String(idx + 1);
+  });
+}
+
+function eeBuildSetRow(detail = {}){
+  const row = document.createElement('div');
+  row.className = 'ee-set-row';
+  row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap';
+
+  const repsVal = detail.reps != null ? String(detail.reps) : '';
+  const weightVal = detail.weight_value != null ? String(detail.weight_value) : '';
+  const durationVal = detail.duration_seconds != null ? formatDurationForInput(detail.duration_seconds) : '';
+
+  row.innerHTML = `
+    <span class="fine" style="min-width:48px;margin-top:6px">Set <span data-set-index></span></span>
+    <input class="input ee-set-input" data-field="reps" type="text" placeholder="Reps" value="${escapeHtml(repsVal)}" style="width:90px">
+    <input class="input ee-set-input" data-field="weight" type="number" step="0.1" min="0" placeholder="Weight (lbs)" value="${escapeHtml(weightVal)}" style="width:130px">
+    <input class="input ee-set-input" data-field="duration" type="text" placeholder="Duration (e.g., 1:30)" value="${escapeHtml(durationVal)}" style="width:140px">
+    <button class="btn small" type="button" data-remove-set style="margin-top:4px">Remove</button>
+  `;
+
+  const removeBtn = row.querySelector('[data-remove-set]');
+  if (removeBtn) {
+    removeBtn.addEventListener('click', () => {
+      row.remove();
+      eeUpdateSetNumbers();
+    });
+  }
+
+  return row;
+}
+
+function eeRenderSets(details){
+  if (!eeSetList) return;
+  eeSetList.innerHTML = '';
+  const list = ensureArray(details);
+  if (!list.length) {
+    eeSetList.appendChild(eeBuildSetRow({}));
+  } else {
+    list.forEach(detail => {
+      eeSetList.appendChild(eeBuildSetRow(detail));
+    });
+  }
+  eeUpdateSetNumbers();
+}
+
+function eeCollectSets(){
+  if (!eeSetList) return [];
+  const rows = Array.from(eeSetList.querySelectorAll('.ee-set-row'));
+  return rows.map(row => {
+    const reps = row.querySelector('[data-field="reps"]').value.trim();
+    const weight = row.querySelector('[data-field="weight"]').value.trim();
+    const duration = row.querySelector('[data-field="duration"]').value.trim();
+    return { reps, weight, duration };
+  }).filter(entry => entry.reps !== '' || entry.weight !== '' || entry.duration !== '');
+}
+
+function eeOpen(tr){
+  if (!tr) return;
+  const uid = parseInt(tr.dataset.userId, 10);
+  const planId = parseInt(tr.dataset.planId, 10);
+  const exId = parseInt(tr.dataset.exId, 10);
+  if (!uid || !planId || !exId) return;
+
+  ExerciseEditor.row = tr;
+  ExerciseEditor.userId = uid;
+  ExerciseEditor.planId = planId;
+  ExerciseEditor.exerciseId = exId;
+
+  const stored = (window.__USER_EX && window.__USER_EX[uid] && window.__USER_EX[uid][planId] && window.__USER_EX[uid][planId][exId]) || {};
+
+  const nameCell = tr.querySelector('td:nth-child(2)');
+  const nameLink = nameCell ? nameCell.querySelector('a') : null;
+  const titleName = nameLink ? nameLink.textContent.trim() : `Exercise ${exId}`;
+  if (eeTitle) eeTitle.textContent = `Edit ${titleName}`;
+  if (eeContext) eeContext.textContent = `User ID: ${uid} · Plan ID: ${planId} · Exercise ID: ${exId}`;
+
+  eeRenderSets(stored.set_details || []);
+  if (eeNotes) eeNotes.value = stored.notes != null ? String(stored.notes) : '';
+  eeClearError();
+
+  if (eeModal) eeModal.style.display = 'block';
+  if (eeBackdrop) eeBackdrop.style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+
+function eeClose(){
+  ExerciseEditor.row = null;
+  ExerciseEditor.userId = null;
+  ExerciseEditor.planId = null;
+  ExerciseEditor.exerciseId = null;
+  if (eeSetList) eeSetList.innerHTML = '';
+  if (eeNotes) eeNotes.value = '';
+  eeClearError();
+  if (eeModal) eeModal.style.display = 'none';
+  if (eeBackdrop) eeBackdrop.style.display = 'none';
+  document.body.style.overflow = '';
+  if (eeSaveBtn) {
+    eeSaveBtn.disabled = false;
+    eeSaveBtn.textContent = 'Save Changes';
+  }
+}
+
+function eeComputeAggregates(payload){
+  const count = payload.length;
+  const first = payload[0] || {};
+  return {
+    sets: count ? String(count) : '',
+    reps: first.reps || '',
+    weight: first.weight || '',
+    duration: first.duration || ''
+  };
+}
+
+if (eeAddSetBtn) {
+  eeAddSetBtn.addEventListener('click', () => {
+    if (!eeSetList) return;
+    eeSetList.appendChild(eeBuildSetRow({}));
+    eeUpdateSetNumbers();
+  });
+}
+
+if (eeCancelBtn) eeCancelBtn.addEventListener('click', eeClose);
+if (eeBackdrop) eeBackdrop.addEventListener('click', eeClose);
+
+if (eeSaveBtn) {
+  eeSaveBtn.addEventListener('click', async () => {
+    if (!ExerciseEditor.row) return;
+    const payload = eeCollectSets();
+    const notes = eeNotes ? eeNotes.value.trim() : '';
+
+    const agg = eeComputeAggregates(payload);
+    const fd = new FormData();
+    fd.append('csrf_token', window.__CSRF);
+    fd.append('action', 'save_user_exercise');
+    fd.append('user_id', String(ExerciseEditor.userId));
+    fd.append('plan_id', String(ExerciseEditor.planId));
+    fd.append('exercise_id', String(ExerciseEditor.exerciseId));
+    fd.append('sets', agg.sets);
+    fd.append('reps', agg.reps);
+    fd.append('weight_lbs', agg.weight);
+    fd.append('duration_seconds', agg.duration);
+    fd.append('user_notes', notes);
+    fd.append('set_payload', JSON.stringify(payload));
+
+    eeClearError();
+    eeSaveBtn.disabled = true;
+    const prevText = eeSaveBtn.textContent;
+    eeSaveBtn.textContent = 'Saving…';
+
+    try {
+      const res = await fetch('clients.php', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!json || !json.ok) throw new Error((json && json.error) || 'Save failed');
+      applyUserExerciseData(ExerciseEditor.row, json.data);
+      setActionsToEdit(ExerciseEditor.row);
+      eeClose();
+    } catch (err) {
+      eeShowError(err.message || 'Failed to save changes.');
+      eeSaveBtn.disabled = false;
+      eeSaveBtn.textContent = prevText;
+    }
+  });
+}
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && eeModal && eeModal.style.display === 'block') {
+    eeClose();
+  }
+});
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-ex-edit]');
+  if (!btn) return;
+  e.preventDefault();
+  const tr = btn.closest('tr.mini-ex-row');
+  if (!tr) return;
+  eeOpen(tr);
+});
 
 function normalizeEmpty(value){
   return (value === null || value === undefined || value === '') ? null : value;
@@ -2584,6 +3031,46 @@ function computeDurationDisplay(raw, provided){
   if (mins > 0) parts.push(`${mins} min${mins === 1 ? '' : 's'}`);
   if (secs > 0 || parts.length === 0) parts.push(`${secs} sec${secs === 1 ? '' : 's'}`);
   return parts.join(' ');
+}
+
+function formatDurationForInput(seconds){
+  if (seconds === null || seconds === undefined) return '';
+  const total = Number(seconds);
+  if (!Number.isFinite(total) || total <= 0) return '';
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return secs === 0 ? String(mins) + ':00' : `${mins}:${secs.toString().padStart(2,'0')}`;
+}
+
+function ensureArray(value){
+  return Array.isArray(value) ? value : [];
+}
+
+function formatSetLine(detail){
+  if (!detail || typeof detail !== 'object') return null;
+  const parts = [];
+  const reps = detail.reps != null && detail.reps !== '' ? String(detail.reps) : '';
+  const weightDisplay = detail.weight_display || (detail.weight_value != null ? computeWeightDisplay(detail.weight_value) : null);
+  const durationDisplay = detail.duration_display || (detail.duration_seconds != null ? computeDurationDisplay(detail.duration_seconds) : null);
+  if (reps) parts.push(`${reps} rep${reps === '1' ? '' : 's'}`);
+  if (weightDisplay) parts.push(weightDisplay);
+  if (durationDisplay) parts.push(durationDisplay);
+  if (!parts.length) return null;
+  const label = detail.set_number != null ? `Set ${detail.set_number}` : 'Set';
+  return `${label}: ${parts.join(' · ')}`;
+}
+
+function renderSetSummary(details){
+  const list = ensureArray(details);
+  if (!list.length) return '<span class="muted">—</span>';
+  const lines = list.map(formatSetLine).filter(Boolean);
+  if (!lines.length) return '<span class="muted">—</span>';
+  return lines.map(line => `<div>${escapeHtml(line)}</div>`).join('');
+}
+
+function firstSetDetails(details){
+  const list = ensureArray(details);
+  return list.length ? list[0] : null;
 }
 
 function setCellValue(cell, raw, display, type = 'text'){
@@ -2623,17 +3110,45 @@ function applyUserExerciseData(tr, data){
     edited_by: tr.querySelector('[data-cell="edited_by"]')
   };
 
-  if (cells.sets && 'sets' in data) setCellValue(cells.sets, data.sets, data.sets);
-  if (cells.reps && 'reps' in data) setCellValue(cells.reps, data.reps, data.reps);
+  const setDetailsIncoming = ensureArray(data.set_details).map((row, idx) => ({
+    set_number: row && row.set_number != null ? row.set_number : (idx + 1),
+    reps: row && row.reps != null ? row.reps : null,
+    weight_value: row && row.weight_value != null ? Number(row.weight_value) : null,
+    weight_display: row && row.weight_display != null ? row.weight_display : null,
+    duration_seconds: row && row.duration_seconds != null ? Number(row.duration_seconds) : null,
+    duration_display: row && row.duration_display != null ? row.duration_display : null,
+  }));
+  const setsCountIncoming = ('sets_count' in data && data.sets_count != null)
+    ? Number(data.sets_count)
+    : (('sets' in data && data.sets != null && data.sets !== '') ? Number(data.sets) : setDetailsIncoming.length);
+  if (cells.sets) {
+    const summary = renderSetSummary(setDetailsIncoming);
+    cells.sets.innerHTML = summary;
+    if (!Number.isNaN(setsCountIncoming) && setsCountIncoming !== null) {
+      cells.sets.dataset.raw = String(setsCountIncoming);
+    } else {
+      delete cells.sets.dataset.raw;
+    }
+  }
 
-  const weightRaw = ('weight_value' in data) ? data.weight_value : (('weight' in data && typeof data.weight === 'number') ? data.weight : (('weight' in data) ? data.weight : undefined));
-  const weightDisplay = ('weight_display' in data) ? data.weight_display : (('weight' in data && typeof data.weight === 'string') ? data.weight : undefined);
+  const firstSet = firstSetDetails(setDetailsIncoming);
+  const repsValue = (firstSet && firstSet.reps != null && firstSet.reps !== '') ? firstSet.reps : (data.reps ?? null);
+  if (cells.reps) setCellValue(cells.reps, repsValue, repsValue);
+
+  const weightRaw = (firstSet && firstSet.weight_value != null) ? firstSet.weight_value
+    : (('weight_value' in data) ? data.weight_value : (('weight' in data && typeof data.weight === 'number') ? data.weight : (('weight' in data) ? data.weight : undefined)));
+  const weightDisplay = (firstSet && firstSet.weight_display != null)
+    ? firstSet.weight_display
+    : (('weight_display' in data) ? data.weight_display : (('weight' in data && typeof data.weight === 'string') ? data.weight : undefined));
   if (cells.weight && (weightRaw !== undefined || weightDisplay !== undefined)) {
     setCellValue(cells.weight, weightRaw, weightDisplay, 'weight');
   }
 
-  const durationRaw = ('duration_seconds' in data) ? data.duration_seconds : (('duration' in data && typeof data.duration === 'number') ? data.duration : (('duration' in data) ? data.duration : undefined));
-  const durationDisplay = ('duration_display' in data) ? data.duration_display : (('duration' in data && typeof data.duration === 'string') ? data.duration : undefined);
+  const durationRaw = (firstSet && firstSet.duration_seconds != null) ? firstSet.duration_seconds
+    : (('duration_seconds' in data) ? data.duration_seconds : (('duration' in data && typeof data.duration === 'number') ? data.duration : (('duration' in data) ? data.duration : undefined)));
+  const durationDisplay = (firstSet && firstSet.duration_display != null)
+    ? firstSet.duration_display
+    : (('duration_display' in data) ? data.duration_display : (('duration' in data && typeof data.duration === 'string') ? data.duration : undefined));
   if (cells.duration && (durationRaw !== undefined || durationDisplay !== undefined)) {
     setCellValue(cells.duration, durationRaw, durationDisplay, 'duration');
   }
@@ -2660,8 +3175,8 @@ function applyUserExerciseData(tr, data){
   if (!window.__USER_EX[uid][planId]) window.__USER_EX[uid][planId] = {};
   const existing = window.__USER_EX[uid][planId][exId] || {};
 
-  const normalizedSets = ('sets' in data) ? (data.sets === '' ? null : data.sets ?? null) : (existing.sets ?? null);
-  const normalizedReps = ('reps' in data) ? (data.reps === '' ? null : data.reps ?? null) : (existing.reps ?? null);
+  const normalizedSets = !Number.isNaN(setsCountIncoming) && setsCountIncoming !== null ? String(setsCountIncoming) : (existing.sets ?? null);
+  const normalizedReps = (repsValue !== undefined) ? (repsValue === '' ? null : repsValue ?? null) : (existing.reps ?? null);
 
   const normalizedWeightValue = (weightRaw !== undefined) ? normalizeEmpty(weightRaw) : (existing.weight_value ?? null);
   const normalizedWeightDisplay = (weightDisplay !== undefined)
@@ -2680,6 +3195,9 @@ function applyUserExerciseData(tr, data){
   window.__USER_EX[uid][planId][exId] = {
     ...existing,
     sets: normalizedSets,
+    sets_count: !Number.isNaN(setsCountIncoming) ? setsCountIncoming : (existing.sets_count ?? null),
+    set_details: setDetailsIncoming,
+    set_details_json: ('set_details_json' in data) ? (data.set_details_json ?? null) : (existing.set_details_json ?? null),
     reps: normalizedReps,
     weight_value: normalizedWeightValue,
     weight_display: normalizedWeightDisplay,
@@ -2695,142 +3213,6 @@ function applyUserExerciseData(tr, data){
   }
 }
 
-function startRowEdit(tr){
-  if (tr.dataset.editing === '1') return;
-  tr.dataset.editing = '1';
-
-  const getCell = name => tr.querySelector(`[data-cell="${name}"]`);
-  const setsCell = getCell('sets');
-  const repsCell = getCell('reps');
-  const weightCell = getCell('weight');
-  const durCell = getCell('duration');
-  const notesCell = getCell('notes');
-  const actionsCell = getCell('actions');
-
-  const uid = parseInt(tr.dataset.userId, 10);
-  const planId = parseInt(tr.dataset.planId, 10);
-  const exId = parseInt(tr.dataset.exId, 10);
-  const stored = (window.__USER_EX && window.__USER_EX[uid] && window.__USER_EX[uid][planId] && window.__USER_EX[uid][planId][exId]) || {};
-  const toInputValue = (v) => (v === null || v === undefined ? '' : String(v));
-
-  tr._origValues = {
-    sets: toInputValue(stored.sets ?? (setsCell.dataset.raw ?? (setsCell.textContent.trim() === '—' ? '' : setsCell.textContent.trim()))),
-    reps: toInputValue(stored.reps ?? (repsCell.dataset.raw ?? (repsCell.textContent.trim() === '—' ? '' : repsCell.textContent.trim()))),
-    weight: toInputValue(stored.weight_value ?? stored.weight ?? (weightCell.dataset.raw ?? (weightCell.textContent.trim() === '—' ? '' : weightCell.textContent.trim()))),
-    duration: toInputValue(stored.duration_seconds ?? stored.duration ?? (durCell.dataset.raw ?? (durCell.textContent.trim() === '—' ? '' : durCell.textContent.trim()))),
-    notes: toInputValue(stored.notes ?? (notesCell.dataset.raw ?? (notesCell.textContent.trim() === '—' ? '' : notesCell.textContent.trim()))),
-    actionsHTML: actionsCell.innerHTML
-  };
-
-  setsCell.innerHTML = '';
-  repsCell.innerHTML = '';
-  weightCell.innerHTML = '';
-  durCell.innerHTML = '';
-  notesCell.innerHTML = '';
-
-  const iSets = makeInput(tr._origValues.sets,   { type:'text',    placeholder:'e.g. 3 or 3x' });
-  const iReps = makeInput(tr._origValues.reps,   { type:'text',    placeholder:'e.g. 8-10' });
-  const iWeight = makeInput(tr._origValues.weight,{ type:'number',  step:'0.1', min:'0', placeholder:'lbs' });
-  const iDur = makeInput(tr._origValues.duration,{ type:'text',    placeholder:'e.g. 1:30 or 90 sec' });
-  const iNotes = makeInput(tr._origValues.notes, { type:'text',    placeholder:'user notes', width:'240px' });
-
-  iSets.name = 'sets';
-  iReps.name = 'reps';
-  iWeight.name = 'weight_lbs';
-  iDur.name = 'duration_seconds';
-  iNotes.name = 'user_notes';
-
-  setsCell.appendChild(iSets);
-  repsCell.appendChild(iReps);
-  weightCell.appendChild(iWeight);
-  durCell.appendChild(iDur);
-  notesCell.appendChild(iNotes);
-
-  actionsCell.innerHTML = '';
-  const btnSave = document.createElement('button');
-  btnSave.className = 'btn small brand';
-  btnSave.type = 'button';
-  btnSave.textContent = 'Save';
-  btnSave.addEventListener('click', () => saveRowEdit(tr));
-
-  const btnCancel = document.createElement('button');
-  btnCancel.className = 'btn small';
-  btnCancel.type = 'button';
-  btnCancel.style.marginLeft = '6px';
-  btnCancel.textContent = 'Cancel';
-  btnCancel.addEventListener('click', () => cancelRowEdit(tr));
-
-  actionsCell.appendChild(btnSave);
-  actionsCell.appendChild(btnCancel);
-}
-
-function cancelRowEdit(tr){
-  if (!tr._origValues) return;
-  const toNull = v => (v === '' ? null : v);
-  applyUserExerciseData(tr, {
-    sets: toNull(tr._origValues.sets),
-    reps: toNull(tr._origValues.reps),
-    weight_value: toNull(tr._origValues.weight),
-    duration_seconds: toNull(tr._origValues.duration),
-    notes: toNull(tr._origValues.notes)
-  });
-  const actionsCell = tr.querySelector('[data-cell="actions"]');
-  actionsCell.innerHTML = tr._origValues.actionsHTML;
-  tr.dataset.editing = '0';
-  delete tr._origValues;
-}
-
-async function saveRowEdit(tr){
-  const uid = parseInt(tr.dataset.userId, 10);
-  const planId = parseInt(tr.dataset.planId, 10);
-  const exId = parseInt(tr.dataset.exId, 10);
-  const sets = tr.querySelector('input[name="sets"]').value.trim();
-  const reps = tr.querySelector('input[name="reps"]').value.trim();
-  const weight = tr.querySelector('input[name="weight_lbs"]').value.trim();
-  const duration = tr.querySelector('input[name="duration_seconds"]').value.trim();
-  const notes = tr.querySelector('input[name="user_notes"]').value.trim();
-
-  const fd = new FormData();
-  fd.append('csrf_token', window.__CSRF);
-  fd.append('action', 'save_user_exercise');
-  fd.append('user_id', String(uid));
-  fd.append('plan_id', String(planId));
-  fd.append('exercise_id', String(exId));
-  fd.append('sets', sets);
-  fd.append('reps', reps);
-  fd.append('weight_lbs', weight);
-  fd.append('duration_seconds', duration);
-  fd.append('user_notes', notes);
-
-  const actionsCell = tr.querySelector('[data-cell="actions"]');
-  const prevHTML = actionsCell.innerHTML;
-  actionsCell.innerHTML = '<span class="muted">Saving…</span>';
-
-  try {
-    const res = await fetch('clients.php', { method:'POST', body: fd });
-    const json = await res.json();
-    if (!json || !json.ok) throw new Error((json && json.error) || 'Save failed');
-
-    applyUserExerciseData(tr, json.data);
-    setActionsToEdit(tr);
-    tr.dataset.editing = '0';
-    delete tr._origValues;
-  } catch (err) {
-    alert(err.message || 'Failed to save.');
-    actionsCell.innerHTML = prevHTML;
-  }
-}
-
-// Start editing when clicking Edit (legacy)
-document.addEventListener('click', function(e){
-  const btn = e.target.closest('[data-ex-edit]');
-  if (!btn) return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  const tr = btn.closest('tr.mini-ex-row');
-  if (!tr) return;
-  startRowEdit(tr);
-});
 
 // --- Add Exercises modal logic (unchanged except notes cell in new rows) ---
 let __AddEx = { planId: null, userId: null };
@@ -3008,174 +3390,6 @@ document.getElementById('ppCancel')?.addEventListener('click', ppClose);
 document.getElementById('bdPickPlan')?.addEventListener('click', ppClose);
 
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
-
-// ==== INLINE CELL EDIT (NEW) ====
-// Only one cell editor active at a time
-let __ActiveCell = null;
-
-function openCellEditor(td){
-  if (!td) return;
-  // If another cell is active, try to save it first if changed; otherwise close it
-  if (__ActiveCell && __ActiveCell !== td) {
-    closeCellEditor(__ActiveCell, {saveIfChanged:true});
-  }
-  if (td.classList.contains('editing')) return;
-
-  const tr = td.closest('tr.mini-ex-row');
-  if (!tr) return;
-
-  const col = td.getAttribute('data-cell'); // sets|reps|weight|duration|notes
-  if (!['sets','reps','weight','duration','notes'].includes(col)) return;
-
-  const displayBefore = td.textContent.trim();
-  const rawBefore = td.dataset.raw !== undefined ? td.dataset.raw : (displayBefore === '—' ? '' : displayBefore);
-  td.dataset.originalRaw = rawBefore;
-  td.dataset.originalDisplay = displayBefore;
-  td.classList.add('editing');
-
-  const input = document.createElement('input');
-  input.className = 'input';
-  input.style.width = (col === 'notes') ? '240px' : '120px';
-  input.placeholder = (col === 'sets' ? 'e.g. 3 or 3x'
-                     : col === 'reps' ? 'e.g. 8-10'
-                     : col === 'weight' ? 'lbs'
-                     : col === 'duration' ? 'e.g. 1:30 or 90 sec'
-                     : 'user notes');
-
-  if (col === 'weight') { input.type = 'number'; input.step = '0.1'; input.min = '0'; }
-  else if (col === 'duration') { input.type = 'text'; }
-  else { input.type = 'text'; }
-
-  input.value = rawBefore || '';
-  td.innerHTML = '';
-  td.appendChild(input);
-  input.focus();
-  input.select();
-
-  // Enter saves, Esc cancels
-  input.addEventListener('keydown', (ev)=>{
-    if (ev.key === 'Enter') {
-      ev.preventDefault();
-      closeCellEditor(td, {saveIfChanged:true});
-    } else if (ev.key === 'Escape') {
-      ev.preventDefault();
-      closeCellEditor(td, {save:false});
-    }
-  }, {capture:true});
-
-  // Blur saves if changed
-  input.addEventListener('blur', ()=>{
-    // small timeout to allow click to move elsewhere without double-handling
-    setTimeout(()=>closeCellEditor(td, {saveIfChanged:true}), 0);
-  });
-
-  __ActiveCell = td;
-}
-
-function getCellsPayload(tr){
-  const get = name => {
-    const cell = tr.querySelector(`[data-cell="${name}"]`);
-    if (!cell) return '';
-    // If cell is currently editing, read from input, else from text
-    const inp = cell.querySelector('input');
-    if (inp) {
-      return inp.value.trim();
-    }
-    if (cell.dataset.raw !== undefined) {
-      return cell.dataset.raw;
-    }
-    const val = cell.textContent.trim();
-    return (val === '—') ? '' : val;
-  };
-  return {
-    sets: get('sets'),
-    reps: get('reps'),
-    weight_lbs: get('weight'),
-    duration_seconds: get('duration'),
-    user_notes: get('notes')
-  };
-}
-
-async function saveCell(tr){
-  const uid = parseInt(tr.dataset.userId, 10);
-  const planId = parseInt(tr.dataset.planId, 10);
-  const exId = parseInt(tr.dataset.exId, 10);
-  const payload = getCellsPayload(tr);
-
-  const fd = new FormData();
-  fd.append('csrf_token', window.__CSRF);
-  fd.append('action', 'save_user_exercise');
-  fd.append('user_id', String(uid));
-  fd.append('plan_id', String(planId));
-  fd.append('exercise_id', String(exId));
-  fd.append('sets', payload.sets);
-  fd.append('reps', payload.reps);
-  fd.append('weight_lbs', payload.weight_lbs);
-  fd.append('duration_seconds', payload.duration_seconds);
-  fd.append('user_notes', payload.user_notes);
-
-  // Temporary inline "Saving…" chip in Actions
-  const actionsCell = tr.querySelector('[data-cell="actions"]');
-  const prevHTML = actionsCell ? actionsCell.innerHTML : '';
-  if (actionsCell) actionsCell.innerHTML = '<span class="muted">Saving…</span>';
-
-  try {
-    const res = await fetch('clients.php', { method:'POST', body: fd });
-    const json = await res.json();
-    if (!json || !json.ok) throw new Error((json && json.error) || 'Save failed');
-
-    applyUserExerciseData(tr, json.data);
-    setActionsToEdit(tr);
-  } catch (e) {
-    alert(e.message || 'Failed to save.');
-  } finally {
-    if (actionsCell && !actionsCell.querySelector('[data-ex-edit]')) {
-      setActionsToEdit(tr);
-    }
-  }
-}
-
-function closeCellEditor(td, {save=true, saveIfChanged=false}={}){
-  if (!td || !td.classList.contains('editing')) return;
-  const tr = td.closest('tr.mini-ex-row');
-  const input = td.querySelector('input');
-  const original = td.dataset.originalRaw ?? '';
-  const curr = input ? input.value.trim() : '';
-  const changed = (curr !== original);
-
-  // Decide whether to save
-  const shouldSave = save ? (saveIfChanged ? changed : true) : false;
-
-  // Restore display first
-  td.classList.remove('editing');
-  if (shouldSave) {
-    if (curr === '') {
-      delete td.dataset.raw;
-      td.textContent = '—';
-    } else {
-      td.dataset.raw = curr;
-      td.innerHTML = escapeHtml(curr);
-    }
-  } else {
-    if (original === '') {
-      delete td.dataset.raw;
-      td.textContent = '—';
-    } else {
-      td.dataset.raw = original;
-      const originalDisplay = td.dataset.originalDisplay ?? original;
-      td.innerHTML = escapeHtml(originalDisplay);
-    }
-  }
-  delete td.dataset.originalRaw;
-  delete td.dataset.originalDisplay;
-
-  __ActiveCell = null;
-
-  if (shouldSave && tr) {
-    // Save entire row payload so we don't wipe other fields
-    saveCell(tr);
-  }
-}
 
 const videoTooltip = document.getElementById('videoTooltip');
 const videoTooltipVideo = document.getElementById('videoTooltipVideo');
