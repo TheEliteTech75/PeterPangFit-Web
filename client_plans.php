@@ -1241,8 +1241,8 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         margin-left: calc(50% - 50vw);
         margin-right: calc(50% - 50vw);
         width: 100vw;
-        padding-left: calc(env(safe-area-inset-left, 0px) + clamp(12px, 6vw, 18px));
-        padding-right: calc(env(safe-area-inset-right, 0px) + clamp(12px, 6vw, 18px));
+        padding-left: calc(env(safe-area-inset-left, 0px));
+        padding-right: calc(env(safe-area-inset-right, 0px));
       }
     }
 
@@ -1943,18 +1943,37 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
   const planNavButtons = document.querySelectorAll('[data-plan-nav]');
 
+  function focusPlanSection(section) {
+    if (!section) return;
+    setPlanVisibility(section, true, { skipAnimation: true });
+    const highlight = () => {
+      section.classList.add('plan-card--highlight');
+      const highlightDuration = prefersReducedMotion ? 800 : 1200;
+      window.setTimeout(() => section.classList.remove('plan-card--highlight'), highlightDuration);
+    };
+    const scrollBehavior = prefersReducedMotion ? 'auto' : 'smooth';
+    const performScroll = () => {
+      section.scrollIntoView({ behavior: scrollBehavior, block: 'start' });
+      highlight();
+    };
+    if (prefersReducedMotion) {
+      performScroll();
+    } else {
+      window.requestAnimationFrame(performScroll);
+    }
+  }
+
   planNavButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       const targetId = btn.getAttribute('data-target');
       if (!targetId) return;
       const section = document.getElementById(targetId);
       if (!section) return;
-      setPlanVisibility(section, true, { skipAnimation: true });
-      section.scrollIntoView({behavior: 'smooth', block: 'start'});
-      section.classList.add('plan-card--highlight');
-      setTimeout(() => section.classList.remove('plan-card--highlight'), 1200);
       if (navMobileQuery.matches) {
         collapsePlanNav();
+        window.setTimeout(() => window.requestAnimationFrame(() => focusPlanSection(section)), 80);
+      } else {
+        focusPlanSection(section);
       }
     });
   });
