@@ -308,8 +308,10 @@ function cp_build_set_lines(array $rows, bool $uniform): array {
   if ($uniform) {
     $first = $rows[0];
     $label = $count > 1 ? 'All Sets' : 'Set 1';
+    $display = (string)($count > 0 ? $count : 1);
     $lines[] = [
       'label' => $label,
+      'display' => $display,
       'reps' => $first['reps'] ?? null,
       'weight' => $first['weight_display'] ?? null,
       'duration' => $first['duration_display'] ?? null,
@@ -318,9 +320,16 @@ function cp_build_set_lines(array $rows, bool $uniform): array {
   }
 
   foreach ($rows as $idx => $row) {
-    $label = 'Set ' . (($row['set_number'] ?? null) !== null ? $row['set_number'] : ($idx + 1));
+    $rawSetNumber = $row['set_number'] ?? null;
+    if ($rawSetNumber !== null && $rawSetNumber !== '' && is_numeric($rawSetNumber)) {
+      $setNumber = (int)$rawSetNumber;
+    } else {
+      $setNumber = $idx + 1;
+    }
+    $label = 'Set ' . $setNumber;
     $lines[] = [
       'label' => $label,
+      'display' => (string)$setNumber,
       'reps' => $row['reps'] ?? null,
       'weight' => $row['weight_display'] ?? null,
       'duration' => $row['duration_display'] ?? null,
@@ -1231,7 +1240,7 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
                       <tbody>
                         <?php foreach ($setLines as $line): ?>
                           <tr>
-                            <th scope="row"><?php echo h($line['label']); ?></th>
+                            <th scope="row"><?php echo h($line['display'] ?? $line['label']); ?></th>
                             <td>
                               <?php if ($line['reps'] !== null && $line['reps'] !== ''): ?>
                                 <?php echo h($line['reps']); ?>
