@@ -215,6 +215,8 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       --radius: 20px;
       --radius-sm: 14px;
       --transition: 200ms cubic-bezier(.33,.13,.21,.99);
+      --plan-nav-offset: 76px;
+      --plan-nav-safe-offset: calc(var(--plan-nav-offset) + env(safe-area-inset-top, 0px));
       font-family: 'Inter', 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
     }
 
@@ -511,7 +513,6 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     .plan-nav {
-      --plan-nav-offset: calc(76px + env(safe-area-inset-top, 0px));
       margin-top: clamp(26px, 6vw, 38px);
       margin-bottom: clamp(28px, 7vw, 48px);
       display: grid;
@@ -1061,7 +1062,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
       .plan-nav {
         position: sticky;
-        top: var(--plan-nav-offset);
+        top: var(--plan-nav-safe-offset);
         z-index: 12;
         gap: 10px;
       }
@@ -1076,7 +1077,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
       .plan-nav--mobile.plan-nav--expanded {
         position: fixed;
-        top: 0;
+        top: var(--plan-nav-safe-offset);
         left: 0;
         right: 0;
         bottom: 0;
@@ -1092,18 +1093,33 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         justify-content: flex-start;
         gap: 0;
         touch-action: none;
+        height: calc(100vh - var(--plan-nav-safe-offset));
+        overflow: hidden;
       }
       .plan-nav--mobile .plan-nav__mobile-bar {
         display: flex;
-        width: 100%;
-        padding-left: calc(env(safe-area-inset-left, 0px) + clamp(14px, 5vw, 22px));
-        padding-right: calc(env(safe-area-inset-right, 0px) + clamp(14px, 5vw, 22px));
-        padding-bottom: clamp(6px, 2vw, 10px);
+        width: 100vw;
+        margin-left: calc(50% - 50vw);
+        margin-right: calc(50% - 50vw);
+        padding: 0;
+        background: rgba(8, 8, 8, 0.96);
+        border-bottom: 1px solid var(--card-border-subtle);
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55);
       }
       .plan-nav__mobile-trigger {
-        border-radius: clamp(18px, 7vw, 22px);
-        padding: clamp(12px, 5vw, 16px) clamp(20px, 6vw, 26px);
+        border-radius: 0;
+        border: none;
+        padding: clamp(16px, 5vw, 20px) calc(env(safe-area-inset-right, 0px) + clamp(24px, 7vw, 32px)) clamp(16px, 5vw, 20px) calc(env(safe-area-inset-left, 0px) + clamp(24px, 7vw, 32px));
         font-size: clamp(14px, 4vw, 16px);
+        background: transparent;
+        box-shadow: none;
+      }
+      .plan-nav__mobile-trigger:hover,
+      .plan-nav__mobile-trigger:focus-visible {
+        background: rgba(0, 191, 255, 0.14);
+        border: none;
+        transform: none;
+        box-shadow: none;
       }
       .plan-nav--mobile .plan-nav__panel {
         position: relative;
@@ -1125,7 +1141,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         flex: 1 1 auto;
         max-height: none;
         height: 100%;
-        padding: calc(var(--plan-nav-offset) + clamp(22px, 8vw, 32px)) clamp(20px, 7vw, 30px) calc(env(safe-area-inset-bottom, 0px) + clamp(30px, 9vw, 40px));
+        padding: clamp(22px, 8vw, 32px) clamp(20px, 7vw, 30px) calc(env(safe-area-inset-bottom, 0px) + clamp(30px, 9vw, 40px));
         border-radius: 0;
         border: none;
         box-shadow: none;
@@ -1516,9 +1532,32 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   const navCloseBtn = navSection?.querySelector('[data-plan-nav-close]');
   const navPanel = navSection?.querySelector('[data-plan-nav-panel]');
   const navMobileQuery = window.matchMedia('(max-width: 760px)');
+  const rootEl = document.documentElement;
+  const topbarEl = document.querySelector('.ppf-topbar');
   let navSkipNextScroll = false;
   let navScrollHoldTimer = null;
   let navScrollLockY = 0;
+  let navOffsetRaf = null;
+
+  function updatePlanNavOffset() {
+    const measured = topbarEl ? Math.round(topbarEl.getBoundingClientRect().height) : 76;
+    rootEl.style.setProperty('--plan-nav-offset', `${Math.max(measured, 1)}px`);
+  }
+
+  function schedulePlanNavOffsetUpdate() {
+    if (navOffsetRaf) {
+      cancelAnimationFrame(navOffsetRaf);
+    }
+    navOffsetRaf = requestAnimationFrame(() => {
+      navOffsetRaf = null;
+      updatePlanNavOffset();
+    });
+  }
+
+  updatePlanNavOffset();
+  window.addEventListener('resize', schedulePlanNavOffsetUpdate);
+  window.addEventListener('orientationchange', schedulePlanNavOffsetUpdate);
+  window.addEventListener('load', updatePlanNavOffset, { once: true });
 
   function lockBodyForNav() {
     if (!navMobileQuery.matches) return;
