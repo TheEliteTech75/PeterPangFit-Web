@@ -1690,10 +1690,8 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     if (navSkipNextScroll) {
       return;
     }
-    if (window.scrollY > 40) {
+    if (window.scrollY > 40 && navSection.classList.contains('plan-nav--expanded')) {
       collapsePlanNav();
-    } else {
-      expandPlanNav(false);
     }
   }, { passive: true });
 
