@@ -217,6 +217,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       --transition: 200ms cubic-bezier(.33,.13,.21,.99);
       --plan-nav-offset: 76px;
       --plan-nav-safe-offset: calc(var(--plan-nav-offset) + env(safe-area-inset-top, 0px));
+      --plan-nav-gap: 0px;
       font-family: 'Inter', 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
     }
 
@@ -1060,9 +1061,12 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         flex: 1 1 auto;
         min-width: 0;
       }
+      :root {
+        --plan-nav-gap: clamp(8px, 3vw, 16px);
+      }
       .plan-nav {
         position: sticky;
-        top: var(--plan-nav-safe-offset);
+        top: calc(var(--plan-nav-safe-offset) + var(--plan-nav-gap));
         z-index: 12;
         gap: 10px;
       }
@@ -1077,7 +1081,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
       .plan-nav--mobile.plan-nav--expanded {
         position: fixed;
-        top: var(--plan-nav-safe-offset);
+        top: calc(var(--plan-nav-safe-offset) + var(--plan-nav-gap));
         left: 0;
         right: 0;
         bottom: 0;
@@ -1093,7 +1097,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         justify-content: flex-start;
         gap: 0;
         touch-action: none;
-        height: calc(100vh - var(--plan-nav-safe-offset));
+        height: calc(100vh - var(--plan-nav-safe-offset) - var(--plan-nav-gap));
         overflow: hidden;
       }
       .plan-nav--mobile .plan-nav__mobile-bar {
@@ -1211,6 +1215,16 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     @media (min-width: 1024px) {
       .plan-grid {
         grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    @media (max-width: 760px) {
+      .plan-grid {
+        margin-left: calc(50% - 50vw);
+        margin-right: calc(50% - 50vw);
+        width: 100vw;
+        padding-left: calc(env(safe-area-inset-left, 0px) + clamp(12px, 6vw, 18px));
+        padding-right: calc(env(safe-area-inset-right, 0px) + clamp(12px, 6vw, 18px));
       }
     }
 
@@ -1612,6 +1626,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       navOpenTrigger?.setAttribute('aria-expanded', 'true');
       unlockBodyForNav();
     }
+    schedulePlanNavOffsetUpdate();
   }
 
   function collapsePlanNav() {
@@ -1625,6 +1640,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       navScrollHoldTimer = null;
     }
     unlockBodyForNav();
+    schedulePlanNavOffsetUpdate();
   }
 
   function expandPlanNav(manual = false) {
@@ -1640,6 +1656,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     } else {
       unlockBodyForNav();
     }
+    schedulePlanNavOffsetUpdate();
   }
 
   applyNavResponsiveState();
