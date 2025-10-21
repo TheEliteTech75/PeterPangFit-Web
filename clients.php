@@ -3130,7 +3130,7 @@ function computeExerciseSetDisplay(details, fallback = {}){
   if (!hasDetails) {
     return {
       uniform: true,
-      setsHtml: setsRaw !== null ? `<span>${escapeHtml(String(setsRaw))} set${setsRaw === 1 ? '' : 's'}</span>` : `<span class="muted">—</span>`,
+      setsHtml: setsRaw !== null ? `<span>${escapeHtml(String(setsRaw))}</span>` : `<span class="muted">—</span>`,
       setsRaw,
       repsHtml: fallbackReps != null ? `<span>${escapeHtml(String(fallbackReps))}</span>` : `<span class="muted">—</span>`,
       weightHtml: fallbackWeightDisplay ? `<span>${escapeHtml(String(fallbackWeightDisplay))}</span>` : `<span class="muted">—</span>`,
@@ -3172,9 +3172,10 @@ function computeExerciseSetDisplay(details, fallback = {}){
       durationDisplay = fallbackDurationDisplay;
     }
 
+    const setsValue = setsRaw !== null ? setsRaw : count;
     return {
       uniform: true,
-      setsHtml: `<span>${escapeHtml(String(setsRaw !== null ? setsRaw : count))} set${(setsRaw !== null ? setsRaw : count) === 1 ? '' : 's'}</span>`,
+      setsHtml: `<span>${escapeHtml(String(setsValue))}</span>`,
       setsRaw: setsRaw !== null ? setsRaw : count,
       repsHtml: repsValue != null ? `<span>${escapeHtml(String(repsValue))}</span>` : `<span class="muted">—</span>`,
       weightHtml: weightDisplay ? `<span>${escapeHtml(String(weightDisplay))}</span>` : `<span class="muted">—</span>`,
@@ -3189,7 +3190,7 @@ function computeExerciseSetDisplay(details, fallback = {}){
 
   const setsLines = list.map((row, idx) => {
     const num = row.set_number != null && row.set_number !== '' ? row.set_number : (idx + 1);
-    return `<div>Set ${escapeHtml(String(num))}</div>`;
+    return `<div>${escapeHtml(String(num))}</div>`;
   });
 
   const repsLines = list.map(row => {
