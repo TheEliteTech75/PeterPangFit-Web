@@ -1039,6 +1039,10 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         flex-direction: column;
         align-items: stretch;
       }
+      .toolbar .search {
+        flex: 0 0 auto;
+        width: 100%;
+      }
       .actions {
         width: 100%;
         justify-content: center;
@@ -1049,18 +1053,19 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
       .plan-nav {
         position: sticky;
-        top: calc(60px + env(safe-area-inset-top, 0px));
+        top: calc(76px + env(safe-area-inset-top, 0px));
         z-index: 12;
         gap: 10px;
       }
-      .plan-nav--mobile .plan-nav__mobile-bar,
-      .plan-nav--mobile .plan-nav__panel {
-        margin-left: calc(-1 * clamp(14px, 6vw, 22px));
-        margin-right: calc(-1 * clamp(14px, 6vw, 22px));
+      .plan-nav.plan-nav--mobile {
+        margin-left: calc(-1 * var(--page-pad-x));
+        margin-right: calc(-1 * var(--page-pad-x));
+        padding-left: var(--page-pad-x);
+        padding-right: var(--page-pad-x);
       }
       .plan-nav--mobile .plan-nav__mobile-bar {
         display: flex;
-        padding: 0 clamp(14px, 6vw, 22px);
+        width: 100%;
       }
       .plan-nav__mobile-trigger {
         border-radius: clamp(18px, 7vw, 22px);
@@ -1074,6 +1079,12 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         border: 1px solid var(--card-border-subtle);
         box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
         padding: clamp(16px, 6vw, 24px);
+        width: 100%;
+        max-height: min(70vh, 420px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
       }
       .plan-nav--mobile .plan-nav__panel-head {
         margin-bottom: 10px;
@@ -1442,8 +1453,21 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   const navSection = document.querySelector('[data-plan-nav-container]');
   const navOpenTrigger = navSection?.querySelector('[data-plan-nav-open]');
   const navCloseBtn = navSection?.querySelector('[data-plan-nav-close]');
+  const navPanel = navSection?.querySelector('[data-plan-nav-panel]');
   const navMobileQuery = window.matchMedia('(max-width: 760px)');
   let navSkipNextScroll = false;
+  let navScrollHoldTimer = null;
+
+  function holdNavScrollBuffer(duration = 260) {
+    navSkipNextScroll = true;
+    if (navScrollHoldTimer) {
+      window.clearTimeout(navScrollHoldTimer);
+    }
+    navScrollHoldTimer = window.setTimeout(() => {
+      navSkipNextScroll = false;
+      navScrollHoldTimer = null;
+    }, duration);
+  }
 
   function applyNavResponsiveState() {
     if (!navSection) return;
@@ -1466,6 +1490,10 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     navSection.classList.remove('plan-nav--expanded');
     navOpenTrigger?.setAttribute('aria-expanded', 'false');
     navSkipNextScroll = false;
+    if (navScrollHoldTimer) {
+      window.clearTimeout(navScrollHoldTimer);
+      navScrollHoldTimer = null;
+    }
   }
 
   function expandPlanNav(manual = false) {
@@ -1474,7 +1502,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     navSection.classList.remove('plan-nav--collapsed');
     navOpenTrigger?.setAttribute('aria-expanded', 'true');
     if (manual && navSection.classList.contains('plan-nav--mobile')) {
-      navSkipNextScroll = true;
+      holdNavScrollBuffer(420);
     }
   }
 
@@ -1494,7 +1522,6 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   window.addEventListener('scroll', () => {
     if (!navSection || !navMobileQuery.matches) return;
     if (navSkipNextScroll) {
-      navSkipNextScroll = false;
       return;
     }
     if (window.scrollY > 40) {
@@ -1503,6 +1530,19 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       expandPlanNav(false);
     }
   }, { passive: true });
+
+  if (navPanel) {
+    const attachBuffer = (duration) => {
+      if (!navSection?.classList.contains('plan-nav--mobile') || !navSection.classList.contains('plan-nav--expanded')) return;
+      holdNavScrollBuffer(duration);
+    };
+    ['touchstart', 'touchmove'].forEach(evt => {
+      navPanel.addEventListener(evt, () => attachBuffer(320), { passive: true });
+    });
+    navPanel.addEventListener('wheel', () => attachBuffer(320), { passive: true });
+    navPanel.addEventListener('scroll', () => attachBuffer(220), { passive: true });
+    navPanel.addEventListener('touchend', () => attachBuffer(200), { passive: true });
+  }
 
   function cleanupAnimation(body) {
     if (body._transitionHandler) {
