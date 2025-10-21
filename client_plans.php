@@ -504,6 +504,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     .plan-nav {
+      --plan-nav-offset: calc(76px + env(safe-area-inset-top, 0px));
       margin-top: clamp(26px, 6vw, 38px);
       margin-bottom: clamp(28px, 7vw, 48px);
       display: grid;
@@ -1053,15 +1054,35 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
       .plan-nav {
         position: sticky;
-        top: calc(76px + env(safe-area-inset-top, 0px));
+        top: var(--plan-nav-offset);
         z-index: 12;
         gap: 10px;
       }
       .plan-nav.plan-nav--mobile {
-        margin-left: calc(-1 * var(--page-pad-x));
-        margin-right: calc(-1 * var(--page-pad-x));
-        padding-left: var(--page-pad-x);
-        padding-right: var(--page-pad-x);
+        margin-left: calc(50% - 50vw);
+        margin-right: calc(50% - 50vw);
+        width: 100vw;
+        padding-left: calc(env(safe-area-inset-left, 0px) + clamp(18px, 6vw, 24px));
+        padding-right: calc(env(safe-area-inset-right, 0px) + clamp(18px, 6vw, 24px));
+      }
+      .plan-nav--mobile.plan-nav--collapsed {
+        position: sticky;
+      }
+      .plan-nav--mobile.plan-nav--expanded {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        margin: 0;
+        width: 100vw;
+        padding: var(--plan-nav-offset) calc(env(safe-area-inset-right, 0px) + clamp(18px, 6vw, 24px)) calc(env(safe-area-inset-bottom, 0px) + clamp(28px, 8vw, 36px)) calc(env(safe-area-inset-left, 0px) + clamp(18px, 6vw, 24px));
+        background: rgba(0, 0, 0, 0.82);
+        backdrop-filter: blur(18px);
+        z-index: 130;
+        display: flex;
+        flex-direction: column;
+        gap: clamp(18px, 6vw, 24px);
       }
       .plan-nav--mobile .plan-nav__mobile-bar {
         display: flex;
@@ -1085,6 +1106,15 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
         touch-action: pan-y;
+        min-height: 0;
+      }
+      .plan-nav--mobile.plan-nav--expanded .plan-nav__panel {
+        flex: 1 1 auto;
+        max-height: none;
+        height: auto;
+        padding: clamp(22px, 7vw, 30px);
+        border-radius: clamp(22px, 8vw, 30px);
+        box-shadow: none;
       }
       .plan-nav--mobile .plan-nav__panel-head {
         margin-bottom: 10px;
