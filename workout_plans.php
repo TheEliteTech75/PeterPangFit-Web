@@ -51,6 +51,130 @@ function parse_weight_to_float($input) {
   return (float)$s;
 }
 
+function normalize_set_payload($jsonPayload, $setsInput, $repsInput, $weightInput, $durationInput) {
+  $entries = [];
+  $rawJson = is_string($jsonPayload) ? trim($jsonPayload) : '';
+  if ($rawJson !== '') {
+    $decoded = json_decode($rawJson, true);
+    if ($decoded === null && json_last_error() !== JSON_ERROR_NONE) {
+      throw new Exception('Invalid set details payload.');
+    }
+    if (is_array($decoded)) {
+      foreach ($decoded as $entry) {
+        if (!is_array($entry)) continue;
+        $repStr = isset($entry['reps']) ? trim((string)$entry['reps']) : '';
+        if ($repStr === '' && isset($entry['reps_raw'])) {
+          $repStr = trim((string)$entry['reps_raw']);
+        }
+
+        $weightStr = '';
+        if (isset($entry['weight'])) {
+          $weightStr = trim((string)$entry['weight']);
+        } elseif (isset($entry['weight_lbs'])) {
+          $weightStr = trim((string)$entry['weight_lbs']);
+        }
+
+        $durationStr = '';
+        if (isset($entry['duration'])) {
+          $durationStr = trim((string)$entry['duration']);
+        } elseif (isset($entry['duration_seconds'])) {
+          $durationStr = trim((string)$entry['duration_seconds']);
+        }
+
+        $weightVal = null;
+        if ($weightStr !== '') {
+          $weightVal = parse_weight_to_float($weightStr);
+          if ($weightVal === null) {
+            throw new Exception('Weight must be numeric (digits with optional decimal).');
+          }
+        }
+
+        $durationVal = null;
+        if ($durationStr !== '') {
+          $durationVal = parse_duration_to_seconds($durationStr);
+          if ($durationVal === null) {
+            throw new Exception('Duration must be seconds or mm:ss (for example 90 or 1:30).');
+          }
+        }
+
+        if ($repStr === '' && $weightVal === null && $durationVal === null) {
+          continue;
+        }
+
+        $entries[] = [
+          'set_number' => count($entries) + 1,
+          'reps' => $repStr === '' ? null : $repStr,
+          'weight_lbs' => $weightVal,
+          'duration_seconds' => $durationVal,
+        ];
+      }
+    }
+  }
+
+  if (!$entries) {
+    $setsNorm = ($setsInput !== null && $setsInput !== '') ? (int)$setsInput : null;
+    $repsNorm = ($repsInput !== null) ? trim((string)$repsInput) : '';
+
+    $weightNorm = null;
+    if ($weightInput !== null && trim((string)$weightInput) !== '') {
+      $weightNorm = parse_weight_to_float($weightInput);
+      if ($weightNorm === null) {
+        throw new Exception('Invalid weight (numbers only).');
+      }
+    }
+
+    $durationNorm = null;
+    if ($durationInput !== null && trim((string)$durationInput) !== '') {
+      $durationNorm = parse_duration_to_seconds($durationInput);
+      if ($durationNorm === null) {
+        throw new Exception('Invalid duration (use mm:ss or seconds).');
+      }
+    }
+
+    if ($setsNorm === null || $setsNorm <= 0) {
+      if ($repsNorm !== '' || $weightNorm !== null || $durationNorm !== null) {
+        $setsNorm = 1;
+      } else {
+        $setsNorm = 0;
+      }
+    }
+
+    for ($i = 0; $i < $setsNorm; $i++) {
+      $entries[] = [
+        'set_number' => $i + 1,
+        'reps' => $repsNorm === '' ? null : $repsNorm,
+        'weight_lbs' => $weightNorm,
+        'duration_seconds' => $durationNorm,
+      ];
+    }
+  }
+
+  return $entries;
+}
+
+function summarize_set_entries(array $entries): array {
+  $count = count($entries);
+  $first = $entries[0] ?? ['reps' => null, 'weight_lbs' => null, 'duration_seconds' => null];
+  $jsonReady = [];
+  foreach ($entries as $idx => $row) {
+    $jsonReady[] = [
+      'set_number' => $row['set_number'] ?? ($idx + 1),
+      'reps' => $row['reps'] ?? null,
+      'weight_lbs' => $row['weight_lbs'] ?? null,
+      'duration_seconds' => $row['duration_seconds'] ?? null,
+    ];
+  }
+  $json = json_encode($jsonReady);
+  if ($json === false) $json = '[]';
+  return [
+    'count' => $count,
+    'first_reps' => $first['reps'] ?? null,
+    'first_weight' => $first['weight_lbs'] ?? null,
+    'first_duration' => $first['duration_seconds'] ?? null,
+    'json' => $json,
+  ];
+}
+
 if (!is_trainer_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
 
 if (empty($_SESSION['csrf_token'])) { $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); }
@@ -87,6 +211,9 @@ if (!function_exists('ensure_user_notes_column')) {
 }
 ensure_user_notes_column($conn);
 $HAS_USER_NOTES_COL = column_exists($conn, 'user_plan_exercises', 'user_notes');
+if (!column_exists($conn, 'user_plan_exercises', 'set_details_json')) {
+  @$conn->query("ALTER TABLE user_plan_exercises ADD COLUMN set_details_json LONGTEXT NULL");
+}
 
 // ----------------------------------------------------------------------------------
 // POST actions (do BEFORE any output)
@@ -304,6 +431,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $REPS = $_POST['reps'] ?? [];
         $DURS = $_POST['duration'] ?? [];
         $WGTS = $_POST['weight'] ?? [];
+        $SET_JSON = $_POST['set_details_json'] ?? [];
         $NOTS = $_POST['user_notes'] ?? [];
 
         // Figure out correct weight column name
@@ -320,20 +448,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Prepare insert for user_plan_exercises (with/without weight + user_notes)
         $bindCase = null; // 'WN' (weight+notes), 'W' (weight only), 'N' (notes only), 'B' (bare)
         if ($WEIGHT_COL && $HAS_USER_NOTES_COL) {
-          $sqlUPE = "INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, duration_seconds, {$WEIGHT_COL}, user_notes, position)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+          $sqlUPE = "INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, duration_seconds, {$WEIGHT_COL}, user_notes, set_details_json, position)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
           $bindCase = 'WN';
         } elseif ($WEIGHT_COL && !$HAS_USER_NOTES_COL) {
-          $sqlUPE = "INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, duration_seconds, {$WEIGHT_COL}, position)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)";
+          $sqlUPE = "INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, duration_seconds, {$WEIGHT_COL}, set_details_json, position)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
           $bindCase = 'W';
         } elseif (!$WEIGHT_COL && $HAS_USER_NOTES_COL) {
-          $sqlUPE = "INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, duration_seconds, user_notes, position)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)";
+          $sqlUPE = "INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, duration_seconds, user_notes, set_details_json, position)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
           $bindCase = 'N';
         } else {
-          $sqlUPE = "INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, duration_seconds, position)
-                     VALUES (?, ?, ?, ?, ?, ?)";
+          $sqlUPE = "INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, duration_seconds, set_details_json, position)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)";
           $bindCase = 'B';
         }
         $stmtUPE = $conn->prepare($sqlUPE);
@@ -357,32 +485,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               $eid = (int)$row['exercise_id'];
               $pos = (int)$row['position'];
 
+              $setJson = $SET_JSON[$uidAssign][$eid] ?? '';
               $sets_in = $SETS[$uidAssign][$eid] ?? '';
               $reps_in = $REPS[$uidAssign][$eid] ?? '';
               $dur_in  = $DURS[$uidAssign][$eid] ?? '';
               $wgt_in  = $WGTS[$uidAssign][$eid] ?? '';
               $notes_in= $NOTS[$uidAssign][$eid] ?? '';
 
-              $sets = (strlen(trim((string)$sets_in)) ? (int)$sets_in : null);
-              $reps = (strlen(trim((string)$reps_in)) ? (int)$reps_in : null);
-              $dur  = (strlen(trim((string)$dur_in))  ? parse_duration_to_seconds($dur_in) : null);
-              if ($dur_in !== '' && $dur === null) throw new Exception('Invalid duration (use mm:ss or seconds).');
-              $wgt  = (strlen(trim((string)$wgt_in))  ? parse_weight_to_float($wgt_in) : null);
-              if ($wgt_in !== '' && $wgt === null) throw new Exception('Invalid weight (numbers only).');
+              $normalizedSetRows = normalize_set_payload($setJson, $sets_in, $reps_in, $wgt_in, $dur_in);
+              $summary = summarize_set_entries($normalizedSetRows);
+              $setDetailsJson = $summary['json'];
+              $setsCount = $summary['count'];
+              $sets = $setsCount > 0 ? (int)$setsCount : null;
+              $reps = null;
+              if ($summary['first_reps'] !== null && $summary['first_reps'] !== '') {
+                $repCandidate = $summary['first_reps'];
+                if (is_numeric($repCandidate)) {
+                  $reps = (int)$repCandidate;
+                }
+              }
+              $wgt  = $summary['first_weight'];
+              $dur  = $summary['first_duration'];
               $notes = (trim((string)$notes_in) !== '') ? (string)$notes_in : null;
 
               if ($bindCase === 'WN') {
-                // i i i i d d s i
-                $stmtUPE->bind_param("iiiiddsi", $user_plan_id, $eid, $sets, $reps, $dur, $wgt, $notes, $pos);
+                // i i i i d d s s i
+                $stmtUPE->bind_param("iiiiddssi", $user_plan_id, $eid, $sets, $reps, $dur, $wgt, $notes, $setDetailsJson, $pos);
               } elseif ($bindCase === 'W') {
-                // i i i i d d i
-                $stmtUPE->bind_param("iiiiddi", $user_plan_id, $eid, $sets, $reps, $dur, $wgt, $pos);
+                // i i i i d d s i
+                $stmtUPE->bind_param("iiiiddsi", $user_plan_id, $eid, $sets, $reps, $dur, $wgt, $setDetailsJson, $pos);
               } elseif ($bindCase === 'N') {
-                // i i i i d s i
-                $stmtUPE->bind_param("iiiidsi", $user_plan_id, $eid, $sets, $reps, $dur, $notes, $pos);
+                // i i i i d s s i
+                $stmtUPE->bind_param("iiiidssi", $user_plan_id, $eid, $sets, $reps, $dur, $notes, $setDetailsJson, $pos);
               } else { // 'B'
-                // i i i i d i
-                $stmtUPE->bind_param("iiiidi", $user_plan_id, $eid, $sets, $reps, $dur, $pos);
+                // i i i i d s i
+                $stmtUPE->bind_param("iiiidsi", $user_plan_id, $eid, $sets, $reps, $dur, $setDetailsJson, $pos);
               }
               if (!$stmtUPE->execute()) throw new Exception('Failed to save exercise settings.');
             }
@@ -1194,6 +1331,245 @@ require_once __DIR__ . '/ppf_nav.php';
     }
   });
 
+  const ASSIGN_EMPTY_SUMMARY = '<span class="muted">No sets configured.</span>';
+
+  function ensureArray(value){
+    return Array.isArray(value) ? value : [];
+  }
+
+  function computeWeightDisplay(raw, provided){
+    if (provided) return String(provided);
+    if (raw === null || raw === undefined || raw === '') return null;
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return String(raw);
+    const fixed = Number.isInteger(num)
+      ? String(num)
+      : num.toFixed(2).replace(/\.0+$/, '').replace(/\.$/, '');
+    return `${fixed} lbs`;
+  }
+
+  function computeDurationDisplay(seconds){
+    if (seconds === null || seconds === undefined || seconds === '') return null;
+    const total = Number(seconds);
+    if (!Number.isFinite(total)) return String(seconds);
+    const clamped = Math.max(0, Math.round(total));
+    const mins = Math.floor(clamped / 60);
+    const secs = clamped % 60;
+    const parts = [];
+    if (mins > 0) parts.push(`${mins} min${mins === 1 ? '' : 's'}`);
+    if (secs > 0 || parts.length === 0) parts.push(`${secs} sec${secs === 1 ? '' : 's'}`);
+    return parts.join(' ');
+  }
+
+  function formatDurationForInput(seconds){
+    if (seconds === null || seconds === undefined) return '';
+    const total = Number(seconds);
+    if (!Number.isFinite(total) || total <= 0) return '';
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
+    return secs === 0 ? `${mins}:00` : `${mins}:${secs.toString().padStart(2,'0')}`;
+  }
+
+  function parseDurationInput(value){
+    if (value === null || value === undefined) return null;
+    const s = String(value).trim();
+    if (!s) return null;
+    if (s.includes(':')) {
+      const parts = s.split(':');
+      if (parts.length === 2) {
+        const mins = Number(parts[0]);
+        const secs = Number(parts[1]);
+        if (Number.isFinite(mins) && Number.isFinite(secs)) {
+          return Math.max(0, Math.round(mins * 60 + secs));
+        }
+      }
+      return null;
+    }
+    const num = Number(s);
+    if (!Number.isFinite(num)) return null;
+    return Math.max(0, Math.round(num));
+  }
+
+  function formatSetLine(detail){
+    if (!detail || typeof detail !== 'object') return null;
+    const parts = [];
+    const reps = detail.reps != null && detail.reps !== '' ? String(detail.reps) : '';
+    const weightDisplay = detail.weight_display || (detail.weight_value != null ? computeWeightDisplay(detail.weight_value) : null);
+    const durationDisplay = detail.duration_display || (detail.duration_seconds != null ? computeDurationDisplay(detail.duration_seconds) : null);
+    if (reps) parts.push(`${reps} rep${reps === '1' ? '' : 's'}`);
+    if (weightDisplay) parts.push(weightDisplay);
+    if (durationDisplay) parts.push(durationDisplay);
+    if (!parts.length) return null;
+    const label = detail.set_number != null ? `Set ${detail.set_number}` : 'Set';
+    return `${label}: ${parts.join(' · ')}`;
+  }
+
+  function renderSetSummary(details){
+    const list = ensureArray(details);
+    if (!list.length) return ASSIGN_EMPTY_SUMMARY;
+    const lines = list.map(formatSetLine).filter(Boolean);
+    if (!lines.length) return ASSIGN_EMPTY_SUMMARY;
+    return lines.map(line => `<div>${escapeHtml(line)}</div>`).join('');
+  }
+
+  function initAssignSetEditor(row){
+    if (!row) return;
+    const summaryEl = row.querySelector('[data-set-summary]');
+    const editor = row.querySelector('[data-set-editor]');
+    const addBtn = row.querySelector('[data-add-set]');
+    const toggleBtn = row.querySelector('[data-toggle-set-editor]');
+    const rowsContainer = row.querySelector('[data-set-rows]');
+    const jsonField = row.querySelector('[data-set-field="json"]');
+    const setsField = row.querySelector('[data-set-field="sets"]');
+    const repsField = row.querySelector('[data-set-field="reps"]');
+    const durationField = row.querySelector('[data-set-field="duration"]');
+    const weightField = row.querySelector('[data-set-field="weight"]');
+
+    function updateNumbers(){
+      if (!rowsContainer) return;
+      Array.from(rowsContainer.querySelectorAll('.ap-set-row')).forEach((setRow, idx) => {
+        const label = setRow.querySelector('[data-set-index]');
+        if (label) label.textContent = String(idx + 1);
+      });
+    }
+
+    function collectEntries(){
+      if (!rowsContainer) return [];
+      const rows = Array.from(rowsContainer.querySelectorAll('.ap-set-row'));
+      return rows.map((setRow, idx) => {
+        const repsInput = setRow.querySelector('[data-field="reps"]');
+        const weightInput = setRow.querySelector('[data-field="weight"]');
+        const durationInput = setRow.querySelector('[data-field="duration"]');
+        const reps = repsInput ? repsInput.value.trim() : '';
+        const weight = weightInput ? weightInput.value.trim() : '';
+        const duration = durationInput ? durationInput.value.trim() : '';
+        return { set_number: idx + 1, reps, weight, duration };
+      }).filter(entry => entry.reps !== '' || entry.weight !== '' || entry.duration !== '');
+    }
+
+    function syncState(){
+      const entries = collectEntries();
+      updateNumbers();
+
+      if (jsonField) jsonField.value = entries.length ? JSON.stringify(entries) : '[]';
+      if (setsField) setsField.value = entries.length ? String(entries.length) : '';
+
+      const first = entries[0] || null;
+      if (repsField) repsField.value = first && first.reps ? first.reps : '';
+      if (weightField) weightField.value = first && first.weight ? first.weight : '';
+      if (durationField) durationField.value = first && first.duration ? first.duration : '';
+
+      if (!summaryEl) return;
+      if (!entries.length) {
+        summaryEl.innerHTML = ASSIGN_EMPTY_SUMMARY;
+        return;
+      }
+
+      const detail = entries.map((entry, idx) => {
+        let weightDisplay = null;
+        let weightValue = null;
+        if (entry.weight !== '') {
+          const num = Number(entry.weight);
+          if (Number.isFinite(num)) {
+            weightValue = num;
+            weightDisplay = computeWeightDisplay(num);
+          } else {
+            weightDisplay = entry.weight;
+          }
+        }
+
+        let durationDisplay = null;
+        let durationValue = null;
+        if (entry.duration !== '') {
+          const secs = parseDurationInput(entry.duration);
+          if (secs !== null) {
+            durationValue = secs;
+            durationDisplay = computeDurationDisplay(secs);
+          } else {
+            durationDisplay = entry.duration;
+          }
+        }
+
+        return {
+          set_number: idx + 1,
+          reps: entry.reps !== '' ? entry.reps : null,
+          weight_value: weightValue,
+          weight_display: weightDisplay,
+          duration_seconds: durationValue,
+          duration_display: durationDisplay,
+        };
+      });
+
+      summaryEl.innerHTML = renderSetSummary(detail);
+    }
+
+    function addSet(detail = {}){
+      if (!rowsContainer) return;
+      const rowEl = document.createElement('div');
+      rowEl.className = 'ap-set-row';
+      rowEl.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;flex-wrap:wrap';
+
+      const repsVal = detail.reps != null ? String(detail.reps) : '';
+      let weightVal = '';
+      if (detail.weight != null) weightVal = String(detail.weight);
+      else if (detail.weight_lbs != null) weightVal = String(detail.weight_lbs);
+
+      let durationVal = '';
+      if (detail.duration != null) durationVal = String(detail.duration);
+      else if (detail.duration_seconds != null) durationVal = formatDurationForInput(detail.duration_seconds);
+
+      rowEl.innerHTML = `
+        <span class="fine" style="min-width:48px;margin-top:6px">Set <span data-set-index></span></span>
+        <input class="input ap-set-input" data-field="reps" type="text" placeholder="Reps" value="${escapeHtml(repsVal)}" style="width:90px">
+        <input class="input ap-set-input" data-field="weight" type="number" step="0.1" min="0" placeholder="Weight (lbs)" value="${escapeHtml(weightVal)}" style="width:130px">
+        <input class="input ap-set-input" data-field="duration" type="text" placeholder="Duration (e.g., 1:30)" value="${escapeHtml(durationVal)}" style="width:140px">
+        <button class="btn small" type="button" data-remove-set style="margin-top:4px">Remove</button>
+      `;
+
+      const removeBtn = rowEl.querySelector('[data-remove-set]');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+          rowEl.remove();
+          syncState();
+        });
+      }
+
+      rowEl.querySelectorAll('.ap-set-input').forEach(input => {
+        input.addEventListener('input', syncState);
+      });
+
+      rowsContainer.appendChild(rowEl);
+      syncState();
+    }
+
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        addSet({});
+      });
+    }
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        if (!editor) return;
+        const isOpen = editor.style.display === 'block';
+        if (isOpen) {
+          editor.style.display = 'none';
+          toggleBtn.textContent = 'Edit Sets';
+        } else {
+          editor.style.display = 'block';
+          toggleBtn.textContent = 'Hide Editor';
+          if (!rowsContainer || !rowsContainer.querySelector('.ap-set-row')) {
+            addSet({});
+          } else {
+            syncState();
+          }
+        }
+      });
+    }
+
+    syncState();
+  }
+
   function buildUserEditor(uid, planId){
     const container = document.querySelector(`.user-item[data-uid="${uid}"] .ap-user-editor`);
     if (!container) return;
@@ -1208,10 +1584,7 @@ require_once __DIR__ . '/ppf_nav.php';
           <tr>
             <th style="width:110px">Exercise ID</th>
             <th>Exercise</th>
-            <th style="width:90px">Sets</th>
-            <th style="width:90px">Reps</th>
-            <th style="width:160px">Duration</th>
-            <th style="width:110px">Weight</th>
+            <th style="width:320px">Set Details</th>
             <th style="width:220px">Notes</th>
           </tr>
         </thead>
@@ -1220,19 +1593,32 @@ require_once __DIR__ . '/ppf_nav.php';
     exIds.forEach(eid=>{
       const name = (window.__EXERCISE_MAP && window.__EXERCISE_MAP[eid]) ? window.__EXERCISE_MAP[eid] : ('Exercise #'+eid);
       html += `
-        <tr>
+        <tr class="ap-ex-row" data-user-id="${uid}" data-ex-id="${eid}">
           <td>${eid}</td>
           <td>${escapeHtml(name)}</td>
-          <td><input class="input" type="number" min="0" name="sets[${uid}][${eid}]" placeholder=""></td>
-          <td><input class="input" type="number" min="0" name="reps[${uid}][${eid}]" placeholder=""></td>
-          <td><input class="input" type="text"   name="duration[${uid}][${eid}]" placeholder="mm:ss or sec"></td>
-          <td><input class="input" type="text"   name="weight[${uid}][${eid}]" placeholder="e.g., 95 or 2.5"></td>
+          <td>
+            <div class="ap-set-summary" data-set-summary><span class="muted">No sets configured.</span></div>
+            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn small" type="button" data-toggle-set-editor>Edit Sets</button>
+            </div>
+            <div class="ap-set-editor" data-set-editor style="display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#0f1218">
+              <div data-set-rows></div>
+              <button class="btn small" type="button" data-add-set style="margin-top:6px">Add Set</button>
+            </div>
+            <input type="hidden" name="set_details_json[${uid}][${eid}]" data-set-field="json" value="">
+            <input type="hidden" name="sets[${uid}][${eid}]" data-set-field="sets" value="">
+            <input type="hidden" name="reps[${uid}][${eid}]" data-set-field="reps" value="">
+            <input type="hidden" name="duration[${uid}][${eid}]" data-set-field="duration" value="">
+            <input type="hidden" name="weight[${uid}][${eid}]" data-set-field="weight" value="">
+          </td>
           <td><textarea class="input" name="user_notes[${uid}][${eid}]" rows="2" placeholder="Any user-specific instructions..."></textarea></td>
         </tr>
       `;
     });
     html += `</tbody></table>`;
     container.innerHTML = html;
+
+    container.querySelectorAll('.ap-ex-row').forEach(row => initAssignSetEditor(row));
   }
 
   // Click on exercise row -> open exercises.php with focus

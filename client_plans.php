@@ -97,6 +97,7 @@ if ($plans) {
       upe.position,
       {$selectWeight},
       {$selectNotes},
+      upe.set_details_json AS set_details_json,
       e.name AS exercise_name,
       e.notes AS coach_notes,
       {$selectVideo},
@@ -113,6 +114,51 @@ if ($plans) {
   $stmt->execute();
   $rs = $stmt->get_result();
   while ($row = $rs->fetch_assoc()) {
+    $setRows = cp_get_set_details(
+      $row['set_details_json'] ?? null,
+      $row['sets'] ?? null,
+      $row['reps'] ?? null,
+      $row['weight_val'] ?? null,
+      $row['duration_seconds'] ?? null
+    );
+    $enrichedSets = cp_enrich_set_details($setRows);
+    $setsCount = count($enrichedSets);
+    $isUniform = cp_sets_are_uniform($enrichedSets);
+    $setLines = cp_build_set_lines($enrichedSets, $isUniform);
+    $setSummary = cp_set_lines_summary($setLines);
+    $setVariation = ($setsCount > 1) && !$isUniform;
+    $repsSummary = cp_column_summary($setLines, 'reps');
+    $weightSummary = cp_column_summary($setLines, 'weight');
+    $durationSummary = cp_column_summary($setLines, 'duration');
+    $totalReps = cp_sum_set_reps($enrichedSets);
+
+    $first = $enrichedSets[0] ?? null;
+    $primaryReps = $first['reps'] ?? ((isset($row['reps']) && $row['reps'] !== '') ? (string)$row['reps'] : null);
+    $primaryWeightValue = $first['weight_value'] ?? ((isset($row['weight_val']) && $row['weight_val'] !== '' && is_numeric($row['weight_val'])) ? (float)$row['weight_val'] : null);
+    $primaryWeightDisplay = $first['weight_display'] ?? ($primaryWeightValue !== null ? cp_format_weight_lbs($primaryWeightValue) : null);
+    $primaryDurationSeconds = $first['duration_seconds'] ?? ((isset($row['duration_seconds']) && $row['duration_seconds'] !== '' && is_numeric($row['duration_seconds'])) ? (int)$row['duration_seconds'] : null);
+    $primaryDurationDisplay = $first['duration_display'] ?? ($primaryDurationSeconds !== null ? fmt_dur($primaryDurationSeconds) : null);
+
+    $row['set_details'] = $enrichedSets;
+    $row['sets_count'] = $setsCount;
+    $row['set_variation'] = $setVariation;
+    $row['set_lines'] = $setLines;
+    $row['set_lines_summary'] = $setSummary;
+    $row['reps_summary'] = $repsSummary;
+    $row['weight_summary'] = $weightSummary;
+    $row['duration_summary'] = $durationSummary;
+    $row['total_reps'] = $totalReps;
+    $row['primary_reps'] = $primaryReps;
+    $row['primary_weight_value'] = $primaryWeightValue;
+    $row['primary_weight_display'] = $primaryWeightDisplay;
+    $row['primary_duration_seconds'] = $primaryDurationSeconds;
+    $row['primary_duration_display'] = $primaryDurationDisplay;
+    $row['has_reps_value'] = cp_set_lines_have($setLines, 'reps') || ($primaryReps !== null && $primaryReps !== '');
+    $row['has_weight_value'] = cp_set_lines_have($setLines, 'weight') || ($primaryWeightDisplay !== null && $primaryWeightDisplay !== '');
+    $row['has_duration_value'] = cp_set_lines_have($setLines, 'duration') || ($primaryDurationDisplay !== null && $primaryDurationDisplay !== '');
+    $row['show_set_breakdown'] = cp_should_render_set_breakdown($setLines, $setsCount, $setVariation);
+    $row['sets_badge_title'] = cp_sets_badge_title($setSummary, $setsCount, $setVariation);
+
     $plan_items[(int)$row['user_plan_id']][] = $row;
   }
   $stmt->close();
@@ -139,6 +185,236 @@ function total_duration_str(array $rows): string {
   $h = intdiv($sum, 3600);
   $m = intdiv($sum % 3600, 60);
   return $h > 0 ? sprintf('%dh %dm', $h, $m) : sprintf('%dm', $m);
+}
+
+function cp_trim_number(float $value, int $precision = 2): string {
+  $formatted = number_format($value, $precision, '.', '');
+  $formatted = rtrim(rtrim($formatted, '0'), '.');
+  return $formatted === '' ? '0' : $formatted;
+}
+
+function cp_format_weight_lbs($value): ?string {
+  if ($value === null || $value === '') return null;
+  if (!is_numeric($value)) return null;
+  return cp_trim_number((float)$value) . ' lbs';
+}
+
+function cp_decode_set_details(?string $json): array {
+  if ($json === null || trim($json) === '') return [];
+  $decoded = json_decode($json, true);
+  if (!is_array($decoded)) return [];
+  $out = [];
+  foreach ($decoded as $entry) {
+    if (!is_array($entry)) continue;
+    $reps = isset($entry['reps']) ? trim((string)$entry['reps']) : '';
+    $weight = $entry['weight_lbs'] ?? ($entry['weight'] ?? null);
+    $duration = $entry['duration_seconds'] ?? ($entry['duration'] ?? null);
+    $out[] = [
+      'set_number' => count($out) + 1,
+      'reps' => $reps !== '' ? $reps : null,
+      'weight_lbs' => is_numeric($weight) ? (float)$weight : null,
+      'duration_seconds' => is_numeric($duration) ? (int)$duration : null,
+    ];
+  }
+  return $out;
+}
+
+function cp_build_legacy_set_details($sets, $reps, $weight, $duration): array {
+  $count = null;
+  if ($sets !== null && $sets !== '') {
+    $count = (int)$sets;
+  }
+  if ($count === null || $count <= 0) {
+    if (($reps !== null && $reps !== '') || $weight !== null || $duration !== null) {
+      $count = 1;
+    } else {
+      $count = 0;
+    }
+  }
+
+  $repsVal = ($reps !== null && $reps !== '') ? (string)$reps : null;
+  $weightVal = null;
+  if ($weight !== null && $weight !== '') {
+    $weightVal = is_numeric($weight) ? (float)$weight : null;
+  }
+  $durationVal = null;
+  if ($duration !== null && $duration !== '') {
+    $durationVal = is_numeric($duration) ? (int)$duration : null;
+  }
+
+  $rows = [];
+  for ($i = 0; $i < $count; $i++) {
+    $rows[] = [
+      'set_number' => $i + 1,
+      'reps' => $repsVal,
+      'weight_lbs' => $weightVal,
+      'duration_seconds' => $durationVal,
+    ];
+  }
+  return $rows;
+}
+
+function cp_get_set_details($json, $sets, $reps, $weight, $duration): array {
+  $decoded = cp_decode_set_details($json);
+  if ($decoded) return $decoded;
+  return cp_build_legacy_set_details($sets, $reps, $weight, $duration);
+}
+
+function cp_enrich_set_details(array $rows): array {
+  $out = [];
+  foreach ($rows as $idx => $row) {
+    $setNumber = isset($row['set_number']) ? (int)$row['set_number'] : ($idx + 1);
+    $reps = isset($row['reps']) && $row['reps'] !== '' ? (string)$row['reps'] : null;
+
+    $weightVal = null;
+    if (isset($row['weight_lbs']) && $row['weight_lbs'] !== null && $row['weight_lbs'] !== '') {
+      $weightVal = is_numeric($row['weight_lbs']) ? (float)$row['weight_lbs'] : null;
+    } elseif (isset($row['weight']) && $row['weight'] !== null && $row['weight'] !== '') {
+      $weightVal = is_numeric($row['weight']) ? (float)$row['weight'] : null;
+    }
+
+    $durationVal = null;
+    if (isset($row['duration_seconds']) && $row['duration_seconds'] !== null && $row['duration_seconds'] !== '') {
+      $durationVal = is_numeric($row['duration_seconds']) ? (int)$row['duration_seconds'] : null;
+    } elseif (isset($row['duration']) && $row['duration'] !== null && $row['duration'] !== '') {
+      $durationVal = is_numeric($row['duration']) ? (int)$row['duration'] : null;
+    }
+
+    $out[] = [
+      'set_number' => $setNumber,
+      'reps' => $reps,
+      'weight_value' => $weightVal,
+      'weight_display' => $weightVal !== null ? cp_format_weight_lbs($weightVal) : null,
+      'duration_seconds' => $durationVal,
+      'duration_display' => $durationVal !== null ? fmt_dur($durationVal) : null,
+    ];
+  }
+  return $out;
+}
+
+function cp_sets_are_uniform(array $rows): bool {
+  if (!$rows) return true;
+  $first = $rows[0];
+  foreach ($rows as $row) {
+    if (($row['reps'] ?? null) !== ($first['reps'] ?? null)) return false;
+    if (($row['weight_value'] ?? null) !== ($first['weight_value'] ?? null)) return false;
+    if (($row['duration_seconds'] ?? null) !== ($first['duration_seconds'] ?? null)) return false;
+  }
+  return true;
+}
+
+function cp_build_set_lines(array $rows, bool $uniform): array {
+  $lines = [];
+  $count = count($rows);
+  if ($count === 0) return $lines;
+
+  if ($uniform) {
+    $first = $rows[0];
+    $label = $count > 1 ? 'All Sets' : 'Set 1';
+    $display = (string)($count > 0 ? $count : 1);
+    $lines[] = [
+      'label' => $label,
+      'display' => $display,
+      'reps' => $first['reps'] ?? null,
+      'weight' => $first['weight_display'] ?? null,
+      'duration' => $first['duration_display'] ?? null,
+    ];
+    return $lines;
+  }
+
+  foreach ($rows as $idx => $row) {
+    $rawSetNumber = $row['set_number'] ?? null;
+    if ($rawSetNumber !== null && $rawSetNumber !== '' && is_numeric($rawSetNumber)) {
+      $setNumber = (int)$rawSetNumber;
+    } else {
+      $setNumber = $idx + 1;
+    }
+    $label = 'Set ' . $setNumber;
+    $lines[] = [
+      'label' => $label,
+      'display' => (string)$setNumber,
+      'reps' => $row['reps'] ?? null,
+      'weight' => $row['weight_display'] ?? null,
+      'duration' => $row['duration_display'] ?? null,
+    ];
+  }
+  return $lines;
+}
+
+function cp_set_lines_summary(array $lines): string {
+  $parts = [];
+  foreach ($lines as $line) {
+    $segments = [];
+    if ($line['reps'] !== null && $line['reps'] !== '') $segments[] = $line['reps'] . ' reps';
+    if ($line['weight'] !== null && $line['weight'] !== '') $segments[] = $line['weight'];
+    if ($line['duration'] !== null && $line['duration'] !== '') $segments[] = $line['duration'];
+    $label = $line['label'] ?? '';
+    $parts[] = trim(($label !== '' ? $label . ': ' : '') . ($segments ? implode(', ', $segments) : '—'));
+  }
+  return implode('; ', array_filter($parts));
+}
+
+function cp_column_summary(array $lines, string $key): string {
+  $parts = [];
+  foreach ($lines as $line) {
+    $label = $line['label'] ?? '';
+    $value = $line[$key] ?? null;
+    if ($value === null || $value === '') {
+      $value = '—';
+    }
+    $parts[] = trim(($label !== '' ? $label . ': ' : '') . $value);
+  }
+  return implode('; ', array_filter($parts));
+}
+
+function cp_sum_set_reps(array $rows): ?int {
+  $sum = 0;
+  $has = false;
+  foreach ($rows as $row) {
+    $reps = $row['reps'] ?? null;
+    if ($reps !== null && $reps !== '' && is_numeric($reps)) {
+      $sum += (int)$reps;
+      $has = true;
+    }
+  }
+  return $has ? $sum : null;
+}
+
+function cp_set_lines_have(array $lines, string $key): bool {
+  foreach ($lines as $line) {
+    if (isset($line[$key]) && $line[$key] !== null && $line[$key] !== '') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function cp_should_render_set_breakdown(array $lines, int $setsCount, bool $variation): bool {
+  if (empty($lines)) {
+    return false;
+  }
+  if ($variation) {
+    return true;
+  }
+  return $setsCount > 1;
+}
+
+function cp_pluralize(int $count, string $singular, string $plural): string {
+  return $count === 1 ? $singular : $plural;
+}
+
+function cp_sets_badge_title(string $summary, int $setsCount, bool $variation): string {
+  $trimmedSummary = trim($summary);
+  if ($trimmedSummary !== '') {
+    return $trimmedSummary;
+  }
+  if ($setsCount <= 0) {
+    return '';
+  }
+  if ($variation) {
+    return 'Different values for each set';
+  }
+  return $setsCount === 1 ? 'Single set' : 'Same values across all sets';
 }
 
 function plan_search_blob(array $parts): string {
@@ -632,6 +908,51 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
       opacity: 0.85;
     }
 
+    .exercise-sets {
+      margin-top: 18px;
+      border: 1px solid rgba(118, 138, 255, 0.25);
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(10, 15, 32, 0.72);
+    }
+
+    .exercise-sets table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .exercise-sets thead {
+      background: rgba(118, 138, 255, 0.18);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .exercise-sets th,
+    .exercise-sets td {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    .exercise-sets tbody tr:nth-child(even) td {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .exercise-sets tbody th {
+      font-weight: 600;
+      color: var(--muted);
+      width: 28%;
+    }
+
+    .exercise-sets__note {
+      padding: 8px 14px 12px;
+      font-size: 13px;
+      color: var(--muted);
+      border-top: 1px solid rgba(118, 138, 255, 0.25);
+      background: rgba(6, 10, 24, 0.85);
+    }
+
     .notes-block {
       background: rgba(12, 18, 40, 0.72);
       border: 1px solid rgba(122, 144, 255, 0.18);
@@ -789,8 +1110,14 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
         $sumSets = 0;
         $sumReps = 0;
         foreach ($items as $it) {
-          $sumSets += (int)($it['sets'] ?? 0);
-          $sumReps += (int)($it['reps'] ?? 0);
+          $sumSets += (int)($it['sets_count'] ?? ($it['sets'] ?? 0));
+          if (isset($it['total_reps']) && $it['total_reps'] !== null) {
+            $sumReps += (int)$it['total_reps'];
+          } elseif (isset($it['primary_reps']) && $it['primary_reps'] !== null && $it['primary_reps'] !== '' && is_numeric($it['primary_reps'])) {
+            $sumReps += (int)$it['primary_reps'];
+          } elseif (isset($it['reps']) && $it['reps'] !== null && $it['reps'] !== '' && is_numeric($it['reps'])) {
+            $sumReps += (int)$it['reps'];
+          }
         }
         $durStr = total_duration_str($items);
         $assignedStr = $plan['assigned_at'] ? date('M j, Y g:ia', strtotime($plan['assigned_at'])) : '—';
@@ -816,10 +1143,8 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
             <div class="plan-card__empty">This plan doesn’t have any exercises yet.</div>
           <?php else: ?>
             <?php $index = 1; foreach ($items as $exercise):
-              $weightOut = ($exercise['weight_val'] !== null && $exercise['weight_val'] !== '') ? (string)$exercise['weight_val'] : '';
               $coachNotes = trim((string)($exercise['user_notes'] ?? ''));
               $exerciseDescription = trim((string)($exercise['coach_notes'] ?? ''));
-              $durationStr = fmt_dur($exercise['duration_seconds'] ?? null);
               $videoUrl = trim((string)($exercise['video_url'] ?? ''));
               $posterUrl = trim((string)($exercise['video_poster_url'] ?? ''));
               $videoBadge = '';
@@ -831,21 +1156,57 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
                   $videoBadge = 'Video';
                 }
               }
+              $setsCount = (int)($exercise['sets_count'] ?? 0);
+              $setLines = $exercise['set_lines'] ?? [];
+              $setSummaryText = $exercise['set_lines_summary'] ?? '';
+              $repsSummary = $exercise['reps_summary'] ?? '';
+              $weightSummary = $exercise['weight_summary'] ?? '';
+              $durationSummary = $exercise['duration_summary'] ?? '';
+              $setVariation = !empty($exercise['set_variation']);
+              $showSetTable = !empty($exercise['show_set_breakdown']);
+              $primaryReps = $exercise['primary_reps'] ?? null;
+              $weightDisplay = $exercise['primary_weight_display'] ?? null;
+              if ($weightDisplay === null && $exercise['weight_val'] !== null && $exercise['weight_val'] !== '' && is_numeric($exercise['weight_val'])) {
+                $weightDisplay = cp_format_weight_lbs((float)$exercise['weight_val']);
+              }
+              $durationDisplay = $exercise['primary_duration_display'] ?? null;
+              if ($durationDisplay === null || $durationDisplay === '') {
+                $durationDisplay = fmt_dur($exercise['primary_duration_seconds'] ?? $exercise['duration_seconds'] ?? null);
+              }
+              if ($durationDisplay === null) {
+                $durationDisplay = '';
+              }
+              $hasReps = !empty($exercise['has_reps_value']) || ($primaryReps !== null && $primaryReps !== '');
+              $hasWeight = !empty($exercise['has_weight_value']) || ($weightDisplay !== null && $weightDisplay !== '');
+              $hasDuration = !empty($exercise['has_duration_value']) || ($durationDisplay !== '');
+              $setsBadgeTitle = trim((string)($exercise['sets_badge_title'] ?? ''));
               $searchBlob = plan_search_blob([
                 $exercise['exercise_name'] ?? '',
                 $coachNotes,
                 $exerciseDescription,
-                $weightOut,
-                $durationStr
+                $setSummaryText,
+                $repsSummary,
+                $weightSummary,
+                $durationSummary
               ]);
+              $repsAttr = $setVariation
+                ? ($repsSummary !== '' ? 'Varies — ' . $repsSummary : 'Varies')
+                : ($primaryReps !== null ? (string)$primaryReps : '');
+              $weightAttr = $setVariation
+                ? ($weightSummary !== '' ? 'Varies — ' . $weightSummary : 'Varies')
+                : ($weightDisplay ?? '');
+              $durationAttr = $setVariation
+                ? ($durationSummary !== '' ? 'Varies — ' . $durationSummary : 'Varies')
+                : $durationDisplay;
             ?>
             <article class="exercise-card" data-search="<?php echo h($searchBlob); ?>"
                      data-order="<?php echo $index; ?>"
                      data-name="<?php echo h($exercise['exercise_name']); ?>"
-                     data-sets="<?php echo h($exercise['sets'] !== null ? (int)$exercise['sets'] : ''); ?>"
-                     data-reps="<?php echo h($exercise['reps'] !== null ? (int)$exercise['reps'] : ''); ?>"
-                     data-weight="<?php echo h($weightOut); ?>"
-                     data-duration="<?php echo h($durationStr); ?>"
+                     data-sets="<?php echo h($setsCount > 0 ? $setsCount : ''); ?>"
+                     data-set-summary="<?php echo h($setSummaryText); ?>"
+                     data-reps="<?php echo h($repsAttr); ?>"
+                     data-weight="<?php echo h($weightAttr); ?>"
+                     data-duration="<?php echo h($durationAttr); ?>"
                      data-coach-notes="<?php echo h($coachNotes); ?>"
             >
               <div class="exercise-media">
@@ -873,31 +1234,78 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
                   <h3 class="exercise-name"><?php echo h($exercise['exercise_name']); ?></h3>
                 </div>
                 <div class="exercise-meta">
-                  <?php if ($exercise['sets'] !== null && $exercise['sets'] !== ''): ?>
-                    <span class="badge" title="Sets">
+                  <?php if ($setsCount > 0): ?>
+                    <span class="badge" title="<?php echo $setsBadgeTitle !== '' ? h($setsBadgeTitle) : 'Sets'; ?>">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m9 12 2 2 4-4"></path></svg>
-                      <?php echo (int)$exercise['sets']; ?> sets
+                      <?php echo $setsCount; ?> <?php echo h(cp_pluralize($setsCount, 'set', 'sets')); ?>
                     </span>
                   <?php endif; ?>
-                  <?php if ($exercise['reps'] !== null && $exercise['reps'] !== ''): ?>
+                  <?php if ($hasReps): ?>
                     <span class="badge" title="Reps">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4H3"></path><path d="M18 4v6a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V4"></path><path d="M9 14h6"></path><path d="M8 18h8"></path><path d="M10 22h4"></path></svg>
-                      <?php echo (int)$exercise['reps']; ?> reps
+                      <?php echo $setVariation ? 'Varies' : h($primaryReps); ?><?php echo $setVariation ? '' : ' reps'; ?>
                     </span>
                   <?php endif; ?>
-                  <?php if ($weightOut !== ''): ?>
+                  <?php if ($hasWeight): ?>
                     <span class="badge" title="<?php echo h($weightLabel); ?>">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 6.5h11v11h-11z"></path><path d="M10 10h4v4h-4z"></path></svg>
-                      <?php echo h($weightOut); ?>
+                      <?php echo $setVariation ? 'Varies' : h($weightDisplay); ?>
                     </span>
                   <?php endif; ?>
-                  <?php if ($durationStr !== ''): ?>
+                  <?php if ($hasDuration): ?>
                     <span class="badge" title="Duration">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>
-                      <?php echo h($durationStr); ?>
+                      <?php echo $setVariation ? 'Varies' : h($durationDisplay); ?>
                     </span>
                   <?php endif; ?>
                 </div>
+                <?php if ($showSetTable): ?>
+                  <div class="exercise-sets">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th scope="col">Set</th>
+                          <th scope="col">Reps</th>
+                          <th scope="col">Weight</th>
+                          <th scope="col">Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <?php foreach ($setLines as $line): ?>
+                          <tr>
+                            <th scope="row"><?php echo h($line['display'] ?? $line['label']); ?></th>
+                            <td>
+                              <?php if ($line['reps'] !== null && $line['reps'] !== ''): ?>
+                                <?php echo h($line['reps']); ?>
+                              <?php else: ?>
+                                <span class="muted">—</span>
+                              <?php endif; ?>
+                            </td>
+                            <td>
+                              <?php if ($line['weight'] !== null && $line['weight'] !== ''): ?>
+                                <?php echo h($line['weight']); ?>
+                              <?php else: ?>
+                                <span class="muted">—</span>
+                              <?php endif; ?>
+                            </td>
+                            <td>
+                              <?php if ($line['duration'] !== null && $line['duration'] !== ''): ?>
+                                <?php echo h($line['duration']); ?>
+                              <?php else: ?>
+                                <span class="muted">—</span>
+                              <?php endif; ?>
+                            </td>
+                          </tr>
+                        <?php endforeach; ?>
+                      </tbody>
+                    </table>
+                    <?php if ($setVariation && $setsCount > 1): ?>
+                      <div class="exercise-sets__note">Different values are configured for each set.</div>
+                    <?php elseif ($setsCount > 1): ?>
+                      <div class="exercise-sets__note">Same values apply to all <?php echo $setsCount; ?> <?php echo h(cp_pluralize($setsCount, 'set', 'sets')); ?>.</div>
+                    <?php endif; ?>
+                  </div>
+                <?php endif; ?>
                 <div class="notes-block<?php echo $exerciseDescription === '' ? ' empty' : ''; ?>">
                   <h4>Exercise description</h4>
                   <p><?php echo $exerciseDescription !== '' ? nl2br(h($exerciseDescription)) : 'No description provided yet.'; ?></p>
@@ -1013,7 +1421,7 @@ $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
       cards.forEach(card => {
         const order = card.getAttribute('data-order') || '';
         const name = card.getAttribute('data-name') || '';
-        const sets = card.getAttribute('data-sets') || '';
+        const sets = card.getAttribute('data-set-summary') || card.getAttribute('data-sets') || '';
         const reps = card.getAttribute('data-reps') || '';
         const weight = card.getAttribute('data-weight') || '';
         const duration = card.getAttribute('data-duration') || '';
