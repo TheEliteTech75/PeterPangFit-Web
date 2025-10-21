@@ -835,9 +835,11 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     .plan-card__body {
+      --plan-body-pad-inline: clamp(22px, 5vw, 34px);
+      --plan-body-pad-block: clamp(22px, 5vw, 34px);
       display: grid;
       gap: 22px;
-      padding: clamp(22px, 5vw, 34px);
+      padding: var(--plan-body-pad-block) var(--plan-body-pad-inline);
       background: rgba(8, 8, 8, 0.85);
       flex: 1 1 auto;
     }
@@ -1213,7 +1215,14 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         width: 100%;
       }
       .plan-card__body {
-        padding: clamp(18px, 7vw, 28px);
+        --plan-body-pad-inline: clamp(14px, 8vw, 24px);
+        --plan-body-pad-block: clamp(18px, 7vw, 26px);
+        padding: var(--plan-body-pad-block) var(--plan-body-pad-inline);
+      }
+      .plan-card__body .exercise-card {
+        margin-left: calc(var(--plan-body-pad-inline) * -1);
+        margin-right: calc(var(--plan-body-pad-inline) * -1);
+        border-radius: 0;
       }
       .exercise-card {
         padding: clamp(18px, 7vw, 24px);
