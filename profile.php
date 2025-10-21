@@ -21,6 +21,31 @@ function ppf_log_safe(mysqli $conn, ?int $user_id, ?string $email, ?string $role
   }
 }
 
+function ppf_normalize_for_diff($value) {
+  if ($value === '' || $value === null) return null;
+  if (is_string($value)) {
+    $trimmed = trim($value);
+    return $trimmed === '' ? null : $trimmed;
+  }
+  if (is_numeric($value)) {
+    return $value + 0;
+  }
+  return $value;
+}
+
+function ppf_changed_fields(array $before, array $after): array {
+  $out = [];
+  $keys = array_unique(array_merge(array_keys($before), array_keys($after)));
+  foreach ($keys as $key) {
+    $b = ppf_normalize_for_diff($before[$key] ?? null);
+    $a = ppf_normalize_for_diff($after[$key] ?? null);
+    if ($b !== $a) {
+      $out[$key] = ['from' => $b, 'to' => $a];
+    }
+  }
+  return $out;
+}
+
 // ---------- cross-platform permission helper ----------
 /**
  * Ensure reasonable permissions for uploads.
@@ -234,6 +259,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($hi !== null) { if ($hi < 0) $hi = 0; if ($hi > 11) $hi = 11; }
         if ($wl !== null && $wl <= 0) $wl = null;
 
+        $beforeRow = [];
+        if ($stmt = $conn->prepare("SELECT email, phone, birthdate, gender, first_name, middle_name, last_name, height_ft, height_in, weight_lbs FROM users WHERE id = ?")) {
+          $stmt->bind_param("i", $uid);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $beforeRow = $row;
+            }
+          }
+          $stmt->close();
+        }
+
         $q = "UPDATE users SET email=?, phone=?, birthdate=?, gender=?, first_name=?, middle_name=?, last_name=?, height_ft=?, height_in=?, weight_lbs=? WHERE id=?";
         if (!$stmt = $conn->prepare($q)) throw new Exception('Failed to prepare update.');
         $stmt->bind_param("sssssssiddi", $email, $phone, $birthdate, $gender, $first_name, $middle_name, $last_name, $hf, $hi, $wl, $uid);
@@ -241,7 +278,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->close();
 
         $flash = 'Profile updated.'; $flash_type = 'ok';
-        ppf_log_safe($conn, $uid, $email, $userRole, 'profile_updated', 'fields_only=1');
+        $afterRow = [
+          'email' => $email,
+          'phone' => $phone,
+          'birthdate' => $birthdate,
+          'gender' => $gender,
+          'first_name' => $first_name,
+          'middle_name' => $middle_name,
+          'last_name' => $last_name,
+          'height_ft' => $hf,
+          'height_in' => $hi,
+          'weight_lbs' => $wl,
+        ];
+        $changes = ppf_changed_fields($beforeRow, $afterRow);
+        $details = json_encode([
+          'self_service' => true,
+          'changed' => $changes,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        ppf_log_safe($conn, $uid, $email, $userRole, 'profile_updated', $details ?: '');
 
         // Refresh $me
         $q = "SELECT first_name, middle_name, last_name, email, phone, birthdate, gender, height_ft, height_in, weight_lbs"

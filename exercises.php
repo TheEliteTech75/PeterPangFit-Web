@@ -13,6 +13,34 @@ require_once __DIR__ . '/logs.php';
 // Safe esc
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
+function ppf_normalize_for_diff($value) {
+  if ($value === '' || $value === null) return null;
+  if (is_string($value)) {
+    $trimmed = trim($value);
+    return $trimmed === '' ? null : $trimmed;
+  }
+  if (is_numeric($value)) {
+    return $value + 0;
+  }
+  if (is_array($value)) {
+    return array_values($value);
+  }
+  return $value;
+}
+
+function ppf_changed_fields(array $before, array $after): array {
+  $out = [];
+  $keys = array_unique(array_merge(array_keys($before), array_keys($after)));
+  foreach ($keys as $key) {
+    $b = ppf_normalize_for_diff($before[$key] ?? null);
+    $a = ppf_normalize_for_diff($after[$key] ?? null);
+    if ($b !== $a) {
+      $out[$key] = ['from' => $b, 'to' => $a];
+    }
+  }
+  return $out;
+}
+
 // Normalize role to avoid case/whitespace issues from DB/session
 function is_trainer_admin($role){
   $r = strtolower(trim((string)($role ?? '')));
@@ -263,11 +291,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Sync many-to-many categories
         sync_exercise_categories($conn, (int)$newExId, $selectedCatIds);
 
-        ppf_log($conn, null, null, null, 'exercise_created', 'exercise', (string)$newExId, json_encode([
+        $details = json_encode([
           'name' => $name,
           'notes' => $notes,
           'category_ids' => array_values(array_unique(array_map('intval', $selectedCatIds))),
-        ]));
+          'created_by' => $USER_ID ?? null,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (function_exists('ppf_log')) {
+          @ppf_log($conn, null, null, null, 'exercise_created', 'exercise', (string)$newExId, $details ?: '');
+        }
 
         header('Location: exercises.php?created=1#ex-'.$newExId); exit;
       }
@@ -279,6 +311,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $notes = trim($_POST['ex_notes'] ?? '');
         if ($id <= 0) throw new Exception('Invalid exercise.');
         if ($name === '') throw new Exception('Exercise name is required.');
+
+        $before = ['name' => null, 'notes' => null];
+        if ($stmt = $conn->prepare("SELECT name, notes FROM exercises WHERE id = ?")) {
+          $stmt->bind_param("i", $id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $before['name'] = $row['name'] ?? null;
+              $before['notes'] = $row['notes'] ?? null;
+            }
+          }
+          $stmt->close();
+        }
+        $beforeCats = [];
+        if ($stmt = $conn->prepare("SELECT category_id FROM exercise_categories WHERE exercise_id = ?")) {
+          $stmt->bind_param("i", $id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            while ($row = $res->fetch_assoc()) {
+              $beforeCats[] = (int)$row['category_id'];
+            }
+          }
+          $stmt->close();
+        }
 
         $by = (int)($USER_ID ?? 0);
         if ($HAS_UPDATED_AT || $HAS_UPDATED_BY) {
@@ -305,11 +361,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Sync categories
         sync_exercise_categories($conn, $id, $selectedCatIds);
 
-        ppf_log($conn, null, null, null, 'exercise_edited', 'exercise', (string)$id, json_encode([
+        $after = [
           'name' => $name,
           'notes' => $notes,
           'category_ids' => array_values(array_unique(array_map('intval', $selectedCatIds))),
-        ]));
+        ];
+        $changes = ppf_changed_fields(
+          [
+            'name' => $before['name'],
+            'notes' => $before['notes'],
+            'category_ids' => array_values(array_unique($beforeCats)),
+          ],
+          $after
+        );
+        $details = json_encode([
+          'changes' => $changes,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (function_exists('ppf_log')) {
+          @ppf_log($conn, null, null, null, 'exercise_edited', 'exercise', (string)$id, $details ?: '');
+        }
 
         header('Location: exercises.php?updated=1#ex-'.$id); exit;
       }
@@ -318,6 +388,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($action === 'delete_exercise_modal') {
         $id = (int)$_POST['exercise_id'];
         if ($id <= 0) throw new Exception('Invalid exercise.');
+        $exercise_info = ['name' => null, 'notes' => null, 'category_ids' => [], 'plan_usage' => 0];
+        if ($stmt = $conn->prepare("SELECT name, notes FROM exercises WHERE id = ?")) {
+          $stmt->bind_param("i", $id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $exercise_info['name'] = $row['name'] ?? null;
+              $exercise_info['notes'] = $row['notes'] ?? null;
+            }
+          }
+          $stmt->close();
+        }
+        if ($stmt = $conn->prepare("SELECT category_id FROM exercise_categories WHERE exercise_id = ?")) {
+          $stmt->bind_param("i", $id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            while ($row = $res->fetch_assoc()) {
+              $exercise_info['category_ids'][] = (int)$row['category_id'];
+            }
+          }
+          $stmt->close();
+        }
+        if ($stmt = $conn->prepare("SELECT COUNT(*) AS c FROM plan_exercises WHERE exercise_id = ?")) {
+          $stmt->bind_param("i", $id);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $exercise_info['plan_usage'] = (int)($row['c'] ?? 0);
+            }
+          }
+          $stmt->close();
+        }
         $conn->begin_transaction();
         // Remove from any plans first
         $stmt = $conn->prepare("DELETE FROM plan_exercises WHERE exercise_id = ?");
@@ -347,7 +449,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->close();
 
         $conn->commit();
-        ppf_log($conn, null, null, null, 'exercise_deleted', 'exercise', (string)$id, null);
+        $details = json_encode([
+          'name' => $exercise_info['name'],
+          'notes' => $exercise_info['notes'],
+          'category_ids' => array_values(array_unique($exercise_info['category_ids'])),
+          'plan_usage' => $exercise_info['plan_usage'],
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (function_exists('ppf_log')) {
+          @ppf_log($conn, null, null, null, 'exercise_deleted', 'exercise', (string)$id, $details ?: '');
+        }
         header('Location: exercises.php?deleted=1'); exit;
       }
 
