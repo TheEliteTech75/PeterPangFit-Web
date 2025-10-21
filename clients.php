@@ -2637,6 +2637,7 @@ function renderClientExpansion(uid, body){
           const weightHtml = display.weightHtml;
           const durationHtml = display.durationHtml;
           const setsAttr = display.setsRaw != null ? ` data-raw="${escapeHtml(String(display.setsRaw))}"` : '';
+          const repsAttr = display.repsValue != null ? ` data-raw="${escapeHtml(String(display.repsValue))}"` : '';
           const weightAttr = display.weightRaw != null ? ` data-raw="${escapeHtml(String(display.weightRaw))}"` : '';
           const durAttr = display.durationRaw != null ? ` data-raw="${escapeHtml(String(display.durationRaw))}"` : '';
 
@@ -2666,7 +2667,7 @@ function renderClientExpansion(uid, body){
               <td style="padding:8px 10px" data-cell="categories">${catDisplay}</td>
               <td style="padding:8px 10px">${videoCell}</td>
               <td style="padding:8px 10px" data-cell="sets"${setsAttr}>${setsSummary}</td>
-              <td style="padding:8px 10px" data-cell="reps">${repsHtml}</td>
+              <td style="padding:8px 10px" data-cell="reps"${repsAttr}>${repsHtml}</td>
               <td style="padding:8px 10px" data-cell="weight"${weightAttr}>${weightHtml}</td>
               <td style="padding:8px 10px" data-cell="duration"${durAttr}>${durationHtml}</td>
               <td class="muted" style="padding:8px 10px" data-cell="edited">${editedAt ? escapeHtml(editedAt) : '—'}</td>
@@ -3312,6 +3313,11 @@ function applyUserExerciseData(tr, data){
 
   if (cells.reps) {
     cells.reps.innerHTML = display.repsHtml;
+    if (display.repsValue != null) {
+      cells.reps.dataset.raw = String(display.repsValue);
+    } else {
+      delete cells.reps.dataset.raw;
+    }
   }
 
   if (cells.weight) {
@@ -3390,6 +3396,344 @@ function applyUserExerciseData(tr, data){
   if (typeof window.__refreshClientSearchCache === 'function') {
     window.__refreshClientSearchCache(uid);
   }
+}
+
+function getExerciseRowContext(tr){
+  if (!tr) return null;
+  const uid = parseInt(tr.dataset.userId, 10);
+  const planId = parseInt(tr.dataset.planId, 10);
+  const exId = parseInt(tr.dataset.exId, 10);
+  if (!uid || !planId || !exId) return null;
+  return { uid, planId, exId };
+}
+
+function getStoredExerciseData(context){
+  if (!context) return {};
+  const cache = window.__USER_EX || {};
+  const userBucket = cache[context.uid];
+  if (!userBucket) return {};
+  const planBucket = userBucket[context.planId];
+  if (!planBucket) return {};
+  return planBucket[context.exId] || {};
+}
+
+function detailWeightValue(detail){
+  if (!detail || typeof detail !== 'object') return '';
+  if (detail.weight_value !== undefined && detail.weight_value !== null && detail.weight_value !== '') {
+    return detail.weight_value;
+  }
+  if (detail.weight_lbs !== undefined && detail.weight_lbs !== null && detail.weight_lbs !== '') {
+    return detail.weight_lbs;
+  }
+  if (detail.weight !== undefined && detail.weight !== null && detail.weight !== '') {
+    return detail.weight;
+  }
+  return '';
+}
+
+function detailDurationValue(detail){
+  if (!detail || typeof detail !== 'object') return '';
+  if (detail.duration_seconds !== undefined && detail.duration_seconds !== null && detail.duration_seconds !== '') {
+    return detail.duration_seconds;
+  }
+  if (detail.duration !== undefined && detail.duration !== null && detail.duration !== '') {
+    return detail.duration;
+  }
+  return '';
+}
+
+function stringOrEmpty(value){
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function extractExerciseAggregates(stored){
+  const details = ensureArray(stored && stored.set_details);
+  let count = details.length;
+  const setsCount = toNumberOrNull(stored && stored.sets_count);
+  if (!count && setsCount !== null) count = setsCount;
+  const legacySets = toNumberOrNull(stored && stored.sets);
+  if (!count && legacySets !== null) count = legacySets;
+  if (!Number.isFinite(count) || count < 0) count = 0;
+
+  const first = details[0] || {};
+  const reps = (stored && stored.reps != null && stored.reps !== '')
+    ? String(stored.reps)
+    : (first.reps != null && first.reps !== '' ? String(first.reps) : '');
+  const weightVal = (stored && stored.weight_value != null && stored.weight_value !== '')
+    ? String(stored.weight_value)
+    : stringOrEmpty(detailWeightValue(first));
+  const durationVal = (stored && stored.duration_seconds != null && stored.duration_seconds !== '')
+    ? String(stored.duration_seconds)
+    : stringOrEmpty(detailDurationValue(first));
+
+  return {
+    details,
+    count,
+    reps,
+    weight: weightVal,
+    duration: durationVal
+  };
+}
+
+function isSetDetailsUniform(details){
+  const list = ensureArray(details);
+  if (list.length <= 1) return true;
+  const first = list[0] || {};
+  const firstReps = stringOrEmpty(first.reps);
+  const firstWeight = stringOrEmpty(detailWeightValue(first));
+  const firstDuration = stringOrEmpty(detailDurationValue(first));
+  return list.every(item => (
+    stringOrEmpty(item && item.reps) === firstReps &&
+    stringOrEmpty(detailWeightValue(item)) === firstWeight &&
+    stringOrEmpty(detailDurationValue(item)) === firstDuration
+  ));
+}
+
+function getInitialInlineValue(field, td, stored, aggregates){
+  const rawAttr = td && td.hasAttribute('data-raw') ? td.getAttribute('data-raw') : null;
+  if (field === 'notes') {
+    return stored && stored.notes != null ? String(stored.notes) : '';
+  }
+  if (field === 'sets') {
+    if (rawAttr !== null && rawAttr !== undefined) return rawAttr;
+    return aggregates.count ? String(aggregates.count) : '';
+  }
+  if (field === 'reps') {
+    if (rawAttr !== null && rawAttr !== undefined) return rawAttr;
+    return aggregates.reps || '';
+  }
+  if (field === 'weight') {
+    if (rawAttr !== null && rawAttr !== undefined) return rawAttr;
+    return aggregates.weight || '';
+  }
+  if (field === 'duration') {
+    let base = (rawAttr !== null && rawAttr !== undefined) ? rawAttr : aggregates.duration;
+    if (base === null || base === undefined || base === '') return '';
+    const num = Number(base);
+    if (!Number.isNaN(num) && num > 0) {
+      return formatDurationForInput(num) || String(base);
+    }
+    return String(base);
+  }
+  return '';
+}
+
+function normalizeInlineInput(field, value){
+  if (value === null || value === undefined) return '';
+  const str = String(value).trim();
+  if (field === 'duration') {
+    return str.replace(/\s+/g, '');
+  }
+  return str;
+}
+
+function buildInlineSetPayload(stored, overrides = {}){
+  const aggregates = extractExerciseAggregates(stored || {});
+  let count = overrides.sets !== undefined ? parseInt(overrides.sets, 10) : aggregates.count;
+  if (!Number.isFinite(count) || count < 0) count = 0;
+
+  const preserveExisting = overrides.preserveExisting && aggregates.details.length && (
+    overrides.sets === undefined || parseInt(overrides.sets, 10) === aggregates.details.length
+  );
+
+  if (preserveExisting) {
+    return aggregates.details.map(detail => ({
+      reps: overrides.reps !== undefined ? overrides.reps : stringOrEmpty(detail && detail.reps),
+      weight: overrides.weight !== undefined ? overrides.weight : stringOrEmpty(detailWeightValue(detail)),
+      duration: overrides.duration !== undefined ? overrides.duration : stringOrEmpty(detailDurationValue(detail))
+    }));
+  }
+
+  const repsValue = overrides.reps !== undefined ? overrides.reps : aggregates.reps;
+  const weightValue = overrides.weight !== undefined ? overrides.weight : aggregates.weight;
+  const durationValue = overrides.duration !== undefined ? overrides.duration : aggregates.duration;
+
+  const payload = [];
+  if (count > 0) {
+    for (let i = 0; i < count; i++) {
+      payload.push({
+        reps: stringOrEmpty(repsValue),
+        weight: stringOrEmpty(weightValue),
+        duration: stringOrEmpty(durationValue)
+      });
+    }
+  }
+  return payload;
+}
+
+let activeCellEditor = null;
+
+async function saveInlineField(editor, newValue){
+  const { field, context, stored, aggregates, tr } = editor;
+  if (!context) throw new Error('Missing context');
+
+  const overrides = {};
+  if (field === 'notes') overrides.notes = newValue;
+  if (field === 'sets') overrides.sets = newValue;
+  if (field === 'reps') overrides.reps = newValue;
+  if (field === 'weight') overrides.weight = newValue;
+  if (field === 'duration') overrides.duration = newValue;
+
+  const setsField = overrides.sets !== undefined ? overrides.sets : (aggregates.count ? String(aggregates.count) : '');
+  const repsField = overrides.reps !== undefined ? overrides.reps : aggregates.reps;
+  const weightField = overrides.weight !== undefined ? overrides.weight : aggregates.weight;
+  const durationField = overrides.duration !== undefined ? overrides.duration : aggregates.duration;
+  const notesField = overrides.notes !== undefined
+    ? overrides.notes
+    : (stored && stored.notes != null ? String(stored.notes) : '');
+
+  const payload = buildInlineSetPayload(stored, {
+    ...overrides,
+    preserveExisting: field === 'notes'
+  });
+
+  const fd = new FormData();
+  fd.append('csrf_token', window.__CSRF || '');
+  fd.append('action', 'save_user_exercise');
+  fd.append('user_id', String(context.uid));
+  fd.append('plan_id', String(context.planId));
+  fd.append('exercise_id', String(context.exId));
+  fd.append('sets', setsField != null ? String(setsField).trim() : '');
+  fd.append('reps', repsField != null ? String(repsField).trim() : '');
+  fd.append('weight_lbs', weightField != null ? String(weightField).trim() : '');
+  fd.append('duration_seconds', durationField != null ? String(durationField).trim() : '');
+  fd.append('user_notes', notesField != null ? String(notesField).trim() : '');
+  fd.append('set_payload', JSON.stringify(payload));
+
+  const res = await fetch('clients.php', { method: 'POST', body: fd });
+  const json = await res.json();
+  if (!json || !json.ok) {
+    const msg = (json && json.error) ? json.error : 'Save failed';
+    throw new Error(msg);
+  }
+  applyUserExerciseData(tr, json.data);
+  setActionsToEdit(tr);
+}
+
+function openCellEditor(td){
+  if (!td || td.dataset.editing === '1') return;
+  const field = td.getAttribute('data-cell');
+  if (!field || !['notes','sets','reps','weight','duration'].includes(field)) return;
+  const tr = td.closest('tr.mini-ex-row');
+  const context = getExerciseRowContext(tr);
+  if (!context) return;
+  const stored = getStoredExerciseData(context);
+  const aggregates = extractExerciseAggregates(stored);
+
+  if (field !== 'notes' && !isSetDetailsUniform(stored && stored.set_details)) {
+    eeOpen(tr);
+    return;
+  }
+
+  const initialValue = getInitialInlineValue(field, td, stored, aggregates);
+  const normalizedOriginal = normalizeInlineInput(field, initialValue);
+
+  if (activeCellEditor && activeCellEditor.input) {
+    activeCellEditor.input.blur();
+  }
+
+  const previousHTML = td.innerHTML;
+  td.dataset.editing = '1';
+  td.innerHTML = '';
+
+  let input;
+  if (field === 'notes') {
+    input = document.createElement('textarea');
+    input.className = 'input';
+    input.rows = 3;
+  } else {
+    input = document.createElement('input');
+    input.className = 'input';
+    if (field === 'sets') {
+      input.type = 'number';
+      input.step = '1';
+      input.min = '0';
+    } else if (field === 'reps') {
+      input.type = 'text';
+    } else if (field === 'weight') {
+      input.type = 'number';
+      input.step = '0.1';
+      input.min = '0';
+    } else {
+      input.type = 'text';
+      input.placeholder = 'e.g., 1:30';
+    }
+  }
+  input.style.width = '100%';
+  input.value = initialValue || '';
+  td.appendChild(input);
+  input.focus();
+  input.select();
+
+  const editor = {
+    td,
+    tr,
+    field,
+    input,
+    context,
+    stored,
+    aggregates,
+    previousHTML,
+    normalizedOriginal,
+    closed: false,
+    saving: false
+  };
+  activeCellEditor = editor;
+
+  const revert = () => {
+    if (editor.closed) return;
+    editor.closed = true;
+    input.removeEventListener('blur', onBlur);
+    td.dataset.editing = '';
+    td.innerHTML = editor.previousHTML;
+    if (activeCellEditor === editor) activeCellEditor = null;
+  };
+
+  const commit = async () => {
+    if (editor.closed || editor.saving) return;
+    const normalizedNew = normalizeInlineInput(field, input.value);
+    if (normalizedNew === editor.normalizedOriginal) {
+      revert();
+      return;
+    }
+    editor.saving = true;
+    input.disabled = true;
+    try {
+      await saveInlineField(editor, input.value.trim());
+      editor.closed = true;
+      input.removeEventListener('blur', onBlur);
+      td.dataset.editing = '';
+      if (activeCellEditor === editor) activeCellEditor = null;
+    } catch (err) {
+      window.alert(err.message || 'Failed to save changes.');
+      revert();
+    }
+  };
+
+  const onBlur = () => {
+    setTimeout(commit, 0);
+  };
+
+  input.addEventListener('blur', onBlur);
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      revert();
+      return;
+    }
+    if (ev.key === 'Enter') {
+      if (field === 'notes') {
+        if (ev.ctrlKey || ev.metaKey) {
+          ev.preventDefault();
+          commit();
+        }
+      } else {
+        ev.preventDefault();
+        commit();
+      }
+    }
+  });
 }
 
 
