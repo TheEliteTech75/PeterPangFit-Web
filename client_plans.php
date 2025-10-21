@@ -184,6 +184,7 @@ $heroLine = $latestPlanAssignedStr
 
 $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
 $latestPlanName = $latestPlan['plan_name'] ?? '';
+$latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan_id'] : null;
 
 ?>
 <!DOCTYPE html>
@@ -371,6 +372,28 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
       display: grid;
       gap: 12px;
+    }
+
+    .hero-highlight--action {
+      position: relative;
+      cursor: default;
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    }
+
+    .hero-highlight--ready {
+      cursor: pointer;
+    }
+
+    .hero-highlight--ready:hover,
+    .hero-highlight--ready:focus-visible {
+      outline: none;
+      transform: translateY(-4px) scale(1.02);
+      border-color: var(--card-border-hover);
+      box-shadow: 0 26px 52px rgba(0, 0, 0, 0.62);
+    }
+
+    .hero-highlight--ready:focus-visible {
+      box-shadow: 0 0 0 3px rgba(0, 191, 255, 0.45), 0 26px 52px rgba(0, 0, 0, 0.62);
     }
 
     .hero-highlight__label {
@@ -742,12 +765,15 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
     @media (prefers-reduced-motion: reduce) {
       .plan-card,
-      .plan-card::after {
+      .plan-card::after,
+      .hero-highlight--action {
         transition-duration: 0ms !important;
         transition-property: none !important;
       }
 
-      .plan-card:hover {
+      .plan-card:hover,
+      .hero-highlight--ready:hover,
+      .hero-highlight--ready:focus-visible {
         transform: none;
       }
     }
@@ -842,6 +868,10 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       padding: var(--plan-body-pad-block) var(--plan-body-pad-inline);
       background: rgba(8, 8, 8, 0.85);
       flex: 1 1 auto;
+    }
+
+    .plan-card:not(.plan-card--open) .plan-card__body {
+      display: none;
     }
 
     .exercise-card {
@@ -1349,7 +1379,17 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       <p class="hero__subtitle"><?php echo h($heroLine); ?></p>
     </div>
     <div class="hero__status">
-      <div class="hero-highlight">
+      <div class="hero-highlight hero-highlight--action<?php echo $latestPlanId ? ' hero-highlight--ready' : ''; ?>"
+           <?php if ($latestPlanId): ?>
+             role="button"
+             tabindex="0"
+             data-latest-plan-target="plan-<?php echo $latestPlanId; ?>"
+             aria-label="Open latest plan <?php echo h($latestPlanName !== '' ? $latestPlanName : 'details'); ?>"
+             title="Open latest plan"
+           <?php else: ?>
+             aria-disabled="true"
+           <?php endif; ?>
+      >
         <div class="hero-highlight__label">Latest plan</div>
         <div class="hero-highlight__name"><?php echo $latestPlanName !== '' ? h($latestPlanName) : 'Plan coming soon'; ?></div>
         <div class="hero-highlight__meta">
@@ -1435,7 +1475,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         $durStr = total_duration_str($items);
         $assignedStr = $plan['assigned_at'] ? date('M j, Y g:ia', strtotime($plan['assigned_at'])) : '—';
       ?>
-      <section class="plan-card plan-card--open" id="plan-<?php echo $pid; ?>" data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($plan['plan_name']); ?>" data-plan-assigned="<?php echo h($assignedStr); ?>">
+      <section class="plan-card" id="plan-<?php echo $pid; ?>" data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($plan['plan_name']); ?>" data-plan-assigned="<?php echo h($assignedStr); ?>" data-open="false">
         <div class="plan-card__header">
           <div>
             <h2 class="plan-card__title"><?php echo h($plan['plan_name']); ?></h2>
@@ -1448,7 +1488,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
             </div>
           </div>
           <div class="plan-card__toggle">
-            <button type="button" data-plan-toggle aria-expanded="true" data-target="#plan-body-<?php echo $pid; ?>">Hide workout</button>
+            <button type="button" data-plan-toggle aria-expanded="false" data-target="#plan-body-<?php echo $pid; ?>">Show workout</button>
           </div>
         </div>
         <div class="plan-card__body" id="plan-body-<?php echo $pid; ?>">
@@ -1567,6 +1607,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   const chipTotal = parseInt(chipItems?.dataset?.total || '0', 10);
   const btnExpand = document.getElementById('btnExpandAll');
   const btnCollapse = document.getElementById('btnCollapseAll');
+  const latestPlanTrigger = document.querySelector('[data-latest-plan-target]');
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const navSection = document.querySelector('[data-plan-nav-container]');
   const navOpenTrigger = navSection?.querySelector('[data-plan-nav-open]');
@@ -1896,7 +1937,8 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   }
 
   plans.forEach(section => {
-    section.setAttribute('data-open', 'true');
+    const startOpen = section.classList.contains('plan-card--open');
+    setPlanVisibility(section, startOpen, { skipAnimation: true });
     const toggle = section.querySelector('[data-plan-toggle]');
     if (toggle) {
       toggle.addEventListener('click', event => {
@@ -1986,6 +2028,28 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
     });
   });
+
+  if (latestPlanTrigger && latestPlanTrigger.getAttribute('data-latest-plan-target')) {
+    const handleLatestPlanAction = () => {
+      const targetId = latestPlanTrigger.getAttribute('data-latest-plan-target');
+      if (!targetId) return;
+      const section = document.getElementById(targetId);
+      if (!section) return;
+      focusPlanSection(section);
+    };
+
+    latestPlanTrigger.addEventListener('click', event => {
+      event.preventDefault();
+      handleLatestPlanAction();
+    });
+
+    latestPlanTrigger.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handleLatestPlanAction();
+      }
+    });
+  }
 })();
 </script>
 
