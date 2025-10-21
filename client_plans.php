@@ -253,12 +253,14 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     }
 
     .ppf-topbar {
-      position: fixed;
+      position: fixed !important;
       top: 0;
       left: 0;
       right: 0;
       width: 100%;
       z-index: 4600;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
     }
 
     a {
@@ -583,6 +585,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
 
     .plan-nav__mobile-bar {
       display: none;
+      cursor: pointer;
     }
 
     .plan-nav__mobile-trigger {
@@ -1560,6 +1563,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   const navOpenTrigger = navSection?.querySelector('[data-plan-nav-open]');
   const navCloseBtn = navSection?.querySelector('[data-plan-nav-close]');
   const navPanel = navSection?.querySelector('[data-plan-nav-panel]');
+  const navMobileBar = navSection?.querySelector('[data-plan-nav-bar]');
   const navMobileQuery = window.matchMedia('(max-width: 760px)');
   const rootEl = document.documentElement;
   const topbarEl = document.querySelector('.ppf-topbar');
@@ -1568,7 +1572,18 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   let navScrollLockY = 0;
   let navOffsetRaf = null;
 
+  function enforceTopbarFixed() {
+    if (!topbarEl) return;
+    topbarEl.style.position = 'fixed';
+    topbarEl.style.top = '0';
+    topbarEl.style.left = '0';
+    topbarEl.style.right = '0';
+    topbarEl.style.width = '100%';
+    topbarEl.style.zIndex = '4600';
+  }
+
   function updatePlanNavOffset() {
+    enforceTopbarFixed();
     const measured = topbarEl ? Math.round(topbarEl.getBoundingClientRect().height) : 76;
     rootEl.style.setProperty('--plan-nav-offset', `${Math.max(measured, 1)}px`);
   }
@@ -1583,6 +1598,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     });
   }
 
+  enforceTopbarFixed();
   updatePlanNavOffset();
   window.addEventListener('resize', schedulePlanNavOffsetUpdate);
   window.addEventListener('orientationchange', schedulePlanNavOffsetUpdate);
@@ -1646,6 +1662,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       delete topbarEl.dataset.planNavPrevZ;
       delete topbarEl.dataset.planNavLocked;
     }
+    enforceTopbarFixed();
   }
 
   function holdNavScrollBuffer(duration = 260) {
@@ -1725,6 +1742,14 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
   });
 
   navOpenTrigger?.addEventListener('click', () => {
+    expandPlanNav(true);
+  });
+
+  navMobileBar?.addEventListener('click', (event) => {
+    if (!navSection?.classList.contains('plan-nav--mobile')) return;
+    if (!navSection.classList.contains('plan-nav--collapsed')) return;
+    if (event.target.closest('[data-plan-nav-open]')) return;
+    event.preventDefault();
     expandPlanNav(true);
   });
 
