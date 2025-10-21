@@ -1062,13 +1062,14 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         min-width: 0;
       }
       :root {
-        --plan-nav-gap: clamp(8px, 3vw, 16px);
+        --plan-nav-gap: 0px;
       }
       .plan-nav {
         position: sticky;
-        top: calc(var(--plan-nav-safe-offset) + var(--plan-nav-gap));
+        top: var(--plan-nav-safe-offset);
         z-index: 12;
         gap: 10px;
+        margin-top: 0;
       }
       .plan-nav.plan-nav--mobile {
         margin-left: calc(50% - 50vw);
@@ -1081,7 +1082,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       }
       .plan-nav--mobile.plan-nav--expanded {
         position: fixed;
-        top: calc(var(--plan-nav-safe-offset) + var(--plan-nav-gap));
+        top: var(--plan-nav-safe-offset);
         left: 0;
         right: 0;
         bottom: 0;
@@ -1097,7 +1098,7 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
         justify-content: flex-start;
         gap: 0;
         touch-action: none;
-        height: calc(100vh - var(--plan-nav-safe-offset) - var(--plan-nav-gap));
+        height: calc(100vh - var(--plan-nav-safe-offset));
         overflow: hidden;
       }
       .plan-nav--mobile .plan-nav__mobile-bar {
@@ -1585,6 +1586,23 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     document.body.style.left = '0';
     document.body.style.right = '0';
     document.body.style.width = '100%';
+    if (topbarEl) {
+      if (!topbarEl.dataset.planNavLocked) {
+        topbarEl.dataset.planNavPrevPosition = topbarEl.style.position || '';
+        topbarEl.dataset.planNavPrevTop = topbarEl.style.top || '';
+        topbarEl.dataset.planNavPrevLeft = topbarEl.style.left || '';
+        topbarEl.dataset.planNavPrevRight = topbarEl.style.right || '';
+        topbarEl.dataset.planNavPrevWidth = topbarEl.style.width || '';
+        topbarEl.dataset.planNavPrevZ = topbarEl.style.zIndex || '';
+      }
+      topbarEl.dataset.planNavLocked = 'true';
+      topbarEl.style.position = 'fixed';
+      topbarEl.style.top = '0';
+      topbarEl.style.left = '0';
+      topbarEl.style.right = '0';
+      topbarEl.style.width = '100%';
+      topbarEl.style.zIndex = '4000';
+    }
   }
 
   function unlockBodyForNav() {
@@ -1599,6 +1617,21 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
     document.body.style.width = '';
     delete document.body.dataset.planNavScrollY;
     window.scrollTo(0, stored);
+    if (topbarEl && topbarEl.dataset.planNavLocked) {
+      topbarEl.style.position = topbarEl.dataset.planNavPrevPosition || '';
+      topbarEl.style.top = topbarEl.dataset.planNavPrevTop || '';
+      topbarEl.style.left = topbarEl.dataset.planNavPrevLeft || '';
+      topbarEl.style.right = topbarEl.dataset.planNavPrevRight || '';
+      topbarEl.style.width = topbarEl.dataset.planNavPrevWidth || '';
+      topbarEl.style.zIndex = topbarEl.dataset.planNavPrevZ || '';
+      delete topbarEl.dataset.planNavPrevPosition;
+      delete topbarEl.dataset.planNavPrevTop;
+      delete topbarEl.dataset.planNavPrevLeft;
+      delete topbarEl.dataset.planNavPrevRight;
+      delete topbarEl.dataset.planNavPrevWidth;
+      delete topbarEl.dataset.planNavPrevZ;
+      delete topbarEl.dataset.planNavLocked;
+    }
   }
 
   function holdNavScrollBuffer(duration = 260) {
