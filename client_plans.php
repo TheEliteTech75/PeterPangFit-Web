@@ -97,6 +97,7 @@ if ($plans) {
       upe.position,
       {$selectWeight},
       {$selectNotes},
+      upe.set_details_json AS set_details_json,
       e.name AS exercise_name,
       e.notes AS coach_notes,
       {$selectVideo},
@@ -113,6 +114,78 @@ if ($plans) {
   $stmt->execute();
   $rs = $stmt->get_result();
   while ($row = $rs->fetch_assoc()) {
+    $setRows = cp_get_set_details(
+      $row['set_details_json'] ?? null,
+      $row['sets'] ?? null,
+      $row['reps'] ?? null,
+      $row['weight_val'] ?? null,
+      $row['duration_seconds'] ?? null
+    );
+    $enrichedSets = cp_enrich_set_details($setRows);
+    $summary = cp_summarize_set_details(
+      $enrichedSets,
+      $row['sets'] ?? null,
+      $row['reps'] ?? null,
+      $row['weight_val'] ?? null,
+      $row['duration_seconds'] ?? null
+    );
+
+    $hasDetails = $summary['has_details'];
+
+    $displaySets = $summary['count'];
+    if ($displaySets === null && $row['sets'] !== null && $row['sets'] !== '') {
+      $displaySets = (int)$row['sets'];
+    }
+
+    $legacyReps = $row['reps'] ?? null;
+    $displayReps = null;
+    if ($summary['reps'] !== null) {
+      $displayReps = (string)$summary['reps'];
+    } elseif (!$hasDetails && $legacyReps !== null && $legacyReps !== '') {
+      $displayReps = (string)$legacyReps;
+    }
+
+    $legacyWeight = $row['weight_val'] ?? null;
+    $displayWeightValue = null;
+    $displayWeight = null;
+    if ($summary['weight_display'] !== null) {
+      $displayWeightValue = $summary['weight_value'];
+      $displayWeight = $summary['weight_display'];
+    } elseif (!$hasDetails && $legacyWeight !== null && $legacyWeight !== '' && is_numeric($legacyWeight)) {
+      $displayWeightValue = (float)$legacyWeight;
+      $displayWeight = cp_format_weight_lbs($displayWeightValue);
+    }
+
+    $legacyDuration = $row['duration_seconds'] ?? null;
+    $displayDurationSeconds = null;
+    $displayDuration = null;
+    if ($summary['duration_display'] !== null) {
+      $displayDurationSeconds = $summary['duration_seconds'];
+      $displayDuration = $summary['duration_display'];
+    } elseif (!$hasDetails && $legacyDuration !== null && $legacyDuration !== '' && is_numeric($legacyDuration)) {
+      $displayDurationSeconds = (int)$legacyDuration;
+      $displayDuration = fmt_dur($displayDurationSeconds);
+    }
+
+    $row['sets'] = $displaySets;
+    $row['display_sets'] = $displaySets;
+    $row['reps'] = $displayReps;
+    $row['display_reps'] = $displayReps;
+    $row['weight_val'] = $displayWeightValue;
+    $row['display_weight'] = $displayWeight;
+    $row['display_weight_value'] = $displayWeightValue;
+    $row['display_duration'] = $displayDuration;
+    $row['display_duration_seconds'] = $displayDurationSeconds;
+    if (is_numeric($legacyDuration)) {
+      $row['duration_seconds'] = (int)$legacyDuration;
+    } elseif ($displayDurationSeconds !== null) {
+      $row['duration_seconds'] = (int)$displayDurationSeconds;
+    }
+
+    $row['set_details'] = $enrichedSets;
+    $row['set_detail_lines'] = array_values(array_filter(array_map('cp_format_set_detail_line', $enrichedSets)));
+    $row['show_set_details'] = $summary['show_details'];
+
     $plan_items[(int)$row['user_plan_id']][] = $row;
   }
   $stmt->close();
@@ -128,6 +201,209 @@ function fmt_dur(?int $secs): string {
     return sprintf('%dh %02dm', $h, $m);
   }
   return $s > 0 ? sprintf('%d:%02d', $m, $s) : sprintf('%d min', $m);
+}
+
+function cp_trim_number(float $value, int $precision = 2): string {
+  $formatted = number_format($value, $precision, '.', '');
+  $formatted = rtrim(rtrim($formatted, '0'), '.');
+  return $formatted === '' ? '0' : $formatted;
+}
+
+function cp_format_weight_lbs($value): ?string {
+  if ($value === null || $value === '') return null;
+  if (!is_numeric($value)) return null;
+  return cp_trim_number((float)$value) . ' lbs';
+}
+
+function cp_decode_set_details(?string $json): array {
+  if ($json === null || trim($json) === '') return [];
+  $decoded = json_decode($json, true);
+  if (!is_array($decoded)) return [];
+
+  $out = [];
+  foreach ($decoded as $entry) {
+    if (!is_array($entry)) continue;
+    $reps = isset($entry['reps']) ? trim((string)$entry['reps']) : '';
+    $weight = $entry['weight_lbs'] ?? ($entry['weight'] ?? null);
+    $duration = $entry['duration_seconds'] ?? ($entry['duration'] ?? null);
+
+    $out[] = [
+      'set_number' => count($out) + 1,
+      'reps' => $reps !== '' ? $reps : null,
+      'weight_lbs' => is_numeric($weight) ? (float)$weight : null,
+      'duration_seconds' => is_numeric($duration) ? (int)$duration : null,
+    ];
+  }
+
+  return $out;
+}
+
+function cp_build_legacy_set_details($sets, $reps, $weight, $duration): array {
+  $count = null;
+  if ($sets !== null && $sets !== '') {
+    $count = (int)$sets;
+  }
+  if ($count === null || $count <= 0) {
+    if (($reps !== null && $reps !== '') || ($weight !== null && $weight !== '') || ($duration !== null && $duration !== '')) {
+      $count = 1;
+    } else {
+      $count = 0;
+    }
+  }
+
+  $repsVal = ($reps !== null && $reps !== '') ? (string)$reps : null;
+  $weightVal = ($weight !== null && $weight !== '' && is_numeric($weight)) ? (float)$weight : null;
+  $durationVal = ($duration !== null && $duration !== '' && is_numeric($duration)) ? (int)$duration : null;
+
+  $rows = [];
+  for ($i = 0; $i < $count; $i++) {
+    $rows[] = [
+      'set_number' => $i + 1,
+      'reps' => $repsVal,
+      'weight_lbs' => $weightVal,
+      'duration_seconds' => $durationVal,
+    ];
+  }
+
+  return $rows;
+}
+
+function cp_get_set_details($json, $sets, $reps, $weight, $duration): array {
+  $fromJson = cp_decode_set_details($json);
+  if ($fromJson) return $fromJson;
+  return cp_build_legacy_set_details($sets, $reps, $weight, $duration);
+}
+
+function cp_enrich_set_details(array $rows): array {
+  $out = [];
+  foreach ($rows as $idx => $row) {
+    $weightVal = $row['weight_lbs'] ?? null;
+    $durationVal = $row['duration_seconds'] ?? null;
+    $out[] = [
+      'set_number' => $row['set_number'] ?? ($idx + 1),
+      'reps' => isset($row['reps']) ? (string)$row['reps'] : null,
+      'weight_value' => ($weightVal !== null) ? (float)$weightVal : null,
+      'weight_display' => ($weightVal !== null) ? cp_format_weight_lbs($weightVal) : null,
+      'duration_seconds' => ($durationVal !== null) ? (int)$durationVal : null,
+      'duration_display' => ($durationVal !== null) ? fmt_dur((int)$durationVal) : null,
+    ];
+  }
+  return $out;
+}
+
+function cp_sets_uniform(array $details, callable $getter, string $mode = 'string'): bool {
+  if (count($details) <= 1) return true;
+  $first = $getter($details[0]);
+  foreach ($details as $row) {
+    $current = $getter($row);
+    if ($mode === 'number') {
+      $firstNorm = ($first === null || $first === '') ? null : (float)$first;
+      $currNorm = ($current === null || $current === '') ? null : (float)$current;
+    } else {
+      $firstNorm = ($first === null) ? '' : trim((string)$first);
+      $currNorm = ($current === null) ? '' : trim((string)$current);
+    }
+    if ($mode === 'number') {
+      if ($firstNorm === null && $currNorm === null) continue;
+      if ($firstNorm === null || $currNorm === null) return false;
+      if (abs($firstNorm - $currNorm) > 0.0001) return false;
+    } else {
+      if ($firstNorm !== $currNorm) return false;
+    }
+  }
+  return true;
+}
+
+function cp_summarize_set_details(array $details, $legacySets, $legacyReps, $legacyWeight, $legacyDuration): array {
+  $count = count($details);
+  if ($count <= 0 && $legacySets !== null && $legacySets !== '') {
+    $count = (int)$legacySets;
+  }
+  if ($count <= 0) {
+    $count = null;
+  }
+
+  $first = $details[0] ?? null;
+
+  $legacyRepsVal = ($legacyReps !== null && $legacyReps !== '') ? (string)$legacyReps : null;
+  $legacyWeightVal = ($legacyWeight !== null && $legacyWeight !== '' && is_numeric($legacyWeight)) ? (float)$legacyWeight : null;
+  $legacyDurationVal = ($legacyDuration !== null && $legacyDuration !== '' && is_numeric($legacyDuration)) ? (int)$legacyDuration : null;
+
+  $uniformReps = cp_sets_uniform($details, fn($row) => $row['reps'] ?? null, 'string');
+  $uniformWeight = cp_sets_uniform($details, fn($row) => $row['weight_value'] ?? null, 'number');
+  $uniformDuration = cp_sets_uniform($details, fn($row) => $row['duration_seconds'] ?? null, 'number');
+
+  $reps = null;
+  if ($uniformReps) {
+    if ($first && isset($first['reps']) && $first['reps'] !== null && $first['reps'] !== '') {
+      $reps = (string)$first['reps'];
+    } elseif ($legacyRepsVal !== null && !$details) {
+      $reps = $legacyRepsVal;
+    }
+  } elseif (!$details) {
+    $reps = $legacyRepsVal;
+  }
+
+  $weightValue = null;
+  $weightDisplay = null;
+  if ($uniformWeight) {
+    if ($first && $first['weight_value'] !== null) {
+      $weightValue = (float)$first['weight_value'];
+      $weightDisplay = $first['weight_display'];
+    } elseif ($legacyWeightVal !== null && !$details) {
+      $weightValue = $legacyWeightVal;
+      $weightDisplay = cp_format_weight_lbs($legacyWeightVal);
+    }
+  } elseif (!$details && $legacyWeightVal !== null) {
+    $weightValue = $legacyWeightVal;
+    $weightDisplay = cp_format_weight_lbs($legacyWeightVal);
+  }
+
+  $durationSeconds = null;
+  $durationDisplay = null;
+  if ($uniformDuration) {
+    if ($first && $first['duration_seconds'] !== null) {
+      $durationSeconds = (int)$first['duration_seconds'];
+      $durationDisplay = $first['duration_display'];
+    } elseif ($legacyDurationVal !== null && !$details) {
+      $durationSeconds = $legacyDurationVal;
+      $durationDisplay = fmt_dur($legacyDurationVal);
+    }
+  } elseif (!$details && $legacyDurationVal !== null) {
+    $durationSeconds = $legacyDurationVal;
+    $durationDisplay = fmt_dur($legacyDurationVal);
+  }
+
+  $hasDetails = count($details) > 0;
+  $hasVariation = $hasDetails && (!$uniformReps || !$uniformWeight || !$uniformDuration);
+
+  return [
+    'count' => $count,
+    'reps' => $reps,
+    'weight_value' => $weightValue,
+    'weight_display' => $weightDisplay,
+    'duration_seconds' => $durationSeconds,
+    'duration_display' => $durationDisplay,
+    'has_details' => $hasDetails,
+    'show_details' => $hasDetails && ($hasVariation || ($count !== null && $count > 1)),
+  ];
+}
+
+function cp_format_set_detail_line(array $detail): ?string {
+  $num = $detail['set_number'] ?? null;
+  if ($num === null) return null;
+  $parts = [];
+  if (isset($detail['reps']) && $detail['reps'] !== null && $detail['reps'] !== '') {
+    $parts[] = trim((string)$detail['reps']) . ' reps';
+  }
+  if (!empty($detail['weight_display'])) {
+    $parts[] = $detail['weight_display'];
+  }
+  if (!empty($detail['duration_display'])) {
+    $parts[] = $detail['duration_display'];
+  }
+  $suffix = $parts ? ' — ' . implode(' · ', $parts) : '';
+  return 'Set ' . (int)$num . $suffix;
 }
 
 function total_duration_str(array $rows): string {
@@ -1470,7 +1746,10 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
         $sumReps = 0;
         foreach ($items as $it) {
           $sumSets += (int)($it['sets'] ?? 0);
-          $sumReps += (int)($it['reps'] ?? 0);
+          $repVal = $it['reps'] ?? null;
+          if (is_numeric($repVal)) {
+            $sumReps += (int)$repVal;
+          }
         }
         $durStr = total_duration_str($items);
         $assignedStr = $plan['assigned_at'] ? date('M j, Y g:ia', strtotime($plan['assigned_at'])) : '—';
@@ -1496,12 +1775,14 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
             <div class="plan-card__empty">This plan doesn’t have any exercises yet.</div>
           <?php else: ?>
             <?php $index = 1; foreach ($items as $exercise):
-              $weightOut = ($exercise['weight_val'] !== null && $exercise['weight_val'] !== '') ? (string)$exercise['weight_val'] : '';
+              $weightOut = trim((string)($exercise['display_weight'] ?? ''));
               $coachNotes = trim((string)($exercise['user_notes'] ?? ''));
               $exerciseDescription = trim((string)($exercise['coach_notes'] ?? ''));
-              $durationStr = fmt_dur($exercise['duration_seconds'] ?? null);
+              $durationStr = trim((string)($exercise['display_duration'] ?? ''));
               $videoUrl = trim((string)($exercise['video_url'] ?? ''));
               $posterUrl = trim((string)($exercise['video_poster_url'] ?? ''));
+              $setDetailLines = $exercise['set_detail_lines'] ?? [];
+              $showSetDetails = !empty($exercise['show_set_details']) && !empty($setDetailLines);
               $videoBadge = '';
               if ($videoUrl !== '') {
                 if (!empty($exercise['video_duration_sec'])) {
@@ -1516,14 +1797,15 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
                 $coachNotes,
                 $exerciseDescription,
                 $weightOut,
-                $durationStr
+                $durationStr,
+                implode(' ', $setDetailLines)
               ]);
             ?>
             <article class="exercise-card" data-search="<?php echo h($searchBlob); ?>"
                      data-order="<?php echo $index; ?>"
                      data-name="<?php echo h($exercise['exercise_name']); ?>"
                      data-sets="<?php echo h($exercise['sets'] !== null ? (int)$exercise['sets'] : ''); ?>"
-                     data-reps="<?php echo h($exercise['reps'] !== null ? (int)$exercise['reps'] : ''); ?>"
+                     data-reps="<?php echo h($exercise['reps'] !== null ? (string)$exercise['reps'] : ''); ?>"
                      data-weight="<?php echo h($weightOut); ?>"
                      data-duration="<?php echo h($durationStr); ?>"
                      data-coach-notes="<?php echo h($coachNotes); ?>"
@@ -1562,7 +1844,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
                   <?php if ($exercise['reps'] !== null && $exercise['reps'] !== ''): ?>
                     <span class="badge" title="Reps">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4H3"></path><path d="M18 4v6a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V4"></path><path d="M9 14h6"></path><path d="M8 18h8"></path><path d="M10 22h4"></path></svg>
-                      <?php echo (int)$exercise['reps']; ?> reps
+                      <?php echo h($exercise['reps']); ?> reps
                     </span>
                   <?php endif; ?>
                   <?php if ($weightOut !== ''): ?>
@@ -1578,6 +1860,12 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
                     </span>
                   <?php endif; ?>
                 </div>
+                <?php if ($showSetDetails): ?>
+                  <div class="notes-block">
+                    <h4>Set details</h4>
+                    <p><?php echo implode('<br>', array_map('h', $setDetailLines)); ?></p>
+                  </div>
+                <?php endif; ?>
                 <div class="notes-block<?php echo $exerciseDescription === '' ? ' empty' : ''; ?>">
                   <h4>Exercise description</h4>
                   <p><?php echo $exerciseDescription !== '' ? nl2br(h($exerciseDescription)) : 'No description provided yet.'; ?></p>
