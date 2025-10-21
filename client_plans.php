@@ -227,6 +227,10 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       box-sizing: border-box;
     }
 
+    html {
+      scroll-padding-top: calc(var(--plan-nav-safe-offset) + clamp(12px, 3vw, 24px));
+    }
+
     html.plan-nav-locked,
     body.plan-nav-locked {
       overflow: hidden;
@@ -244,7 +248,17 @@ $latestPlanName = $latestPlan['plan_name'] ?? '';
       font-family: inherit;
       line-height: 1.6;
       min-height: 100vh;
+      padding-top: calc(var(--plan-nav-safe-offset) + clamp(18px, 4vw, 32px));
       padding-bottom: 48px;
+    }
+
+    .ppf-topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+      z-index: 4600;
     }
 
     a {
