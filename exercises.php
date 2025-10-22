@@ -647,10 +647,15 @@ require_once __DIR__ . '/ppf_nav.php';
 <title>Exercises · Peter Pang Fit</title>
 <style>
   :root{
-    --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6;
-    --line:#1c212b; --chip:#1f2430; --ok:#10b981; --warn:#ef4444;
+    color-scheme:dark;
+    --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8;
+    --line:rgba(148,163,184,0.18); --chip:rgba(15,23,42,0.7); --ok:#10b981; --warn:#ef4444;
   }
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  html,body{margin:0;padding:0;background:
+      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
+      linear-gradient(155deg, var(--bg), var(--bg-alt));
+    color:var(--text);
     font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
   a{color:var(--brand);text-decoration:none}
   a:hover{text-decoration:underline}
@@ -670,25 +675,25 @@ require_once __DIR__ . '/ppf_nav.php';
 
   .btn{
     display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);
-    color:#e6e8ee;padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none
+    color:#f8fafc;padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none
   }
   .btn:hover{filter:brightness(1.06)}
-  .btn.brand{background:#1f2f55;border-color:#284072}
-  .btn.warn{background:#2a1617;border-color:#5b1b20;color:#ffb4b4}
+  .btn.brand{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35)}
+  .btn.warn{background:#2a1617;border-color:rgba(248,113,113,0.45);color:#f87171}
   .btn.small{padding:6px 10px;font-size:13px}
 
   .wrap{max-width:none;width:95%;margin:18px auto;padding:0 16px}
-  .card{background:#151923;border:1px solid var(--line);border-radius:14px;padding:14px}
+  .card{background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:14px}
   .muted{color:var(--muted)}
   .chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);border:1px solid var(--line);padding:3px 7px;border-radius:999px;font-size:12px;color:#c3c9d4}
 
-  .flash{margin:16px auto 0 auto;max-width:none;width:calc(100% - 32px);padding:12px;border-radius:10px;border:1px solid;background:#10161a}
-  .flash.ok{border-color:#204a36;color:#a7f3d0}
+  .flash{margin:16px auto 0 auto;max-width:none;width:calc(100% - 32px);padding:12px;border-radius:10px;border:1px solid;background:rgba(8,13,23,0.85)}
+  .flash.ok{border-color:rgba(34,197,94,0.45);color:#a7f3d0}
   .flash.err{border-color:#4a2020;color:#fca5a5}
 
   table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
   th,td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{background:#0f1218;text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
+  th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
   tr:last-child td{border-bottom:none}
 
   .exercise-row{cursor:pointer}
@@ -696,23 +701,23 @@ require_once __DIR__ . '/ppf_nav.php';
   .exercise-row.expanded{background:#141a25; outline:2px solid var(--brand); outline-offset:-2px; transition: background .2s ease, outline-color .2s ease;}
   .exercise-row.focused{outline:2px solid var(--brand); outline-offset:-2px; background:#141a25; transition: background .4s ease, outline-color .4s ease;}
 
-  .expand{display:none;background:#0f1218}
+  .expand{display:none;background:rgba(8,13,23,0.95)}
   .expand td{border-top:1px solid var(--line)}
 
   .row-actions{display:flex;gap:8px;flex-wrap:wrap}
 
   .media-card{display:grid;grid-template-columns:2fr 1fr;gap:12px}
   @media (max-width: 860px){ .media-card{grid-template-columns:1fr} }
-  .media-16x9{position:relative;width:100%;padding-top:56.25%;background:#0f1218;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .media-16x9{position:relative;width:100%;padding-top:56.25%;background:rgba(8,13,23,0.95);border:1px solid var(--line);border-radius:12px;overflow:hidden}
   .media-16x9 > *{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
-  .dropzone{display:flex;align-items:center;justify-content:center;min-height:120px;border:1px dashed var(--line);border-radius:10px;background:#0f1218;cursor:pointer;text-align:center;padding:10px}
-  .dropzone.dragover{background:#101725;border-color:#3b82f6}
-  .progress{height:6px;background:#0f1218;border:1px solid var(--line);border-radius:999px;overflow:hidden}
-  .progress > div{height:100%;width:0%;background:#3b82f6}
-  .fine{font-size:12px;color:#9aa3b2}
+  .dropzone{display:flex;align-items:center;justify-content:center;min-height:120px;border:1px dashed var(--line);border-radius:10px;background:rgba(8,13,23,0.95);cursor:pointer;text-align:center;padding:10px}
+  .dropzone.dragover{background:#101725;border-color:#38bdf8}
+  .progress{height:6px;background:rgba(8,13,23,0.95);border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .progress > div{height:100%;width:0%;background:#38bdf8}
+  .fine{font-size:12px;color:#cbd5f5}
   .media-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
   .media-grid{display:grid;gap:8px}
-  .thumb-mini{height:54px;width:96px;overflow:hidden;border-radius:6px;border:1px solid var(--line);background:#0f1218}
+  .thumb-mini{height:54px;width:96px;overflow:hidden;border-radius:6px;border:1px solid var(--line);background:rgba(8,13,23,0.95)}
   .thumb-mini img{height:100%;width:100%;object-fit:cover;display:block}
   @media (min-width:1400px){ .thumb-mini{height:68px;width:120px} }
 
@@ -720,7 +725,7 @@ require_once __DIR__ . '/ppf_nav.php';
   .checkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px}
   .check{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}
   .check:hover{background:#101725}
-  .check input{accent-color:#3b82f6}
+  .check input{accent-color:#38bdf8}
 </style>
 </head>
 <body>
@@ -875,14 +880,14 @@ require_once __DIR__ . '/ppf_nav.php';
               } else {
                 echo '<table style="width:100%;border-collapse:collapse;margin-top:6px">';
                 echo '<thead><tr>';
-                echo '<th style="background:#0f1218">Plan ID</th>';
-                echo '<th style="background:#0f1218">Plan Name</th>';
-                echo '<th style="background:#0f1218">Created</th>';
-                echo '<th style="background:#0f1218">Created By</th>';
-                echo '<th style="background:#0f1218">Edited</th>';
-                echo '<th style="background:#0f1218">Edited By</th>';
-                echo '<th style="background:#0f1218"># Exercises</th>';
-                echo '<th style="background:#0f1218"># Clients</th>';
+                echo '<th style="background:rgba(8,13,23,0.95)">Plan ID</th>';
+                echo '<th style="background:rgba(8,13,23,0.95)">Plan Name</th>';
+                echo '<th style="background:rgba(8,13,23,0.95)">Created</th>';
+                echo '<th style="background:rgba(8,13,23,0.95)">Created By</th>';
+                echo '<th style="background:rgba(8,13,23,0.95)">Edited</th>';
+                echo '<th style="background:rgba(8,13,23,0.95)">Edited By</th>';
+                echo '<th style="background:rgba(8,13,23,0.95)"># Exercises</th>';
+                echo '<th style="background:rgba(8,13,23,0.95)"># Clients</th>';
                 echo '</tr></thead><tbody>';
                 foreach ($planIds as $pid) {
                   $sum = $planSummaries[$pid] ?? null;
@@ -1002,7 +1007,7 @@ require_once __DIR__ . '/ppf_nav.php';
 
 <!-- CREATE EXERCISE MODAL -->
 <div class="modal" id="mdCreate" role="dialog" aria-modal="true" aria-labelledby="ceTitle"
-     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,94vw);background:#151923;border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
+     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,94vw);background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
   <h3 id="ceTitle" style="margin:0 0 10px 0;font-size:16px">Create Exercise</h3>
   <form method="post" id="ceForm">
     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
@@ -1011,19 +1016,19 @@ require_once __DIR__ . '/ppf_nav.php';
     <div class="row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:10px">
       <div style="grid-column:span 12">
         <label class="muted" for="ce_name">Exercise Name</label>
-        <input style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:10px 12px;border-radius:10px" id="ce_name" name="ex_name" type="text" required>
+        <input style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:10px 12px;border-radius:10px" id="ce_name" name="ex_name" type="text" required>
       </div>
       <div style="grid-column:span 12">
         <label class="muted" for="ce_notes">Description</label> <!-- renamed label -->
-        <textarea style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:10px 12px;border-radius:10px;min-height:120px" id="ce_notes" name="ex_notes" placeholder=""></textarea>
+        <textarea style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:10px 12px;border-radius:10px;min-height:120px" id="ce_notes" name="ex_notes" placeholder=""></textarea>
       </div>
 
       <!-- Categories checklist -->
       <div style="grid-column:span 12">
         <label class="muted" for="ce_cat_filter">Categories (select one or more)</label>
         <input id="ce_cat_filter" type="text" placeholder="Filter categories..."
-               style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:8px 10px;border-radius:8px;margin:6px 0">
-        <div id="ce_cat_box" class="checkgrid" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px;background:#0f1218">
+               style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:8px 10px;border-radius:8px;margin:6px 0">
+        <div id="ce_cat_box" class="checkgrid" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px;background:rgba(8,13,23,0.95)">
           <?php foreach ($categories as $c): ?>
             <label class="check">
               <input type="checkbox" name="category_ids[]" value="<?php echo (int)$c['id']; ?>">
@@ -1042,11 +1047,11 @@ require_once __DIR__ . '/ppf_nav.php';
         <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:10px">
           <div style="grid-column:span 6">
             <label class="muted" for="ce_new_cat_name">New Category Name</label>
-            <input style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:10px 12px;border-radius:10px" id="ce_new_cat_name" name="new_category_name" type="text" placeholder="e.g., Upper Body">
+            <input style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:10px 12px;border-radius:10px" id="ce_new_cat_name" name="new_category_name" type="text" placeholder="e.g., Upper Body">
           </div>
           <div style="grid-column:span 6">
             <label class="muted" for="ce_new_cat_desc">Description (optional)</label>
-            <input style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:10px 12px;border-radius:10px" id="ce_new_cat_desc" name="new_category_desc" type="text" placeholder="">
+            <input style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:10px 12px;border-radius:10px" id="ce_new_cat_desc" name="new_category_desc" type="text" placeholder="">
           </div>
         </div>
         <div class="muted" style="margin-top:6px">If provided, a new category will be created and assigned to this exercise.</div>
@@ -1066,7 +1071,7 @@ require_once __DIR__ . '/ppf_nav.php';
 
 <!-- EDIT EXERCISE MODAL -->
 <div class="modal" id="mdEdit" role="dialog" aria-modal="true" aria-labelledby="eeTitle"
-     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,94vw);background:#151923;border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
+     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,94vw);background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
   <h3 id="eeTitle" style="margin:0 0 10px 0;font-size:16px">Edit Exercise</h3>
   <form method="post" id="eeForm">
     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
@@ -1076,19 +1081,19 @@ require_once __DIR__ . '/ppf_nav.php';
     <div class="row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:10px">
       <div style="grid-column:span 12">
         <label class="muted" for="ee_name">Exercise Name</label>
-        <input style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:10px 12px;border-radius:10px" id="ee_name" name="ex_name" type="text" required>
+        <input style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:10px 12px;border-radius:10px" id="ee_name" name="ex_name" type="text" required>
       </div>
       <div style="grid-column:span 12">
         <label class="muted" for="ee_notes">Description</label> <!-- renamed label -->
-        <textarea style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:10px 12px;border-radius:10px;min-height:120px" id="ee_notes" name="ex_notes"></textarea>
+        <textarea style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:10px 12px;border-radius:10px;min-height:120px" id="ee_notes" name="ex_notes"></textarea>
       </div>
 
       <!-- Categories checklist -->
       <div style="grid-column:span 12">
         <label class="muted" for="ee_cat_filter">Categories</label>
         <input id="ee_cat_filter" type="text" placeholder="Filter categories..."
-               style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:8px 10px;border-radius:8px;margin:6px 0">
-        <div id="ee_cat_box" class="checkgrid" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px;background:#0f1218">
+               style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:8px 10px;border-radius:8px;margin:6px 0">
+        <div id="ee_cat_box" class="checkgrid" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px;background:rgba(8,13,23,0.95)">
           <?php foreach ($categories as $c): ?>
             <label class="check">
               <input type="checkbox" name="category_ids[]" value="<?php echo (int)$c['id']; ?>">
@@ -1107,11 +1112,11 @@ require_once __DIR__ . '/ppf_nav.php';
         <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:10px">
           <div style="grid-column:span 6">
             <label class="muted" for="ee_new_cat_name">New Category Name</label>
-            <input style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:10px 12px;border-radius:10px" id="ee_new_cat_name" name="new_category_name" type="text" placeholder="e.g., Upper Body">
+            <input style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:10px 12px;border-radius:10px" id="ee_new_cat_name" name="new_category_name" type="text" placeholder="e.g., Upper Body">
           </div>
           <div style="grid-column:span 6">
             <label class="muted" for="ee_new_cat_desc">Description (optional)</label>
-            <input style="width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;padding:10px 12px;border-radius:10px" id="ee_new_cat_desc" name="new_category_desc" type="text" placeholder="">
+            <input style="width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;padding:10px 12px;border-radius:10px" id="ee_new_cat_desc" name="new_category_desc" type="text" placeholder="">
           </div>
         </div>
         <div class="muted" style="margin-top:6px">If provided, a new category will be created and assigned to this exercise.</div>
@@ -1131,7 +1136,7 @@ require_once __DIR__ . '/ppf_nav.php';
 
 <!-- DELETE EXERCISE MODAL -->
 <div class="modal" id="mdDelete" role="dialog" aria-modal="true" aria-labelledby="deTitle"
-     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);background:#151923;border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
+     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
   <h3 id="deTitle" style="margin:0 0 10px 0;font-size:16px">Delete Exercise</h3>
   <form method="post" id="deForm" onsubmit="return confirm('Delete this exercise? It will be removed from any plans.');">
     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">

@@ -44,34 +44,48 @@ function role_default_avatar(?string $role): ?string {
 $roleDefault = $photo ? null : role_default_avatar($role);
 ?>
 <style>
-/* ===== Shared Header, same colors as dashboard ===== */
+/* ===== Shared Header — refreshed gradient palette ===== */
+:root {
+  color-scheme: dark;
+}
 .ppf-topbar {
   display:flex;align-items:center;justify-content:space-between;
   padding:16px 24px;
-  background:#0b0c10;
-  border-bottom:1px solid #1c212b;
+  background:rgba(2,6,23,0.9);
+  backdrop-filter:blur(18px);
+  border-bottom:1px solid rgba(148,163,184,0.18);
+  box-shadow:0 24px 40px rgba(2,6,23,0.45);
   position: sticky;
   top: 0;
   z-index: 3000;
 }
-.ppf-brand { font-weight:800;font-size:22px;color:#e6e8ee;letter-spacing:.3px; }
+.ppf-brand { font-weight:800;font-size:22px;color:#f8fafc;letter-spacing:-.02em; }
 .ppf-user { margin-left:auto;position:relative;display:flex;align-items:center; z-index: 3200; }
 .ppf-chip {
-  display:flex;align-items:center;gap:10px;background:#151923;border:1px solid #1c212b;
-  padding:6px 12px;border-radius:999px;color:#e6e8ee;cursor:pointer;
+  display:flex;align-items:center;gap:10px;
+  background:rgba(15,23,42,0.72);
+  border:1px solid rgba(148,163,184,0.22);
+  padding:8px 14px;border-radius:999px;color:#f8fafc;cursor:pointer;
+  transition:background .25s ease,border-color .25s ease,box-shadow .25s ease;
 }
-.ppf-avatar { width:36px;height:36px;border-radius:999px;overflow:hidden;border:1px solid #1c212b;background:#0f1218;display:flex;align-items:center;justify-content:center; }
+.ppf-chip:hover,
+.ppf-chip:focus-visible {
+  background:rgba(30,41,59,0.75);
+  border-color:rgba(56,189,248,0.45);
+  box-shadow:0 12px 24px rgba(15,23,42,0.35);
+}
+.ppf-avatar { width:36px;height:36px;border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,0.25);background:rgba(8,13,23,0.8);display:flex;align-items:center;justify-content:center; }
 .ppf-avatar img {width:100%;height:100%;object-fit:cover;display:block;}
 .ppf-names {display:flex;flex-direction:column;line-height:1.05}
 .ppf-names .ppf-name {font-weight:600;font-size:14px}
-.ppf-names .ppf-role {font-size:12px;color:#9aa3b2}
+.ppf-names .ppf-role {font-size:12px;color:rgba(203,213,225,0.75)}
 .ppf-menu {
-  position:absolute;right:0;top:52px;background:#151923;border:1px solid #1c212b;border-radius:10px;
-  min-width:170px;box-shadow:0 6px 20px rgba(0,0,0,.4);display:none;z-index: 3500;
+  position:absolute;right:0;top:56px;background:rgba(9,14,28,0.96);border:1px solid rgba(148,163,184,0.18);border-radius:14px;
+  min-width:190px;box-shadow:0 28px 55px rgba(2,6,23,0.55);backdrop-filter:blur(22px);display:none;z-index: 3500;
 }
-.ppf-menu a { display:block;padding:10px 14px;color:#e6e8ee;text-decoration:none;border-bottom:1px solid #1c212b;font-size:14px; }
+.ppf-menu a { display:block;padding:12px 16px;color:#f8fafc;text-decoration:none;border-bottom:1px solid rgba(148,163,184,0.12);font-size:14px;letter-spacing:.01em; }
 .ppf-menu a:last-child {border-bottom:0}
-.ppf-menu a:hover {background:#1f2430}
+.ppf-menu a:hover {background:rgba(56,189,248,0.12);color:#f8fafc}
 html { scroll-padding-top: 64px; }
 </style>
 

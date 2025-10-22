@@ -1666,7 +1666,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
           </tr>
 
           <tr class="client-expand" id="exp-<?php echo $id; ?>" style="display:none">
-            <td colspan="<?php echo $colspan; ?>" style="background:#0f1218">
+            <td colspan="<?php echo $colspan; ?>" style="background:rgba(8,13,23,0.95)">
               <div class="muted" data-exp-body>Loading plans…</div>
             </td>
           </tr>
@@ -1691,24 +1691,29 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 <title>Clients · Peter Pang Fit</title>
 <style>
   :root{
-    --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6;
-    --line:#1c212b; --chip:#1f2430;
+    color-scheme:dark;
+    --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8; --brand-strong:#0ea5e9;
+    --line:rgba(148,163,184,0.18); --chip:rgba(15,23,42,0.72);
     --page-pad: clamp(14px, 3vw, 28px);
-    --support: #7dd3fc;
+    --support: #6ee7b7;
   }
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  html,body{margin:0;padding:0;background:
+      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
+      linear-gradient(155deg, var(--bg), var(--bg-alt));
+    color:var(--text);
     font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif}
   a{color:var(--text);text-decoration:none}
 
   .wrap{width:100%;max-width:100%;margin:24px auto;padding:0 var(--page-pad);box-sizing:border-box}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}
   .row{display:flex;gap:16px;align-items:center}
-  .btn{ background:#1a2232; border:1px solid var(--line); padding:8px 12px; border-radius:10px; color: var(--text); }
+  .btn{ background:rgba(30,41,59,0.65); border:1px solid var(--line); padding:8px 12px; border-radius:10px; color: var(--text); }
   .btn.small{padding:6px 10px;font-size:12px}
   .btn.brand{background:var(--brand);border-color:var(--brand);color:white}
   .tabs{display:flex;gap:8px;margin-bottom:14px}
-  .tab{padding:8px 12px;border-radius:9999px;border:1px solid var(--line);background:#1a1f2a;color:#cbd5e1}
-  .tab.active{background:#1f2f55;border-color:#284072;color:#fff}
+  .tab{padding:8px 12px;border-radius:9999px;border:1px solid var(--line);background:rgba(15,23,42,0.68);color:#cbd5f5}
+  .tab.active{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35);color:#fff}
 
   table thead th { color: var(--support); font-weight: 600; }
   [data-exp-body] > div > div:first-child,
@@ -1735,7 +1740,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   table{width:100%;border-collapse:collapse}
   .clients-table{min-width:960px}
   th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:middle}
-  thead th{position:sticky;top:0;background:#0f121a;z-index:1}
+  thead th{position:sticky;top:0;background:rgba(8,13,23,0.95);z-index:1}
   .clients-table thead th{z-index:2}
   .clients-table .select-col{text-align:center;width:48px}
   .clients-table td:first-child{text-align:center}
@@ -1751,7 +1756,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .sort-btn[data-state="desc"] .sort-indicator{opacity:0.8}
   .col-resize-handle{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize}
   .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:rgba(148,163,184,0.2);}
-  .input{background:#0e1320;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;width:100%}
+  .input{background:rgba(8,13,23,0.88);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;width:100%}
   .muted{color:var(--muted)}
 
   .client-row { cursor: pointer; }
@@ -1802,7 +1807,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .video-chip { cursor:pointer; color:#f8fafc; background:rgba(63, 99, 221, 0.18); border-color:rgba(99, 102, 241, 0.5); }
   .video-chip:hover { background:rgba(99,102,241,0.28); }
 
-  .video-tooltip { position:absolute; z-index:4000; background:#0e1320; border:1px solid rgba(99,102,241,0.4);
+  .video-tooltip { position:absolute; z-index:4000; background:rgba(8,13,23,0.88); border:1px solid rgba(99,102,241,0.4);
     border-radius:10px; padding:10px; width:240px; box-shadow:0 20px 50px rgba(0,0,0,0.55); display:none; pointer-events:none; }
   .video-tooltip.visible { display:block; }
   .video-tooltip video { width:100%; border-radius:8px; display:block; background:#000; }
@@ -1810,7 +1815,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .video-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:4500; }
   .video-modal.open { display:flex; }
   .video-modal__backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.72); }
-  .video-modal__content { position:relative; background:#0e1320; border:1px solid var(--line); border-radius:16px; padding:22px;
+  .video-modal__content { position:relative; background:rgba(8,13,23,0.88); border:1px solid var(--line); border-radius:16px; padding:22px;
     width:min(900px, 92vw); max-height:90vh; display:flex; flex-direction:column; gap:18px; box-shadow:0 28px 60px rgba(0,0,0,0.6); }
   .video-modal__header { display:flex; align-items:flex-start; justify-content:space-between; }
   .video-modal__title { font-size:20px; margin:0; }
@@ -1873,11 +1878,11 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 <div class="backdrop" id="bdPickPlan" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000"></div>
 <div class="modal" id="mdPickPlan" role="dialog" aria-modal="true" aria-labelledby="ppTitle"
      style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,94vw);
-            background:#151923;border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
+            background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
   <h3 id="ppTitle" style="margin:0 0 10px 0;font-size:16px">Assign Plan to User</h3>
-  <div class="fine" id="ppUserText" style="margin-bottom:8px;color:#9aa3b2"></div>
+  <div class="fine" id="ppUserText" style="margin-bottom:8px;color:#cbd5f5"></div>
   <div>
-    <label class="fine" for="ppPlanSel" style="display:block;margin-bottom:6px;color:#9aa3b2">Choose a plan</label>
+    <label class="fine" for="ppPlanSel" style="display:block;margin-bottom:6px;color:#cbd5f5">Choose a plan</label>
     <select class="input" id="ppPlanSel"></select>
   </div>
   <div class="actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
@@ -1890,9 +1895,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 <div class="backdrop" id="bdAddEx" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000"></div>
 <div class="modal" id="mdAddEx" role="dialog" aria-modal="true" aria-labelledby="aeTitle"
      style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,94vw);
-            background:#151923;border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
+            background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001">
   <h3 id="aeTitle" style="margin:0 0 10px 0;font-size:16px">Add Exercises to Plan</h3>
-  <div class="fine" id="aePlanText" style="margin-bottom:8px;color:#9aa3b2"></div>
+  <div class="fine" id="aePlanText" style="margin-bottom:8px;color:#cbd5f5"></div>
   <div class="box" style="border:1px solid var(--line);border-radius:10px;padding:10px;max-height:360px;overflow:auto">
     <div id="aeList"></div>
   </div>
@@ -1906,15 +1911,15 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 <div class="backdrop" id="bdEditExercise" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000"></div>
 <div class="modal" id="mdEditExercise" role="dialog" aria-modal="true" aria-labelledby="eeTitle"
      style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,96vw);
-            background:#151923;border:1px solid var(--line);border-radius:14px;padding:18px;display:none;z-index:3001">
+            background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:18px;display:none;z-index:3001">
   <h3 id="eeTitle" style="margin:0 0 8px 0;font-size:16px">Edit Exercise</h3>
-  <div class="fine" id="eeContext" style="margin-bottom:12px;color:#9aa3b2"></div>
+  <div class="fine" id="eeContext" style="margin-bottom:12px;color:#cbd5f5"></div>
   <div class="box" style="border:1px solid var(--line);border-radius:10px;padding:12px;max-height:360px;overflow:auto">
     <div id="eeSetList"></div>
     <button class="btn small" type="button" id="eeAddSet" style="margin-top:10px">Add Set</button>
   </div>
   <div style="margin-top:12px">
-    <label class="fine" for="eeNotes" style="display:block;margin-bottom:6px;color:#9aa3b2">User Notes</label>
+    <label class="fine" for="eeNotes" style="display:block;margin-bottom:6px;color:#cbd5f5">User Notes</label>
     <textarea class="input" id="eeNotes" rows="3" placeholder="Any user-specific instructions…"></textarea>
   </div>
   <div id="eeError" class="muted" style="color:#ff6b6b;margin-top:8px;display:none"></div>
@@ -2535,16 +2540,16 @@ function renderClientExpansion(uid, body){
       <table style="width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden">
         <thead>
           <tr>
-            <th style="background:#0f1218;padding:8px 10px;width:44px;text-align:center">Select</th>
-            <th style="background:#0f1218;padding:8px 10px">Plan ID</th>
-            <th style="background:#0f1218;padding:8px 10px">Name</th>
-            <th style="background:#0f1218;padding:8px 10px">Assigned</th>
-            <th style="background:#0f1218;padding:8px 10px">Created</th>
-            <th style="background:#0f1218;padding:8px 10px">Created By</th>
-            <th style="background:#0f1218;padding:8px 10px">Updated</th>
-            <th style="background:#0f1218;padding:8px 10px">Updated By</th>
-            <th style="background:#0f1218;padding:8px 10px">Exercises</th>
-            <th style="background:#0f1218;padding:8px 10px">Actions</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px;width:44px;text-align:center">Select</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px">Plan ID</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px">Name</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px">Assigned</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px">Created</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px">Created By</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px">Updated</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px">Updated By</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px">Exercises</th>
+            <th style="background:rgba(8,13,23,0.95);padding:8px 10px">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -2582,7 +2587,7 @@ function renderClientExpansion(uid, body){
               <input type="hidden" name="user_id" value="${uid}">
               <input type="hidden" name="plan_id" value="${p.id}">
               <button class="btn small" type="submit"
-                      style="border-color:#ef4444;color:#ef4444;background:#1a2232">Unassign</button>
+                      style="border-color:#ef4444;color:#ef4444;background:rgba(30,41,59,0.65)">Unassign</button>
             </form>
           </td>
         </tr>
@@ -2592,7 +2597,7 @@ function renderClientExpansion(uid, body){
       let exHtml = `
         <div style="padding:8px 4px">
           <div class="section-title">Exercises in this Plan</div>
-          <table style="width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#0f1218">
+          <table style="width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:rgba(8,13,23,0.95)">
             <thead>
               <tr>
                 <th style="padding:8px 10px">Ex ID</th>
