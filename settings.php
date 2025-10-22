@@ -549,50 +549,29 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     }
     .input:focus { outline: 2px solid rgba(56,189,248,0.45); }
 
-    .table-wrapper {
+    .list {
       border: 1px solid var(--border);
       border-radius: 18px;
       background: rgba(15, 23, 42, 0.7);
-      overflow-x: auto;
-      overflow-y: hidden;
     }
-    table.data-table {
+    .list table {
       width: 100%;
-      min-width: 640px;
       border-collapse: collapse;
     }
-    table.data-table th,
-    table.data-table td {
+    .list th, .list td {
       padding: 14px 18px;
       text-align: left;
       border-bottom: 1px solid rgba(148,163,184,0.12);
       font-size: .95rem;
     }
-    table.data-table thead th {
-      font-size: .78rem;
+    .list th {
+      font-size: .82rem;
       letter-spacing: .08em;
       text-transform: uppercase;
       color: var(--muted);
-      background: rgba(8, 12, 24, 0.72);
     }
-    table.data-table tbody tr:last-child td { border-bottom: 0; }
-    table.data-table tbody tr:hover { background: rgba(56, 189, 248, 0.08); }
-    .table-primary {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .table-primary strong { font-size: 1rem; color: var(--text); }
-    .table-subtext {
-      font-size: .82rem;
-      color: var(--muted);
-      display: block;
-    }
-    .actions-cell {
-      display: inline-flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
+    .list tr:last-child td { border-bottom: 0; }
+    .list tbody tr:hover { background: rgba(56, 189, 248, 0.08); }
 
     .status {
       display: inline-flex;
@@ -663,6 +642,23 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       background: var(--border);
       margin: 24px 0;
     }
+
+    .session-grid {
+      display: grid;
+      gap: 12px;
+    }
+    .session-card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      background: rgba(8, 12, 24, 0.88);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .session-card.highlight { border-color: rgba(56,189,248,0.45); box-shadow: 0 18px 40px rgba(15,23,42,0.55); }
+    .session-meta { display: flex; gap: 14px; flex-wrap: wrap; }
+    .session-meta span { display: inline-flex; align-items: center; gap: 6px; font-size: .9rem; color: var(--muted); }
 
     .empty-state {
       border: 1px dashed var(--border);
@@ -785,49 +781,32 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       <?php if (!$passkeys): ?>
         <div class="empty-state">No passkeys yet. Add one to sign in with Face ID, Touch ID, or Windows Hello.</div>
       <?php else: ?>
-        <div class="table-wrapper">
-          <table class="data-table" id="passkeysTable">
+        <div class="list">
+          <table>
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Added</th>
-                <th>Last Used</th>
-                <th style="width:180px;">Actions</th>
+                <th>Last used</th>
+                <th style="width:160px;">Actions</th>
               </tr>
             </thead>
             <tbody>
               <?php foreach ($passkeys as $pk): ?>
-                <?php
-                  $pkId = (int)$pk['id'];
-                  $pkName = trim((string)$pk['name']);
-                  $pkAdded = strtotime((string)($pk['created_at'] ?? '')) ?: null;
-                  $pkLast = strtotime((string)($pk['last_used_at'] ?? '')) ?: null;
-                ?>
-                <tr data-passkey-id="<?php echo $pkId; ?>">
+                <tr data-passkey-id="<?php echo (int)$pk['id']; ?>">
                   <td>
-                    <div class="table-primary">
-                      <strong data-field="name"><?php echo h($pkName !== '' ? $pkName : 'Unnamed passkey'); ?></strong>
-                    </div>
+                    <strong><?php echo h($pk['name']); ?></strong>
                   </td>
-                  <td data-field="created">
-                    <div class="table-primary">
-                      <strong><?php echo fmt_datetime($pkAdded); ?></strong>
-                    </div>
-                  </td>
-                  <td data-field="last-used">
-                    <div class="table-primary">
-                      <strong><?php echo fmt_datetime($pkLast); ?></strong>
-                      <?php if ($pkLast): ?><span class="table-subtext"><?php echo rel_time($pkLast); ?></span><?php endif; ?>
-                    </div>
-                  </td>
-                  <td class="actions-cell">
-                    <button class="btn secondary btn-edit-passkey" data-passkey-id="<?php echo $pkId; ?>" data-passkey-name="<?php echo h($pkName); ?>">Edit</button>
-                    <button class="btn danger btn-delete-passkey" data-passkey-id="<?php echo $pkId; ?>">Delete</button>
-                    <form method="post" action="passkey_rename.php" class="rename-form" id="rename-passkey-<?php echo $pkId; ?>" style="display:none;">
+                  <td><?php echo fmt_datetime(strtotime((string)$pk['created_at'])); ?></td>
+                  <td><?php echo fmt_datetime(strtotime((string)$pk['last_used_at'])); ?></td>
+                  <td>
+                    <form method="post" action="passkey_rename.php" class="inline rename-form" style="display:inline-flex;gap:8px;">
                       <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                      <input type="hidden" name="passkey_id" value="<?php echo $pkId; ?>">
-                      <input type="hidden" name="name" value="<?php echo h($pkName); ?>">
+                      <input type="hidden" name="passkey_id" value="<?php echo (int)$pk['id']; ?>">
+                      <input class="input" name="name" value="<?php echo h($pk['name']); ?>" maxlength="100" style="width:150px;">
+                      <button class="btn secondary" type="submit">Rename</button>
                     </form>
+                    <button class="btn danger btn-delete-passkey" data-passkey-id="<?php echo (int)$pk['id']; ?>">Delete</button>
                   </td>
                 </tr>
               <?php endforeach; ?>
@@ -848,53 +827,36 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       <?php if (!$trustedDevices): ?>
         <div class="empty-state">No trusted devices yet. You can trust a device during login after passing two-factor.</div>
       <?php else: ?>
-        <div class="table-wrapper">
-          <table class="data-table" id="trustedDevicesTable">
+        <div class="list">
+          <table>
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Added</th>
-                <th>Last Used</th>
-                <th style="width:180px;">Actions</th>
+                <th>Last used</th>
+                <th>Expires</th>
+                <th style="width:160px;">Actions</th>
               </tr>
             </thead>
             <tbody>
               <?php foreach ($trustedDevices as $td): ?>
-                <?php
-                  $tdId = (int)$td['id'];
-                  $tdName = trim((string)$td['device_name']);
-                  $tdAdded = strtotime((string)($td['created_at'] ?? '')) ?: null;
-                  $tdLast  = strtotime((string)($td['last_used_at'] ?? '')) ?: null;
-                  $tdExpires = strtotime((string)($td['expires_at'] ?? '')) ?: null;
-                ?>
-                <tr data-device-id="<?php echo $tdId; ?>">
+                <tr data-device-id="<?php echo (int)$td['id']; ?>">
                   <td>
-                    <div class="table-primary">
-                      <strong data-field="name"><?php echo h($tdName !== '' ? $tdName : 'Unnamed device'); ?></strong>
-                      <?php if ($tdExpires): ?>
-                        <span class="table-subtext">Expires <?php echo fmt_datetime($tdExpires); ?></span>
-                      <?php endif; ?>
-                    </div>
+                    <input class="input td-name" value="<?php echo h($td['device_name']); ?>" maxlength="100" data-original="<?php echo h($td['device_name']); ?>">
                   </td>
-                  <td data-field="created">
-                    <div class="table-primary">
-                      <strong><?php echo fmt_datetime($tdAdded); ?></strong>
+                  <td><?php echo fmt_datetime(strtotime((string)$td['created_at'])); ?></td>
+                  <td><?php echo fmt_datetime(strtotime((string)$td['last_used_at'])); ?></td>
+                  <td><?php echo fmt_datetime(strtotime((string)$td['expires_at'])); ?></td>
+                  <td>
+                    <div class="actions-row">
+                      <button class="btn secondary btn-rename-device">Save name</button>
+                      <form method="post" action="trusted_devices_actions.php" class="inline">
+                        <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?php echo (int)$td['id']; ?>">
+                        <button class="btn danger" type="submit">Remove</button>
+                      </form>
                     </div>
-                  </td>
-                  <td data-field="last-used">
-                    <div class="table-primary">
-                      <strong><?php echo fmt_datetime($tdLast); ?></strong>
-                      <?php if ($tdLast): ?><span class="table-subtext"><?php echo rel_time($tdLast); ?></span><?php endif; ?>
-                    </div>
-                  </td>
-                  <td class="actions-cell">
-                    <button class="btn secondary btn-edit-device" data-device-id="<?php echo $tdId; ?>" data-device-name="<?php echo h($tdName); ?>">Edit</button>
-                    <form method="post" action="trusted_devices_actions.php" class="inline">
-                      <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                      <input type="hidden" name="action" value="delete">
-                      <input type="hidden" name="id" value="<?php echo $tdId; ?>">
-                      <button class="btn danger" type="submit">Delete</button>
-                    </form>
                   </td>
                 </tr>
               <?php endforeach; ?>
@@ -928,68 +890,36 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       <?php if (!$sessions): ?>
         <div class="empty-state">No recent sessions found.</div>
       <?php else: ?>
-        <div class="table-wrapper">
-          <table class="data-table" id="sessionsTable">
-            <thead>
-              <tr>
-                <th>Timestamp</th>
-                <th>Location</th>
-                <th>Browser</th>
-                <th>Operating System</th>
-                <th style="width:180px;">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($sessions as $s): ?>
-                <?php
-                  $location = trim(($s['city'] ? $s['city'] . ', ' : '') . $s['region']);
-                  $lastSeenText = fmt_datetime($s['last_seen_ts']);
-                  $startedText = fmt_datetime($s['created_ts']);
-                ?>
-                <tr data-session-id="<?php echo h($s['session_id']); ?>" data-status="<?php echo h($s['status']); ?>">
-                  <td>
-                    <div class="table-primary">
-                      <strong><?php echo $lastSeenText; ?></strong>
-                      <div class="table-subtext">Started <?php echo $startedText; ?> · Last seen <?php echo rel_time($s['last_seen_ts']); ?></div>
-                      <div><span class="<?php echo fmt_badge_class($s['status']); ?>"><?php echo ucfirst($s['status']); ?></span></div>
-                    </div>
-                  </td>
-                  <td>
-                    <div class="table-primary">
-                      <strong><?php echo h($location !== '' ? $location : 'Unknown'); ?></strong>
-                      <?php if (!empty($s['ip'])): ?><span class="table-subtext">IP <?php echo h($s['ip']); ?></span><?php endif; ?>
-                    </div>
-                  </td>
-                  <td>
-                    <div class="table-primary">
-                      <strong><?php echo h($s['browser'] ?: 'Unknown'); ?></strong>
-                      <?php if ($s['is_current']): ?><span class="table-subtext">This browser</span><?php endif; ?>
-                    </div>
-                  </td>
-                  <td>
-                    <div class="table-primary">
-                      <strong><?php echo h($s['platform'] ?: 'Unknown'); ?></strong>
-                      <?php if ($s['user_agent']): ?><span class="table-subtext">UA fingerprint stored</span><?php endif; ?>
-                    </div>
-                  </td>
-                  <td class="actions-cell">
-                    <?php if (in_array($s['status'], ['active', 'inactive'], true)): ?>
-                      <form method="post" action="sessions_actions.php" class="inline">
-                        <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                        <input type="hidden" name="action" value="signout_one">
-                        <input type="hidden" name="session_id" value="<?php echo h($s['session_id']); ?>">
-                        <button class="btn danger" type="submit">Sign Out</button>
-                      </form>
-                    <?php elseif ($s['is_current']): ?>
-                      <span class="table-subtext">Current session</span>
-                    <?php else: ?>
-                      <span class="table-subtext">No actions available</span>
-                    <?php endif; ?>
-                  </td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
+        <div class="session-grid">
+          <?php foreach ($sessions as $s): ?>
+            <div class="session-card<?php echo $s['is_current'] ? ' highlight' : ''; ?>">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <div>
+                  <div style="font-weight:600; font-size:1rem;">IP <?php echo h($s['ip'] ?: 'Unknown'); ?></div>
+                  <div class="muted" style="font-size:.9rem;">Location: <?php echo h(trim(($s['city'] ? $s['city'] . ', ' : '') . $s['region'])); ?></div>
+                </div>
+                <span class="<?php echo fmt_badge_class($s['status']); ?>"><?php echo ucfirst($s['status']); ?></span>
+              </div>
+              <div class="session-meta">
+                <span>Platform: <?php echo h($s['platform'] ?: 'Unknown'); ?></span>
+                <span>Browser: <?php echo h($s['browser'] ?: 'Unknown'); ?></span>
+                <span>Started: <?php echo fmt_datetime($s['created_ts']); ?></span>
+                <span>Last seen: <?php echo fmt_datetime($s['last_seen_ts']); ?> (<?php echo rel_time($s['last_seen_ts']); ?>)</span>
+              </div>
+              <?php if (!$s['is_current'] && $s['status'] !== 'revoked'): ?>
+                <form method="post" action="sessions_actions.php" class="inline" style="margin-top:8px;">
+                  <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                  <input type="hidden" name="action" value="signout_one">
+                  <input type="hidden" name="session_id" value="<?php echo h($s['session_id']); ?>">
+                  <button class="btn secondary" type="submit">Sign out</button>
+                </form>
+              <?php elseif ($s['is_current']): ?>
+                <div class="small-text">This browser</div>
+              <?php else: ?>
+                <div class="small-text">Already signed out</div>
+              <?php endif; ?>
+            </div>
+          <?php endforeach; ?>
         </div>
       <?php endif; ?>
     </section>
@@ -1102,25 +1032,6 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       }
     });
 
-    document.querySelectorAll('.btn-edit-passkey').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.getAttribute('data-passkey-id');
-        if (!id) return;
-        const form = document.getElementById(`rename-passkey-${id}`);
-        if (!form) return;
-        const nameInput = form.querySelector('input[name="name"]');
-        const current = btn.getAttribute('data-passkey-name') || (nameInput ? nameInput.value : '');
-        const preset = current && current.trim() !== '' ? current : 'My Passkey';
-        const next = prompt('Rename passkey', preset);
-        if (next === null) return;
-        const trimmed = next.trim();
-        if (trimmed === '') { alert('Name cannot be empty.'); return; }
-        if (nameInput) nameInput.value = trimmed;
-        btn.setAttribute('data-passkey-name', trimmed);
-        form.submit();
-      });
-    });
-
     // Passkey delete flow
     document.querySelectorAll('.btn-delete-passkey').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -1161,31 +1072,26 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     }
 
     // Trusted device rename
-    document.querySelectorAll('.btn-edit-device').forEach(btn => {
+    document.querySelectorAll('.btn-rename-device').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.preventDefault();
         const row = btn.closest('tr');
         if (!row) return;
-        const id = btn.getAttribute('data-device-id') || row.getAttribute('data-device-id');
-        if (!id) return;
-        const nameCell = row.querySelector('[data-field="name"]');
-        const current = btn.getAttribute('data-device-name') || (nameCell ? nameCell.textContent.trim() : '');
-        const preset = current && current.trim() !== '' ? current : 'Trusted device';
-        const next = prompt('Rename trusted device', preset);
-        if (next === null) return;
-        const trimmed = next.trim();
-        if (trimmed === '') { alert('Name cannot be empty.'); return; }
+        const id = row.getAttribute('data-device-id');
+        const input = row.querySelector('.td-name');
+        if (!id || !input) return;
+        const name = input.value.trim();
+        if (name === '') { alert('Name cannot be empty.'); return; }
         try {
           const form = new FormData();
           form.append('csrf_token', csrfToken);
           form.append('action', 'rename');
           form.append('id', id);
-          form.append('name', trimmed);
+          form.append('name', name);
           const res = await fetch('trusted_devices_actions.php', { method: 'POST', body: form, credentials: 'same-origin' });
           const data = await res.json();
           if (!data.ok) throw new Error(data.error || 'Rename failed.');
-          if (nameCell) nameCell.textContent = trimmed;
-          btn.setAttribute('data-device-name', trimmed);
+          input.dataset.original = name;
         } catch (err) {
           alert(err.message || err);
         }
