@@ -13,21 +13,15 @@ try {
   if ($uid <= 0) throw new RuntimeException('Not authenticated.');
 
   $code = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));
-  $pass = (string)($_POST['password'] ?? '');
 
-  if ($code === '' || $pass === '') throw new RuntimeException('Missing code or password.');
+  if ($code === '') throw new RuntimeException('Missing code.');
 
-  // password check
-  $st = $conn->prepare("SELECT password_hash, passkey_email_code, passkey_email_expires, email, first_name, last_name, role FROM users WHERE id=? LIMIT 1");
+  $st = $conn->prepare("SELECT passkey_email_code, passkey_email_expires, email, first_name, last_name, role FROM users WHERE id=? LIMIT 1");
   $st->bind_param("i", $uid);
   $st->execute();
   $rs = $st->get_result();
   $row = $rs ? $rs->fetch_assoc() : null;
   $st->close();
-
-  if (!$row || !password_verify($pass, (string)$row['password_hash'])) {
-    throw new RuntimeException('Incorrect password.');
-  }
 
   $e = strtotime((string)($row['passkey_email_expires'] ?? ''));
   $ok = $e && $e > time() && hash_equals((string)$row['passkey_email_code'], $code);
@@ -42,6 +36,8 @@ try {
     $u->execute();
     $u->close();
   }
+
+  $_SESSION['passkey_email_verified'] = time();
 
   ppf_log($conn, $uid, (string)$row['email'], (string)$row['role'], 'passkey_email_code_verified', 'user', (string)$uid, null);
 

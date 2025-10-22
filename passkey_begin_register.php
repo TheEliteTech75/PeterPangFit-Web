@@ -18,6 +18,17 @@ try {
         exit;
     }
 
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+        echo json_encode(['ok' => false, 'error' => 'Session expired. Refresh and try again.']);
+        exit;
+    }
+
+    $emailVerifiedAt = (int)($_SESSION['passkey_email_verified'] ?? 0);
+    if ($emailVerifiedAt === 0 || (time() - $emailVerifiedAt) > 15 * 60) {
+        echo json_encode(['ok' => false, 'error' => 'Verify the email confirmation code before adding a passkey.']);
+        exit;
+    }
+
     $name = trim((string)($_POST['name'] ?? 'My Passkey'));
     if ($name === '') $name = 'My Passkey';
 

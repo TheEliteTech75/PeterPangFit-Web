@@ -97,6 +97,10 @@ try {
     $uid = (int)($_SESSION['user_id'] ?? 0);
     if ($uid <= 0) throw new RuntimeException('Not authenticated.');
 
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+        throw new RuntimeException('Session expired. Refresh the page and try again.');
+    }
+
     $reg = $_SESSION['webauthn_reg'] ?? null;
     if (
         !$reg ||
@@ -105,11 +109,20 @@ try {
         throw new RuntimeException('Registration not initialized.');
     }
 
+    $emailVerifiedAt = (int)($_SESSION['passkey_email_verified'] ?? 0);
+    if ($emailVerifiedAt === 0 || (time() - $emailVerifiedAt) > 15 * 60) {
+        throw new RuntimeException('Email verification required before adding a passkey.');
+    }
+
     // 1) Read POST from your JS
     $clientDataJSON_b64 = (string)($_POST['clientDataJSON'] ?? '');
     $attObj_b64         = (string)($_POST['attestationObject'] ?? '');
+    $password           = (string)($_POST['password'] ?? '');
     if ($clientDataJSON_b64 === '' || $attObj_b64 === '') {
         throw new RuntimeException('Invalid registration payload.');
+    }
+    if ($password === '') {
+        throw new RuntimeException('Enter your current password to finish.');
     }
 
     // 2) Decode; your JS uses btoa() → standard base64; accept URL-safe too.
@@ -176,6 +189,19 @@ try {
         throw new RuntimeException('missing COSE public key');
     }
 
+    // verify password & fetch email for notification
+    $infoStmt = $conn->prepare("SELECT password_hash, email, first_name, last_name, role FROM users WHERE id=? LIMIT 1");
+    if (!$infoStmt) throw new RuntimeException('Unable to load user record.');
+    $infoStmt->bind_param('i', $uid);
+    $infoStmt->execute();
+    $infoRes = $infoStmt->get_result();
+    $info = $infoRes ? $infoRes->fetch_assoc() : null;
+    $infoStmt->close();
+
+    if (!$info || !password_verify($password, (string)$info['password_hash'])) {
+        throw new RuntimeException('Incorrect password.');
+    }
+
     // 6) Persist to DB
     // Ensure your schema:
     // passkeys(user_id INT, name VARCHAR, cred_id BLOB, public_key BLOB, counter INT, created_at DATETIME, last_used_at DATETIME NULL)
@@ -198,8 +224,10 @@ try {
         throw new RuntimeException($err);
     }
     $stmt->close();
-	
-	// --- Notify the user that a new passkey was added ---
+
+    $_SESSION['passkey_email_verified'] = null;
+
+        // --- Notify the user that a new passkey was added ---
 try {
     // Load user info
     $uemail = ''; $ufirst=''; $ulast='';
