@@ -104,6 +104,8 @@ function ss_set(mysqli $conn, string $key, string $value): bool {
     return ppf_ss_set($conn, $key, $value);
 }
 
+$twofaSetup = $_SESSION['twofa_app_setup'] ?? null;
+
 // ---------- POST actions ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
@@ -112,6 +114,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $action = (string)($_POST['action'] ?? '');
     switch ($action) {
+        case 'toggle_email': {
+            $state = $_POST['state'] ?? '';
+            $enable = ($state === 'enable');
+            $val = $enable ? 1 : 0;
+            if ($st = $conn->prepare("UPDATE users SET twofa_email_enabled=?, twofa_email_code=NULL, twofa_email_expires=NULL WHERE id=?")) {
+                $st->bind_param('ii', $val, $uid);
+                $st->execute();
+                $st->close();
+            }
+            if (function_exists('ppf_log')) {
+                $event = $enable ? 'twofa_email_enabled' : 'twofa_email_disabled';
+                ppf_log($conn, $uid, $email ?: null, $role ?: null, $event, 'user', (string)$uid, null);
+            }
+            redirect_with_flash('success', $enable ? 'Email authentication is now enabled.' : 'Email authentication has been disabled.', 'twofa');
+        }
+
+        case 'start_app_setup': {
+            $secret = strtoupper(ppf_totp_new_secret(20));
+            $_SESSION['twofa_app_setup'] = [
+                'secret' => $secret,
+                'created' => time(),
+            ];
+            redirect_with_flash('info', 'Authenticator setup started. Scan the QR code and confirm with a code to finish.', 'twofa');
+        }
+
+        case 'cancel_app_setup': {
+            unset($_SESSION['twofa_app_setup']);
+            redirect_with_flash('info', 'Authenticator setup cancelled.', 'twofa');
+        }
+
+        case 'confirm_app_setup': {
+            $setup = $_SESSION['twofa_app_setup'] ?? null;
+            $code = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));
+            if (!$setup || empty($setup['secret'])) {
+                redirect_with_flash('error', 'Setup session expired. Start again.', 'twofa');
+            }
+            if ($code === '' || !ppf_totp_verify($setup['secret'], $code, 30, 6, 8)) {
+                redirect_with_flash('error', 'Invalid authenticator code. Please try again.', 'twofa');
+            }
+            if ($st = $conn->prepare("UPDATE users SET twofa_app_enabled=1, twofa_secret=? WHERE id=?")) {
+                $secret = strtoupper($setup['secret']);
+                $st->bind_param('si', $secret, $uid);
+                $st->execute();
+                $st->close();
+            }
+            unset($_SESSION['twofa_app_setup']);
+            if (function_exists('ppf_log')) {
+                ppf_log($conn, $uid, $email ?: null, $role ?: null, 'twofa_app_enabled', 'user', (string)$uid, null);
+            }
+            redirect_with_flash('success', 'Authenticator app protection is now enabled.', 'twofa');
+        }
+
+        case 'disable_app': {
+            $code = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));
+            if ($code === '') {
+                redirect_with_flash('error', 'Enter the current authenticator code to disable it.', 'twofa');
+            }
+            $secret = '';
+            if ($st = $conn->prepare("SELECT twofa_secret FROM users WHERE id=? LIMIT 1")) {
+                $st->bind_param('i', $uid);
+                $st->execute();
+                $res = $st->get_result();
+                $row = $res ? $res->fetch_assoc() : null;
+                $st->close();
+                $secret = strtoupper(preg_replace('/\s+/', '', (string)($row['twofa_secret'] ?? '')));
+            }
+            if ($secret === '' || !ppf_totp_verify($secret, $code, 30, 6, 8)) {
+                redirect_with_flash('error', 'Authenticator code was not recognized. Try again.', 'twofa');
+            }
+            if ($st = $conn->prepare("UPDATE users SET twofa_app_enabled=0, twofa_secret=NULL WHERE id=?")) {
+                $st->bind_param('i', $uid);
+                $st->execute();
+                $st->close();
+            }
+            if (function_exists('ppf_log')) {
+                ppf_log($conn, $uid, $email ?: null, $role ?: null, 'twofa_app_disabled', 'user', (string)$uid, null);
+            }
+            redirect_with_flash('info', 'Authenticator app requirement removed.', 'twofa');
+        }
+
         case 'system_settings': {
             if (!$isAdmin) {
                 redirect_with_flash('error', 'You are not allowed to update system settings.');
@@ -145,6 +227,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     redirect_with_flash('error', 'Unknown action.');
+}
+
+// expire stale setup state (10 minutes)
+if ($twofaSetup && isset($twofaSetup['created']) && (time() - (int)$twofaSetup['created'] > 600)) {
+    unset($_SESSION['twofa_app_setup']);
+    $twofaSetup = null;
 }
 
 $flash = settings_flash();
@@ -185,6 +273,9 @@ if ($st = $conn->prepare("SELECT email, first_name, last_name, role, twofa_email
 $twofaEmailEnabled = (int)($userRow['twofa_email_enabled'] ?? 0) === 1;
 $twofaAppEnabled   = (int)($userRow['twofa_app_enabled'] ?? 0) === 1;
 $twofaSecret       = strtoupper(preg_replace('/\s+/', '', (string)($userRow['twofa_secret'] ?? '')));
+
+$accountName = $email !== '' ? $email : ('user' . $uid . '@peterpangfit');
+$otpauthUrl  = ($twofaSetup && !empty($twofaSetup['secret'])) ? ppf_otpauth_url('Peter Pang Fit', $accountName, $twofaSetup['secret']) : null;
 
 // Passkeys
 $passkeys = [];
@@ -422,6 +513,31 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
 
     form.inline { display: inline; }
 
+    .totp-setup {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+    .totp-setup pre {
+      background: rgba(8, 12, 24, 0.92);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      font-size: .95rem;
+      overflow-x: auto;
+    }
+    .qr-frame {
+      background: rgba(8, 12, 24, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
     .input {
       width: 100%;
       padding: 12px 14px;
@@ -482,18 +598,6 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       gap: 4px;
     }
     .table-primary strong { font-size: 1rem; color: var(--text); }
-    .table-primary .inline-editor {
-      margin-top: 10px;
-      padding: 12px;
-      border-radius: 14px;
-      border: 1px solid rgba(148,163,184,0.25);
-      background: rgba(8, 12, 24, 0.78);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .inline-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .table-display[hidden] { display: none !important; }
     .table-subtext {
       font-size: .82rem;
       color: var(--muted);
@@ -504,58 +608,6 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     .btn.ghost { background: rgba(15,23,42,0.7); border-color: rgba(148,163,184,0.28); }
     .btn.ghost:hover { border-color: rgba(56,189,248,0.45); color: #e0f2fe; }
     .table-empty { padding: 22px; text-align: center; color: var(--muted); font-size: .95rem; }
-
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(3, 6, 14, 0.78);
-      backdrop-filter: blur(6px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      z-index: 999;
-    }
-    .modal-backdrop.open { display: flex; }
-    .modal {
-      width: 100%;
-      max-width: 480px;
-      background: rgba(9, 14, 28, 0.95);
-      border: 1px solid rgba(148,163,184,0.25);
-      border-radius: 20px;
-      padding: 26px;
-      color: var(--text);
-      box-shadow: 0 24px 48px rgba(15, 23, 42, 0.6);
-    }
-    .modal header h3 {
-      margin: 0 0 4px 0;
-      font-size: 1.25rem;
-    }
-    .modal header p { margin: 0; color: var(--muted); }
-    .modal footer {
-      margin-top: 24px;
-      display: flex;
-      justify-content: flex-end;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .modal .step-content { margin-top: 18px; display: flex; flex-direction: column; gap: 14px; }
-    .modal .code-inputs { display: flex; gap: 10px; }
-    .modal .code-inputs input { flex: 1; text-align: center; font-size: 1.1rem; letter-spacing: .2em; }
-    .modal .error { color: #fca5a5; background: rgba(127,29,29,0.25); border: 1px solid rgba(239,68,68,0.35); padding: 10px 12px; border-radius: 12px; font-size: .9rem; }
-    .modal .success { color: #bbf7d0; background: rgba(22,101,52,0.25); border: 1px solid rgba(34,197,94,0.35); padding: 10px 12px; border-radius: 12px; font-size: .9rem; }
-    .modal .qr-preview {
-      padding: 16px;
-      border-radius: 16px;
-      border: 1px dashed rgba(148,163,184,0.35);
-      background: rgba(8,12,24,0.82);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
-    .modal .qr-preview img { max-width: 220px; border-radius: 12px; }
-    .modal .small-text { color: var(--muted); font-size: .88rem; }
 
     .status {
       display: inline-flex;
@@ -678,9 +730,14 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
           <strong>Email Authentication</strong>
           <span><?php echo $twofaEmailEnabled ? 'Codes can be sent to your email when needed.' : 'A backup code will be sent only after you enable this option.'; ?></span>
         </div>
-        <button class="btn<?php echo $twofaEmailEnabled ? ' secondary' : ''; ?>" id="btnEmailToggle" data-state="<?php echo $twofaEmailEnabled ? 'disable' : 'enable'; ?>">
-          <?php echo $twofaEmailEnabled ? 'Disable' : 'Enable'; ?>
-        </button>
+        <form method="post" class="inline">
+          <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+          <input type="hidden" name="action" value="toggle_email">
+          <input type="hidden" name="state" value="<?php echo $twofaEmailEnabled ? 'disable' : 'enable'; ?>">
+          <button class="btn<?php echo $twofaEmailEnabled ? ' secondary' : ''; ?>" type="submit">
+            <?php echo $twofaEmailEnabled ? 'Disable' : 'Enable'; ?>
+          </button>
+        </form>
       </div>
 
       <div class="switch-row">
@@ -689,11 +746,46 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
           <span><?php echo $twofaAppEnabled ? 'Logins require a 6-digit code from your authenticator.' : 'Pair an authenticator app like Google Authenticator or Authy for stronger protection.'; ?></span>
         </div>
         <?php if ($twofaAppEnabled): ?>
-          <button class="btn danger" id="btnDisableApp">Disable</button>
+          <form method="post" class="inline" style="display:flex;align-items:center;gap:10px;">
+            <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+            <input type="hidden" name="action" value="disable_app">
+            <input class="input" style="width:140px;" name="code" placeholder="123456" maxlength="6" inputmode="numeric" required>
+            <button class="btn danger" type="submit">Disable</button>
+          </form>
         <?php else: ?>
-          <button class="btn" id="btnEnableApp">Enable</button>
+          <form method="post" class="inline">
+            <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+            <input type="hidden" name="action" value="start_app_setup">
+            <button class="btn" type="submit">Start setup</button>
+          </form>
         <?php endif; ?>
       </div>
+
+      <?php if ($twofaSetup && $otpauthUrl): ?>
+        <div class="totp-setup">
+          <div>
+            <div class="qr-frame">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&amp;data=<?php echo urlencode($otpauthUrl); ?>" alt="Authenticator QR">
+            </div>
+          </div>
+          <div>
+            <h3>Scan &amp; Confirm</h3>
+            <p class="muted">Scan the QR code with your authenticator app, or enter this secret manually:</p>
+            <pre><?php echo h(chunk_split($twofaSetup['secret'], 4, ' ')); ?></pre>
+            <form method="post" class="actions-row">
+              <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+              <input type="hidden" name="action" value="confirm_app_setup">
+              <input class="input" style="max-width:180px;" name="code" placeholder="123456" inputmode="numeric" maxlength="6" required>
+              <button class="btn" type="submit">Confirm</button>
+            </form>
+            <form method="post" class="inline" style="margin-top:12px; display:inline-block;">
+              <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+              <input type="hidden" name="action" value="cancel_app_setup">
+              <button class="btn secondary" type="submit">Cancel setup</button>
+            </form>
+          </div>
+        </div>
+      <?php endif; ?>
     </section>
 
     <section class="card" id="passkeys">
@@ -733,16 +825,9 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                   $pkLast = strtotime((string)($pk['last_used_at'] ?? '')) ?: null;
                 ?>
                 <tr data-passkey-id="<?php echo $pkId; ?>">
-                  <td data-field="name">
+                  <td>
                     <div class="table-primary">
-                      <strong class="table-display" data-field="name-display"><?php echo h($pkName !== '' ? $pkName : 'Unnamed passkey'); ?></strong>
-                      <div class="inline-editor" data-role="passkey" data-id="<?php echo $pkId; ?>" hidden>
-                        <input class="input" type="text" maxlength="100" value="<?php echo h($pkName); ?>" placeholder="Passkey name">
-                        <div class="inline-actions">
-                          <button class="btn small" data-action="save">Save</button>
-                          <button class="btn small secondary" data-action="cancel">Cancel</button>
-                        </div>
-                      </div>
+                      <strong data-field="name"><?php echo h($pkName !== '' ? $pkName : 'Unnamed passkey'); ?></strong>
                     </div>
                   </td>
                   <td data-field="created">
@@ -757,8 +842,13 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                     </div>
                   </td>
                   <td class="actions-cell">
-                    <button class="btn small ghost btn-edit-passkey" data-passkey-id="<?php echo $pkId; ?>">Edit</button>
-                    <button class="btn small danger btn-delete-passkey" data-passkey-id="<?php echo $pkId; ?>" data-passkey-name="<?php echo h($pkName !== '' ? $pkName : 'Unnamed passkey'); ?>">Delete</button>
+                    <button class="btn small ghost btn-edit-passkey" data-passkey-id="<?php echo $pkId; ?>" data-passkey-name="<?php echo h($pkName); ?>">Edit</button>
+                    <button class="btn small danger btn-delete-passkey" data-passkey-id="<?php echo $pkId; ?>">Delete</button>
+                    <form method="post" action="passkey_rename.php" class="rename-form" id="rename-passkey-<?php echo $pkId; ?>" style="display:none;">
+                      <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                      <input type="hidden" name="passkey_id" value="<?php echo $pkId; ?>">
+                      <input type="hidden" name="name" value="<?php echo h($pkName); ?>">
+                    </form>
                   </td>
                 </tr>
               <?php endforeach; ?>
@@ -805,16 +895,9 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                   $tdExpires = strtotime((string)($td['expires_at'] ?? '')) ?: null;
                 ?>
                 <tr data-device-id="<?php echo $tdId; ?>">
-                  <td data-field="name">
+                  <td>
                     <div class="table-primary">
-                      <strong class="table-display" data-field="name-display"><?php echo h($tdName !== '' ? $tdName : 'Unnamed device'); ?></strong>
-                      <div class="inline-editor" data-role="trusted" data-id="<?php echo $tdId; ?>" hidden>
-                        <input class="input" type="text" maxlength="100" value="<?php echo h($tdName); ?>" placeholder="Device name">
-                        <div class="inline-actions">
-                          <button class="btn small" data-action="save">Save</button>
-                          <button class="btn small secondary" data-action="cancel">Cancel</button>
-                        </div>
-                      </div>
+                      <strong data-field="name"><?php echo h($tdName !== '' ? $tdName : 'Unnamed device'); ?></strong>
                       <?php if ($tdExpires): ?>
                         <span class="table-subtext">Expires <?php echo fmt_datetime($tdExpires); ?></span>
                       <?php endif; ?>
@@ -832,7 +915,7 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                     </div>
                   </td>
                   <td class="actions-cell">
-                    <button class="btn small ghost btn-edit-device" data-device-id="<?php echo $tdId; ?>">Edit</button>
+                    <button class="btn small ghost btn-edit-device" data-device-id="<?php echo $tdId; ?>" data-device-name="<?php echo h($tdName); ?>">Edit</button>
                     <form method="post" action="trusted_devices_actions.php" class="inline">
                       <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                       <input type="hidden" name="action" value="delete">
@@ -886,7 +969,7 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                 <th>Timestamp</th>
                 <th>Location</th>
                 <th>Browser</th>
-                <th>OS</th>
+                <th>Operating System</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -908,6 +991,7 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                   <td>
                     <div class="table-primary">
                       <strong><?php echo h($location !== '' ? $location : 'Unknown'); ?></strong>
+                      <?php if (!empty($s['ip'])): ?><span class="table-subtext">IP <?php echo h($s['ip']); ?></span><?php endif; ?>
                     </div>
                   </td>
                   <td>
@@ -919,6 +1003,7 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                   <td>
                     <div class="table-primary">
                       <strong><?php echo h($s['platform'] ?: 'Unknown'); ?></strong>
+                      <?php if ($s['user_agent']): ?><span class="table-subtext">UA fingerprint stored</span><?php endif; ?>
                     </div>
                   </td>
                   <td class="actions-cell">
@@ -985,118 +1070,25 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     <?php endif; ?>
   </main>
 
-  <div class="modal-backdrop" id="securityModal" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true">
-      <header>
-        <h3 id="modalTitle">Security Verification</h3>
-        <p id="modalSubtitle">Complete the following steps to continue.</p>
-      </header>
-      <div class="step-content" id="modalContent"></div>
-      <footer id="modalFooter"></footer>
-    </div>
-  </div>
-
   <script>
     const csrfToken = <?php echo json_encode($csrf, JSON_UNESCAPED_SLASHES); ?>;
 
-    function setButtonBusy(button, busy, busyText = 'Processing...') {
-      if (!button) return;
-      if (busy) {
-        if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
-        button.disabled = true;
-        button.textContent = busyText;
-        button.style.opacity = '0.6';
-      } else {
-        button.disabled = false;
-        if (button.dataset.originalText) {
-          button.textContent = button.dataset.originalText;
-          delete button.dataset.originalText;
-        }
-        button.style.opacity = '';
-      }
+    async function beginPasskey(name) {
+      const formData = new FormData();
+      formData.append('name', name);
+      const res = await fetch('passkey_begin_register.php', { method: 'POST', body: formData, credentials: 'same-origin' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Unable to start passkey registration.');
+      return data.publicKey;
     }
-
-    const securityModal = (() => {
-      const backdrop = document.getElementById('securityModal');
-      const titleEl = document.getElementById('modalTitle');
-      const subtitleEl = document.getElementById('modalSubtitle');
-      const contentEl = document.getElementById('modalContent');
-      const footerEl = document.getElementById('modalFooter');
-
-      function open({ title, subtitle, html, actions = [] }) {
-        titleEl.textContent = title || 'Security Check';
-        subtitleEl.textContent = subtitle || '';
-        contentEl.innerHTML = html || '';
-        footerEl.innerHTML = '';
-
-        actions.forEach(action => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn' + (action.variant ? ' ' + action.variant : '');
-          btn.textContent = action.label;
-          if (action.role) btn.dataset.role = action.role;
-          btn.addEventListener('click', action.onClick);
-          footerEl.appendChild(btn);
-        });
-
-        backdrop.classList.add('open');
-        backdrop.setAttribute('aria-hidden', 'false');
-      }
-
-      function close() {
-        backdrop.classList.remove('open');
-        backdrop.setAttribute('aria-hidden', 'true');
-        contentEl.innerHTML = '';
-        footerEl.innerHTML = '';
-      }
-
-      function showError(message) {
-        const box = contentEl.querySelector('[data-role="error"]');
-        if (!box) return;
-        if (!message) {
-          box.hidden = true;
-          box.textContent = '';
-          return;
-        }
-        box.hidden = false;
-        box.textContent = message;
-      }
-
-      function setBusy(role, busy, label = 'Processing...') {
-        const btn = footerEl.querySelector(role ? `[data-role="${role}"]` : 'button');
-        if (!btn) return;
-        if (busy) {
-          if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent;
-          btn.disabled = true;
-          btn.textContent = label;
-        } else {
-          btn.disabled = false;
-          if (btn.dataset.originalText) {
-            btn.textContent = btn.dataset.originalText;
-            delete btn.dataset.originalText;
-          }
-        }
-      }
-
-      function getContent() {
-        return contentEl;
-      }
-
-      backdrop.addEventListener('click', (event) => {
-        if (event.target === backdrop) close();
-      });
-      window.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && backdrop.classList.contains('open')) close();
-      });
-
-      return { open, close, showError, setBusy, getContent };
-    })();
 
     function hexToArrayBuffer(hex) {
       if (!hex) return new ArrayBuffer(0);
       const len = hex.length / 2;
       const arr = new Uint8Array(len);
-      for (let i = 0; i < len; i++) arr[i] = parseInt(hex.substr(i * 2, 2), 16);
+      for (let i = 0; i < len; i++) {
+        arr[i] = parseInt(hex.substr(i * 2, 2), 16);
+      }
       return arr.buffer;
     }
 
@@ -1107,462 +1099,22 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
 
-    async function beginPasskey(name) {
-      const formData = new FormData();
-      formData.append('name', name);
-      formData.append('csrf_token', csrfToken);
-      const res = await fetch('passkey_begin_register.php', { method: 'POST', body: formData, credentials: 'same-origin' });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Unable to start passkey registration.');
-      return data.publicKey;
-    }
-
-    async function finalizePasskey(attestation, password) {
+    async function completePasskey(attestation) {
       const formData = new FormData();
       formData.append('clientDataJSON', attestation.clientDataJSON);
       formData.append('attestationObject', attestation.attestationObject);
-      formData.append('password', password);
-      formData.append('csrf_token', csrfToken);
       const res = await fetch('passkey_finish_register.php', { method: 'POST', body: formData, credentials: 'same-origin' });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Passkey registration failed.');
     }
 
-    async function renamePasskey(id, name) {
-      const formData = new FormData();
-      formData.append('csrf_token', csrfToken);
-      formData.append('passkey_id', id);
-      formData.append('name', name);
-      formData.append('ajax', '1');
-      const res = await fetch('passkey_rename.php', { method: 'POST', body: formData, credentials: 'same-origin' });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Rename failed.');
-    }
-
-    async function renameDevice(id, name) {
-      const formData = new FormData();
-      formData.append('csrf_token', csrfToken);
-      formData.append('action', 'rename');
-      formData.append('id', id);
-      formData.append('name', name);
-      const res = await fetch('trusted_devices_actions.php', { method: 'POST', body: formData, credentials: 'same-origin' });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Rename failed.');
-    }
-
-    function setupInlineEditing() {
-      document.querySelectorAll('.inline-editor').forEach(editor => {
-        const role = editor.dataset.role;
-        const row = editor.closest('tr');
-        const display = row?.querySelector('[data-field="name-display"]');
-        const input = editor.querySelector('input');
-        const saveBtn = editor.querySelector('[data-action="save"]');
-        const cancelBtn = editor.querySelector('[data-action="cancel"]');
-        const editBtn = role === 'passkey' ? row?.querySelector('.btn-edit-passkey') : row?.querySelector('.btn-edit-device');
-        if (!display || !input || !saveBtn || !editBtn) return;
-
-        editBtn.addEventListener('click', (event) => {
-          event.preventDefault();
-          display.hidden = true;
-          editor.hidden = false;
-          input.value = display.textContent.trim();
-          input.focus();
-          input.select();
-        });
-
-        cancelBtn?.addEventListener('click', (event) => {
-          event.preventDefault();
-          editor.hidden = true;
-          display.hidden = false;
-        });
-
-        saveBtn.addEventListener('click', async (event) => {
-          event.preventDefault();
-          const name = input.value.trim();
-          if (name === '') { alert('Name cannot be empty.'); input.focus(); return; }
-          const id = editor.dataset.id || row?.dataset.passkeyId || row?.dataset.deviceId;
-          if (!id) return;
-          const original = saveBtn.textContent;
-          saveBtn.disabled = true;
-          saveBtn.textContent = 'Saving...';
-          try {
-            if (role === 'passkey') {
-              await renamePasskey(id, name);
-            } else {
-              await renameDevice(id, name);
-            }
-            display.textContent = name;
-            editor.hidden = true;
-            display.hidden = false;
-          } catch (err) {
-            alert(err.message || err);
-          } finally {
-            saveBtn.disabled = false;
-            saveBtn.textContent = original;
-          }
-        });
-      });
-    }
-
-    setupInlineEditing();
-
-    const emailButton = document.getElementById('btnEmailToggle');
-    if (emailButton) {
-      emailButton.addEventListener('click', () => handleEmailToggle(emailButton));
-    }
-
-    async function handleEmailToggle(button) {
-      const state = button.dataset.state === 'disable' ? 'disable' : 'enable';
-      setButtonBusy(button, true);
+    document.getElementById('btnAddPasskey')?.addEventListener('click', async () => {
       try {
-        const formData = new FormData();
-        formData.append('action', 'request');
-        formData.append('state', state);
-        formData.append('csrf_token', csrfToken);
-        const res = await fetch('twofa_email_actions.php', { method: 'POST', body: formData, credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Unable to send verification email.');
-        setButtonBusy(button, false, 'Processing...');
-        openEmailModal(state);
-      } catch (err) {
-        alert(err.message || err);
-        setButtonBusy(button, false);
-      }
-    }
+        if (!window.PublicKeyCredential) throw new Error('This browser does not support WebAuthn.');
+        const name = prompt('Name this passkey', 'My Passkey');
+        if (name === null || name.trim() === '') return;
+        const pubKey = await beginPasskey(name.trim());
 
-    function openEmailModal(state) {
-      securityModal.open({
-        title: state === 'enable' ? 'Enable Email Authentication' : 'Disable Email Authentication',
-        subtitle: 'Enter the 6-digit code sent to your email and confirm with your current password. Codes expire in 15 minutes.',
-        html: `
-          <div class="error" data-role="error" hidden></div>
-          <form id="emailToggleForm" autocomplete="off">
-            <label class="small-text">6-digit code</label>
-            <input class="input" name="code" maxlength="6" inputmode="numeric" required>
-            <label class="small-text">Current password</label>
-            <input class="input" name="password" type="password" autocomplete="current-password" required>
-          </form>
-        `,
-        actions: [
-          { label: 'Cancel', variant: 'secondary', role: 'cancel', onClick: (e) => { e.preventDefault(); securityModal.close(); } },
-          { label: state === 'enable' ? 'Enable' : 'Disable', role: 'submit', onClick: (e) => submitEmailToggle(e, state) }
-        ]
-      });
-      const codeField = securityModal.getContent().querySelector('input[name="code"]');
-      if (codeField) codeField.focus();
-    }
-
-    async function submitEmailToggle(event, state) {
-      event.preventDefault();
-      const form = securityModal.getContent().querySelector('#emailToggleForm');
-      if (!form) return;
-      const code = form.code.value.trim();
-      const password = form.password.value;
-      if (code.length !== 6) { securityModal.showError('Enter the 6-digit code.'); return; }
-      if (!password) { securityModal.showError('Enter your current password.'); return; }
-      securityModal.showError('');
-      securityModal.setBusy('submit', true);
-      try {
-        const body = new FormData();
-        body.append('action', 'confirm');
-        body.append('state', state);
-        body.append('code', code);
-        body.append('password', password);
-        body.append('csrf_token', csrfToken);
-        const res = await fetch('twofa_email_actions.php', { method: 'POST', body, credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Unable to update email authentication.');
-        securityModal.close();
-        location.reload();
-      } catch (err) {
-        securityModal.setBusy('submit', false);
-        securityModal.showError(err.message || err);
-      }
-    }
-
-    const enableAppBtn = document.getElementById('btnEnableApp');
-    if (enableAppBtn) enableAppBtn.addEventListener('click', () => startAppEnable(enableAppBtn));
-    const disableAppBtn = document.getElementById('btnDisableApp');
-    if (disableAppBtn) disableAppBtn.addEventListener('click', () => openAppDisableModal());
-
-    async function startAppEnable(button) {
-      setButtonBusy(button, true);
-      try {
-        const body = new FormData();
-        body.append('action', 'request_enable');
-        body.append('csrf_token', csrfToken);
-        const res = await fetch('twofa_app_actions.php', { method: 'POST', body, credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Unable to start authenticator setup.');
-        setButtonBusy(button, false);
-        openAppCodeStep();
-      } catch (err) {
-        alert(err.message || err);
-        setButtonBusy(button, false);
-      }
-    }
-
-    function openAppCodeStep() {
-      securityModal.open({
-        title: 'Enable Authenticator App',
-        subtitle: 'Enter the 6-digit code we emailed to confirm this setup request.',
-        html: `
-          <div class="error" data-role="error" hidden></div>
-          <form id="appCodeForm" autocomplete="off">
-            <label class="small-text">6-digit code</label>
-            <input class="input" name="code" maxlength="6" inputmode="numeric" required>
-          </form>
-        `,
-        actions: [
-          { label: 'Cancel', variant: 'secondary', role: 'cancel', onClick: (e) => { e.preventDefault(); securityModal.close(); } },
-          { label: 'Verify Code', role: 'submit', onClick: submitAppCode }
-        ]
-      });
-      const input = securityModal.getContent().querySelector('input[name="code"]');
-      if (input) input.focus();
-    }
-
-    async function submitAppCode(event) {
-      event.preventDefault();
-      const form = securityModal.getContent().querySelector('#appCodeForm');
-      if (!form) return;
-      const code = form.code.value.trim();
-      if (code.length !== 6) { securityModal.showError('Enter the 6-digit code.'); return; }
-      securityModal.showError('');
-      securityModal.setBusy('submit', true, 'Verifying...');
-      try {
-        const body = new FormData();
-        body.append('action', 'verify_code');
-        body.append('code', code);
-        body.append('csrf_token', csrfToken);
-        const res = await fetch('twofa_app_actions.php', { method: 'POST', body, credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Invalid or expired code.');
-        openAppQrStep(data);
-      } catch (err) {
-        securityModal.setBusy('submit', false);
-        securityModal.showError(err.message || err);
-      }
-    }
-
-    function chunkSecret(secret) {
-      return secret.replace(/(.{4})/g, '$1 ').trim();
-    }
-
-    function openAppQrStep(data) {
-      const qrUrl = data.qr || '';
-      const secret = data.secret || '';
-      securityModal.open({
-        title: 'Scan the QR Code',
-        subtitle: 'Scan this code with your authenticator app, then continue.',
-        html: `
-          <div class="error" data-role="error" hidden></div>
-          <div class="qr-preview">
-            <img src="${qrUrl}" alt="Authenticator QR">
-            <div class="small-text">Secret: <code>${chunkSecret(secret)}</code></div>
-          </div>
-          <p class="small-text">If you cannot scan the QR code, enter the secret manually in your authenticator app.</p>
-        `,
-        actions: [
-          { label: 'Cancel', variant: 'secondary', role: 'cancel', onClick: (e) => { e.preventDefault(); securityModal.close(); } },
-          { label: 'Next', role: 'submit', onClick: (e) => { e.preventDefault(); openAppConfirmStep(); } }
-        ]
-      });
-    }
-
-    function openAppConfirmStep() {
-      securityModal.open({
-        title: 'Confirm Authenticator App',
-        subtitle: 'Enter a code from your authenticator app and your current password to finish.',
-        html: `
-          <div class="error" data-role="error" hidden></div>
-          <form id="appConfirmForm" autocomplete="off">
-            <label class="small-text">Authenticator code</label>
-            <input class="input" name="code" maxlength="6" inputmode="numeric" required>
-            <label class="small-text">Current password</label>
-            <input class="input" name="password" type="password" autocomplete="current-password" required>
-          </form>
-        `,
-        actions: [
-          { label: 'Cancel', variant: 'secondary', role: 'cancel', onClick: (e) => { e.preventDefault(); securityModal.close(); } },
-          { label: 'Enable App', role: 'submit', onClick: submitAppConfirm }
-        ]
-      });
-      const input = securityModal.getContent().querySelector('input[name="code"]');
-      if (input) input.focus();
-    }
-
-    async function submitAppConfirm(event) {
-      event.preventDefault();
-      const form = securityModal.getContent().querySelector('#appConfirmForm');
-      if (!form) return;
-      const code = form.code.value.trim();
-      const password = form.password.value;
-      if (code.length !== 6) { securityModal.showError('Enter the 6-digit code from your authenticator app.'); return; }
-      if (!password) { securityModal.showError('Enter your current password.'); return; }
-      securityModal.showError('');
-      securityModal.setBusy('submit', true, 'Enabling...');
-      try {
-        const body = new FormData();
-        body.append('action', 'confirm_enable');
-        body.append('code', code);
-        body.append('password', password);
-        body.append('csrf_token', csrfToken);
-        const res = await fetch('twofa_app_actions.php', { method: 'POST', body, credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Unable to enable authenticator app.');
-        securityModal.close();
-        location.reload();
-      } catch (err) {
-        securityModal.setBusy('submit', false);
-        securityModal.showError(err.message || err);
-      }
-    }
-
-    function openAppDisableModal() {
-      securityModal.open({
-        title: 'Disable Authenticator App',
-        subtitle: 'Enter a current authenticator code and your password to disable the app requirement.',
-        html: `
-          <div class="error" data-role="error" hidden></div>
-          <form id="appDisableForm" autocomplete="off">
-            <label class="small-text">Authenticator code</label>
-            <input class="input" name="code" maxlength="6" inputmode="numeric" required>
-            <label class="small-text">Current password</label>
-            <input class="input" name="password" type="password" autocomplete="current-password" required>
-          </form>
-        `,
-        actions: [
-          { label: 'Cancel', variant: 'secondary', role: 'cancel', onClick: (e) => { e.preventDefault(); securityModal.close(); } },
-          { label: 'Disable App', role: 'submit', variant: 'danger', onClick: submitAppDisable }
-        ]
-      });
-      const input = securityModal.getContent().querySelector('input[name="code"]');
-      if (input) input.focus();
-    }
-
-    async function submitAppDisable(event) {
-      event.preventDefault();
-      const form = securityModal.getContent().querySelector('#appDisableForm');
-      if (!form) return;
-      const code = form.code.value.trim();
-      const password = form.password.value;
-      if (code.length !== 6) { securityModal.showError('Enter the 6-digit code from your authenticator app.'); return; }
-      if (!password) { securityModal.showError('Enter your current password.'); return; }
-      securityModal.showError('');
-      securityModal.setBusy('submit', true, 'Disabling...');
-      try {
-        const body = new FormData();
-        body.append('action', 'disable');
-        body.append('code', code);
-        body.append('password', password);
-        body.append('csrf_token', csrfToken);
-        const res = await fetch('twofa_app_actions.php', { method: 'POST', body, credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Unable to disable authenticator app.');
-        securityModal.close();
-        location.reload();
-      } catch (err) {
-        securityModal.setBusy('submit', false);
-        securityModal.showError(err.message || err);
-      }
-    }
-
-    const addPasskeyBtn = document.getElementById('btnAddPasskey');
-    if (addPasskeyBtn) addPasskeyBtn.addEventListener('click', () => startPasskeyFlow(addPasskeyBtn));
-
-    let pendingAttestation = null;
-
-    async function startPasskeyFlow(button) {
-      if (!window.PublicKeyCredential) {
-        alert('This browser does not support passkeys.');
-        return;
-      }
-      setButtonBusy(button, true);
-      try {
-        const res = await fetch('passkey_email_request.php', { method: 'POST', credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Unable to send verification code.');
-        setButtonBusy(button, false);
-        openPasskeyCodeStep();
-      } catch (err) {
-        alert(err.message || err);
-        setButtonBusy(button, false);
-      }
-    }
-
-    function openPasskeyCodeStep() {
-      pendingAttestation = null;
-      securityModal.open({
-        title: 'Add a Passkey',
-        subtitle: 'Enter the 6-digit code sent to your email to begin passkey registration.',
-        html: `
-          <div class="error" data-role="error" hidden></div>
-          <form id="passkeyCodeForm" autocomplete="off">
-            <label class="small-text">6-digit code</label>
-            <input class="input" name="code" maxlength="6" inputmode="numeric" required>
-          </form>
-        `,
-        actions: [
-          { label: 'Cancel', variant: 'secondary', role: 'cancel', onClick: (e) => { e.preventDefault(); securityModal.close(); pendingAttestation = null; } },
-          { label: 'Verify Code', role: 'submit', onClick: submitPasskeyCode }
-        ]
-      });
-      const input = securityModal.getContent().querySelector('input[name="code"]');
-      if (input) input.focus();
-    }
-
-    async function submitPasskeyCode(event) {
-      event.preventDefault();
-      const form = securityModal.getContent().querySelector('#passkeyCodeForm');
-      if (!form) return;
-      const code = form.code.value.trim();
-      if (code.length !== 6) { securityModal.showError('Enter the 6-digit code.'); return; }
-      securityModal.showError('');
-      securityModal.setBusy('submit', true, 'Verifying...');
-      try {
-        const body = new FormData();
-        body.append('code', code);
-        body.append('csrf_token', csrfToken);
-        const res = await fetch('passkey_email_verify.php', { method: 'POST', body, credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Invalid or expired code.');
-        openPasskeyNameStep();
-      } catch (err) {
-        securityModal.setBusy('submit', false);
-        securityModal.showError(err.message || err);
-      }
-    }
-
-    function openPasskeyNameStep() {
-      securityModal.open({
-        title: 'Name Your Passkey',
-        subtitle: 'Choose a name so you recognize this passkey in the future.',
-        html: `
-          <div class="error" data-role="error" hidden></div>
-          <form id="passkeyNameForm" autocomplete="off">
-            <label class="small-text">Passkey name</label>
-            <input class="input" name="name" maxlength="100" value="My Passkey" required>
-          </form>
-        `,
-        actions: [
-          { label: 'Cancel', variant: 'secondary', role: 'cancel', onClick: (e) => { e.preventDefault(); securityModal.close(); pendingAttestation = null; } },
-          { label: 'Create Passkey', role: 'submit', onClick: submitPasskeyCreate }
-        ]
-      });
-      const input = securityModal.getContent().querySelector('input[name="name"]');
-      if (input) input.select();
-    }
-
-    async function submitPasskeyCreate(event) {
-      event.preventDefault();
-      const form = securityModal.getContent().querySelector('#passkeyNameForm');
-      if (!form) return;
-      const name = (form.name.value || '').trim() || 'My Passkey';
-      securityModal.showError('');
-      securityModal.setBusy('submit', true, 'Waiting for device...');
-      try {
-        const pubKey = await beginPasskey(name);
         const creationOptions = { ...pubKey };
         creationOptions.challenge = hexToArrayBuffer(pubKey.challengeHex);
         delete creationOptions.challengeHex;
@@ -1570,112 +1122,109 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
           creationOptions.user.id = hexToArrayBuffer(creationOptions.user.idHex);
           delete creationOptions.user.idHex;
         }
-        const credential = await navigator.credentials.create({ publicKey: creationOptions });
-        if (!credential) throw new Error('Credential creation was cancelled.');
-        pendingAttestation = {
-          clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
-          attestationObject: bufferToBase64url(credential.response.attestationObject)
-        };
-        openPasskeyConfirmStep(name);
-      } catch (err) {
-        securityModal.setBusy('submit', false);
-        securityModal.showError(err.message || err);
-      }
-    }
 
-    function openPasskeyConfirmStep(name) {
-      securityModal.open({
-        title: 'Confirm Passkey',
-        subtitle: `Enter your current password to finish adding "${name}".`,
-        html: `
-          <div class="error" data-role="error" hidden></div>
-          <form id="passkeyConfirmForm" autocomplete="off">
-            <label class="small-text">Current password</label>
-            <input class="input" name="password" type="password" autocomplete="current-password" required>
-          </form>
-        `,
-        actions: [
-          { label: 'Cancel', variant: 'secondary', role: 'cancel', onClick: (e) => { e.preventDefault(); securityModal.close(); pendingAttestation = null; } },
-          { label: 'Save Passkey', role: 'submit', onClick: submitPasskeyFinalize }
-        ]
-      });
-      const input = securityModal.getContent().querySelector('input[name="password"]');
-      if (input) input.focus();
-    }
+        const cred = await navigator.credentials.create({ publicKey: creationOptions });
+        if (!cred) throw new Error('Credential creation was cancelled.');
 
-    async function submitPasskeyFinalize(event) {
-      event.preventDefault();
-      if (!pendingAttestation) { securityModal.showError('Passkey data missing. Restart the flow.'); return; }
-      const form = securityModal.getContent().querySelector('#passkeyConfirmForm');
-      if (!form) return;
-      const password = form.password.value;
-      if (!password) { securityModal.showError('Enter your current password.'); return; }
-      securityModal.showError('');
-      securityModal.setBusy('submit', true, 'Saving...');
-      try {
-        await finalizePasskey(pendingAttestation, password);
-        pendingAttestation = null;
-        securityModal.close();
+        await completePasskey({
+          clientDataJSON: bufferToBase64url(cred.response.clientDataJSON),
+          attestationObject: bufferToBase64url(cred.response.attestationObject),
+        });
         location.reload();
       } catch (err) {
-        securityModal.setBusy('submit', false);
-        securityModal.showError(err.message || err);
+        alert(err.message || err);
       }
-    }
-
-    document.querySelectorAll('.btn-delete-passkey').forEach(btn => {
-      btn.addEventListener('click', () => openPasskeyDeleteModal(btn));
     });
 
-    function openPasskeyDeleteModal(button) {
-      const id = button.getAttribute('data-passkey-id');
-      if (!id) return;
-      const label = button.getAttribute('data-passkey-name') || 'this passkey';
-      securityModal.open({
-        title: 'Delete Passkey',
-        subtitle: `Enter your current password to delete ${label}.`,
-        html: `
-          <div class="error" data-role="error" hidden></div>
-          <form id="passkeyDeleteForm" autocomplete="off">
-            <input type="hidden" name="id" value="${id}">
-            <label class="small-text">Current password</label>
-            <input class="input" name="password" type="password" autocomplete="current-password" required>
-          </form>
-        `,
-        actions: [
-          { label: 'Cancel', variant: 'secondary', role: 'cancel', onClick: (e) => { e.preventDefault(); securityModal.close(); } },
-          { label: 'Delete Passkey', role: 'submit', variant: 'danger', onClick: submitPasskeyDelete }
-        ]
+    document.querySelectorAll('.btn-edit-passkey').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-passkey-id');
+        if (!id) return;
+        const form = document.getElementById(`rename-passkey-${id}`);
+        if (!form) return;
+        const nameInput = form.querySelector('input[name="name"]');
+        const current = btn.getAttribute('data-passkey-name') || (nameInput ? nameInput.value : '');
+        const preset = current && current.trim() !== '' ? current : 'My Passkey';
+        const next = prompt('Rename passkey', preset);
+        if (next === null) return;
+        const trimmed = next.trim();
+        if (trimmed === '') { alert('Name cannot be empty.'); return; }
+        if (nameInput) nameInput.value = trimmed;
+        btn.setAttribute('data-passkey-name', trimmed);
+        form.submit();
       });
-      const input = securityModal.getContent().querySelector('input[name="password"]');
-      if (input) input.focus();
+    });
+
+    // Passkey delete flow
+    document.querySelectorAll('.btn-delete-passkey').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-passkey-id');
+        if (!id) return;
+        const password = prompt('Confirm your password to delete this passkey');
+        if (password === null) return;
+        try {
+          const code = await requestPasskeyDeleteCode();
+          const entered = prompt('Enter the 6-digit code sent to your email');
+          if (entered === null) return;
+          const form = new FormData();
+          form.append('csrf_token', csrfToken);
+          form.append('passkey_id', id);
+          form.append('password', password);
+          form.append('code', entered);
+          const res = await fetch('passkey_delete.php', { method: 'POST', body: form, credentials: 'same-origin' });
+          if (res.redirected) {
+            location.href = res.url;
+            return;
+          }
+          const text = await res.text();
+          if (text) {
+            console.error(text);
+            alert('Delete failed.');
+          }
+        } catch (err) {
+          alert(err.message || err);
+        }
+      });
+    });
+
+    async function requestPasskeyDeleteCode() {
+      const res = await fetch('passkey_delete_email_request.php', { method: 'POST', credentials: 'same-origin' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Unable to send confirmation code.');
+      return true;
     }
 
-    async function submitPasskeyDelete(event) {
-      event.preventDefault();
-      const form = securityModal.getContent().querySelector('#passkeyDeleteForm');
-      if (!form) return;
-      const id = form.id.value;
-      const password = form.password.value;
-      if (!password) { securityModal.showError('Enter your current password.'); return; }
-      securityModal.showError('');
-      securityModal.setBusy('submit', true, 'Deleting...');
-      try {
-        const body = new FormData();
-        body.append('csrf_token', csrfToken);
-        body.append('passkey_id', id);
-        body.append('password', password);
-        body.append('ajax', '1');
-        const res = await fetch('passkey_delete.php', { method: 'POST', body, credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Unable to delete passkey.');
-        securityModal.close();
-        location.reload();
-      } catch (err) {
-        securityModal.setBusy('submit', false);
-        securityModal.showError(err.message || err);
-      }
-    }
+    // Trusted device rename
+    document.querySelectorAll('.btn-edit-device').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const row = btn.closest('tr');
+        if (!row) return;
+        const id = btn.getAttribute('data-device-id') || row.getAttribute('data-device-id');
+        if (!id) return;
+        const nameCell = row.querySelector('[data-field="name"]');
+        const current = btn.getAttribute('data-device-name') || (nameCell ? nameCell.textContent.trim() : '');
+        const preset = current && current.trim() !== '' ? current : 'Trusted device';
+        const next = prompt('Rename trusted device', preset);
+        if (next === null) return;
+        const trimmed = next.trim();
+        if (trimmed === '') { alert('Name cannot be empty.'); return; }
+        try {
+          const form = new FormData();
+          form.append('csrf_token', csrfToken);
+          form.append('action', 'rename');
+          form.append('id', id);
+          form.append('name', trimmed);
+          const res = await fetch('trusted_devices_actions.php', { method: 'POST', body: form, credentials: 'same-origin' });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.error || 'Rename failed.');
+          if (nameCell) nameCell.textContent = trimmed;
+          btn.setAttribute('data-device-name', trimmed);
+        } catch (err) {
+          alert(err.message || err);
+        }
+      });
+    });
   </script>
 </body>
 </html>
