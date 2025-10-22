@@ -1130,7 +1130,7 @@ $CAT_PALETTE = [
       --warn-1:#f59e0b; --warn-2:#ef4444;
 
       /* Invites palette (4 segments) */
-      --inv-accepted-1:#60a5fa; --inv-accepted-2:#3b82f6;
+      --inv-accepted-1:#60a5fa; --inv-accepted-2:#38bdf8;
       --inv-pending-1:#a78bfa;  --inv-pending-2:#7c3aed;
       --inv-expired-1:#f59e0b;  --inv-expired-2:#ef4444;
       --inv-registered-1:#10b981; --inv-registered-2:#059669;

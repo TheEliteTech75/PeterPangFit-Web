@@ -473,10 +473,15 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
   <title>Profile · Peter Pang Fit</title>
   <style>
     :root{
-      --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6;
-      --line:#1c212b; --chip:#1f2430; --ok:#10b981; --warn:#ef4444;
+    color-scheme:dark;
+      --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8;
+      --line:rgba(148,163,184,0.18); --chip:rgba(15,23,42,0.7); --ok:#10b981; --warn:#ef4444;
     }
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    html,body{margin:0;padding:0;background:
+      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
+      linear-gradient(155deg, var(--bg), var(--bg-alt));
+    color:var(--text);
       font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
     a{color:var(--brand);text-decoration:none}
     a:hover{text-decoration:underline}
@@ -484,8 +489,8 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
     .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
     .row{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
     .span-12{grid-column:span 12}.span-6{grid-column:span 6}.span-4{grid-column:span 4}.span-3{grid-column:span 3}
-    .inline-input{background:#0e1320;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;width:100%}
-    .btn{background:#1a2232;border:1px solid var(--line);padding:8px 12px;border-radius:10px;color:var(--text);cursor:pointer}
+    .inline-input{background:rgba(8,13,23,0.88);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;width:100%}
+    .btn{background:rgba(30,41,59,0.65);border:1px solid var(--line);padding:8px 12px;border-radius:10px;color:var(--text);cursor:pointer}
     .btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}
     .muted{color:var(--muted)}
     .flash{padding:10px 12px;border-radius:10px;border:1px solid var(--line);margin-bottom:14px}
@@ -493,12 +498,12 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
     .flash.err{border-left:3px solid var(--warn)}
 
     /* Avatar with hover pencil */
-    .avatar-wrap{position:relative;width:88px;height:88px;border-radius:50%;overflow:hidden;border:1px solid var(--line);background:#0e1320;color:#9aa3b2;display:flex;align-items:center;justify-content:center}
+    .avatar-wrap{position:relative;width:88px;height:88px;border-radius:50%;overflow:hidden;border:1px solid var(--line);background:rgba(8,13,23,0.88);color:#cbd5f5;display:flex;align-items:center;justify-content:center}
     .avatar-wrap img{display:block;width:100%;height:100%;object-fit:cover}
     .edit-badge{
       position:absolute;right:4px;bottom:4px;width:26px;height:26px;border-radius:999px;
       background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.2);
-      display:flex;align-items:center;justify-content:center;color:#e6e8ee;
+      display:flex;align-items:center;justify-content:center;color:#f8fafc;
       opacity:0;transition:opacity .18s ease;cursor:pointer
     }
     .avatar-wrap:hover .edit-badge{opacity:1}
@@ -507,7 +512,7 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
     .ppf-modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; z-index:3000; }
     .ppf-modal{
       position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
-      width:min(720px, 94vw); background:#151923; border:1px solid var(--line);
+      width:min(720px, 94vw); background:rgba(9,14,28,0.72); border:1px solid var(--line);
       border-radius:14px; padding:16px; display:none; z-index:3001;
     }
     .ppf-modal h4{margin:0 0 10px;font-size:16px}
@@ -518,14 +523,14 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
     @media (max-width:780px){ .thumbs{grid-template-columns:repeat(4,1fr);} }
     @media (max-width:520px){ .thumbs{grid-template-columns:repeat(3,1fr);} }
     .thumb{
-      border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#0f1218;
+      border:1px solid var(--line); border-radius:10px; overflow:hidden; background:rgba(8,13,23,0.95);
       cursor:pointer; position:relative; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center;
     }
     .thumb img{width:100%;height:100%;object-fit:cover;display:block}
     .thumb .mark{
       position:absolute; right:6px; top:6px; background:rgba(0,0,0,.45);
       border:1px solid rgba(255,255,255,.2); border-radius:999px; width:20px; height:20px;
-      display:flex;align-items:center;justify-content:center;font-size:12px;color:#e6e8ee
+      display:flex;align-items:center;justify-content:center;font-size:12px;color:#f8fafc
     }
 
     /* Password modal */

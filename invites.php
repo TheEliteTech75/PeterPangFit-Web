@@ -106,10 +106,15 @@ if ($res = $conn->query($sql)) {
   <title>Invites · Peter Pang Fit</title>
   <style>
     :root{
-      --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6;
-      --chip:#1f2430; --line:#1c212b;
+      color-scheme:dark;
+      --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8;
+      --chip:rgba(15,23,42,0.7); --line:rgba(148,163,184,0.18);
     }
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    html,body{margin:0;padding:0;background:
+      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
+      linear-gradient(155deg, var(--bg), var(--bg-alt));
+    color:var(--text);
       font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
     a{color:var(--brand);text-decoration:none}
     a:hover{text-decoration:underline}
@@ -135,11 +140,11 @@ if ($res = $conn->query($sql)) {
 /* Button look to match other pages */
 .btn{
   display:inline-flex;align-items:center;gap:8px;
-  background:#1a2232;border:1px solid var(--line);
+  background:rgba(30,41,59,0.65);border:1px solid var(--line);
   color:var(--text);padding:8px 12px;border-radius:10px;
   cursor:pointer;text-decoration:none
 }
-.btn.brand{background:#3b82f6;border-color:#3b82f6;color:#fff}
+.btn.brand{background:#38bdf8;border-color:#38bdf8;color:#fff}
 .btn.small{padding:6px 10px;font-size:12px}
     .brand{font-weight:700;letter-spacing:.2px}
     .meta{color:var(--muted);font-size:13px}
@@ -158,12 +163,12 @@ if ($res = $conn->query($sql)) {
     .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--chip);
       color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer}
     .btn:hover{filter:brightness(1.05)}
-    .btn.warn{border-color:#3a1418;background:#2a1113;color:#ffb4b4}
+    .btn.warn{border-color:#3a1418;background:#2a1113;color:#f87171}
     .btn.secondary{background:transparent}
     .flash{margin:16px 0;padding:10px 12px;border-radius:10px;background:#122016;border:1px solid #1a3a2a;color:#a7f3d0}
     table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:14px;overflow:hidden;border:1px solid var(--line)}
     th,td{padding:12px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-    th{background:#0f1218;text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
+    th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
     tr:last-child td{border-bottom:none}
     .muted{color:var(--muted)}
     .status{font-weight:600}

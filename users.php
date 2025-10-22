@@ -291,12 +291,17 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
   <title>All Users · Peter Pang Fit</title>
   <style>
     :root{
-      --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6;
-      --line:#1c212b; --chip:#1f2430; --ok:#10b981; --warn:#ef4444;
+    color-scheme:dark;
+      --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8;
+      --line:rgba(148,163,184,0.18); --chip:rgba(15,23,42,0.7); --ok:#10b981; --warn:#ef4444;
       --page-pad: clamp(14px, 3vw, 28px);
       --maxw: 1600px;
     }
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    html,body{margin:0;padding:0;background:
+      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
+      linear-gradient(155deg, var(--bg), var(--bg-alt));
+    color:var(--text);
       font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
     a{color:var(--brand);text-decoration:none}
     a:hover{text-decoration:underline}
@@ -304,8 +309,8 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
     .btn{display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);
       color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none;white-space:nowrap}
     .btn:hover{filter:brightness(1.06)}
-    .btn.brand{background:#1f2f55;border-color:#284072}
-    .btn.warn{background:#2a1617;border-color:#5b1b20;color:#ffb4b4}
+    .btn.brand{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35)}
+    .btn.warn{background:#2a1617;border-color:rgba(248,113,113,0.45);color:#f87171}
     .btn.small{padding:6px 10px;font-size:13px}
 
     .wrap{
@@ -316,7 +321,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
       box-sizing:border-box;
     }
 
-    .card{background:#151923;border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+    .card{background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
     .card h2{margin:0 0 10px 0;font-size:16px}
 
     table{
@@ -329,13 +334,13 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
       table-layout:auto;
     }
     th,td{padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:top}
-    th{background:#0f1218;text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
+    th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
     tr:last-child td{border-bottom:none}
     .muted{color:var(--muted)}
-    .flash{margin:16px 0 0 0;padding:12px;border-radius:10px;border:1px solid; background:#10161a}
-    .flash.ok{border-color:#204a36;color:#a7f3d0}
+    .flash{margin:16px 0 0 0;padding:12px;border-radius:10px;border:1px solid; background:rgba(8,13,23,0.85)}
+    .flash.ok{border-color:rgba(34,197,94,0.45);color:#a7f3d0}
     .flash.err{border-color:#4a2020;color:#fca5a5}
-    .inline-input{width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;
+    .inline-input{width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;
       padding:6px 8px;border-radius:8px;outline:none;box-sizing:border-box;font-size:13px}
 
     .actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -352,7 +357,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
     }
     .modal{
       width:min(520px, calc(100vw - 32px));
-      background:#151923;border:1px solid var(--line);border-radius:14px;padding:16px;
+      background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:16px;
       box-shadow:0 20px 60px rgba(0,0,0,.6);
     }
     .modal h3{margin:0 0 10px 0;font-size:16px}
@@ -396,7 +401,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
           <option value="admin">Admin</option>
         </select>
         <label style="display:flex;gap:8px;align-items:center;margin-top:10px">
-          <input type="checkbox" name="is_client" value="1" style="accent-color:#3b82f6">
+          <input type="checkbox" name="is_client" value="1" style="accent-color:#38bdf8">
           <span class="muted">Also acts as client (appears in client lists)</span>
         </label>
       </div>

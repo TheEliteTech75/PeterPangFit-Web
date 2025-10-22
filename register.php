@@ -111,10 +111,14 @@ if ($upd = $conn->prepare("UPDATE invites SET accepted_at = COALESCE(accepted_at
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root{
-    --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --brand:#3b82f6;
-    --line:#1c212b; --err-border:#4a2020; --err-text:#fca5a5;
+    color-scheme:dark;
+    --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --brand:#38bdf8;
+    --line:rgba(148,163,184,0.18); --err-border:#4a2020; --err-text:#fca5a5;
   }
-  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:
+      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
+      linear-gradient(155deg, var(--bg), var(--bg-alt)); color:var(--text); }
   .wrap { max-width: 900px; margin: 60px auto; background:var(--panel); padding:32px; border-radius:8px; }
   h1 { margin-top:0; color:var(--brand); }
   label { display:block; margin:12px 0 6px; }
@@ -123,14 +127,14 @@ if ($upd = $conn->prepare("UPDATE invites SET accepted_at = COALESCE(accepted_at
   }
   .grid { display:grid; grid-template-columns: repeat(12, 1fr); gap:12px; }
   .span-12{grid-column:span 12} .span-6{grid-column:span 6} .span-4{grid-column:span 4} .span-3{grid-column:span 3}
-  .btn { margin-top:16px; background:#00BFFF; color:#000; padding:12px 16px; border:0; border-radius:6px; font-weight:bold; cursor:pointer; }
-  .btn:hover { background:#32CD32; }
-  .hint { color:#9aa3b2; font-size:.9rem; }
+  .btn { margin-top:16px; background:#38bdf8; color:#000; padding:12px 16px; border:0; border-radius:6px; font-weight:bold; cursor:pointer; }
+  .btn:hover { background:#22d3a2; }
+  .hint { color:#cbd5f5; font-size:.9rem; }
   .flash.err {
     margin: 0 0 18px 0; padding:12px; border-radius:10px;
-    border:1px solid var(--err-border); color:var(--err-text); background:#10161a; font-size:14px;
+    border:1px solid var(--err-border); color:var(--err-text); background:rgba(8,13,23,0.85); font-size:14px;
   }
-  .badge { display:inline-block; margin-bottom:10px; padding:4px 8px; border-radius:999px; font-size:12px; background:#1c2838; color:#a5c4ff; border:1px solid #223048; }
+  .badge { display:inline-block; margin-bottom:10px; padding:4px 8px; border-radius:999px; font-size:12px; background:#1c2838; color:#bae6fd; border:1px solid rgba(30,58,138,0.45); }
 
   /* Password requirements list (same look/feel as profile.php) */
   ul.req{font-size:13px;margin:8px 0 0 0;padding-left:0}

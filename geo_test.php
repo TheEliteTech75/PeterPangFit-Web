@@ -39,10 +39,10 @@ try {
   <meta charset="utf-8">
   <title>Geo Test</title>
   <style>
-    body{background:#0b0c10;color:#e6e8ee;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;margin:24px}
-    code{background:#111521;padding:2px 6px;border-radius:6px}
-    .box{background:#151923;border:1px solid #1c212b;border-radius:12px;padding:16px;max-width:720px}
-    a{color:#3b82f6;text-decoration:none}
+    body{background:#05070d;color:#f8fafc;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;margin:24px}
+    code{background:rgba(11,18,30,0.9);padding:2px 6px;border-radius:6px}
+    .box{background:rgba(9,14,28,0.72);border:1px solid rgba(148,163,184,0.18);border-radius:12px;padding:16px;max-width:720px}
+    a{color:#38bdf8;text-decoration:none}
     a:hover{text-decoration:underline}
   </style>
 </head>
@@ -56,8 +56,8 @@ try {
     <hr>
     <p>Try another IP (public) like <code>8.8.8.8</code> or <code>1.1.1.1</code>:</p>
     <form method="get" action="geo_test.php" style="display:flex;gap:8px">
-      <input name="ip" placeholder="Enter IP" style="flex:1;background:#0f1218;border:1px solid #1c212b;border-radius:8px;color:#e6e8ee;padding:8px">
-      <button type="submit" style="background:#1f2f55;border:1px solid #284072;color:#e6e8ee;border-radius:8px;padding:8px 12px;cursor:pointer">Lookup</button>
+      <input name="ip" placeholder="Enter IP" style="flex:1;background:rgba(8,13,23,0.95);border:1px solid rgba(148,163,184,0.18);border-radius:8px;color:#f8fafc;padding:8px">
+      <button type="submit" style="background:rgba(56,189,248,0.22);border:1px solid rgba(56,189,248,0.35);color:#f8fafc;border-radius:8px;padding:8px 12px;cursor:pointer">Lookup</button>
     </form>
     <p style="margin-top:10px" class="muted">
       If this shows <em>Unknown</em> for a private or local IP (e.g. 10.x, 192.168.x, 127.0.0.1), that’s expected. Use a public IP for a meaningful result.

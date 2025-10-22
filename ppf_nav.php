@@ -172,18 +172,18 @@ if ($isAdmin) {
 ?>
 <style>
   :root {
-    --ppf-nav-bg: #0f121a;
-    --ppf-nav-border: #1c212b;
-    --ppf-nav-text: #e6e8ee;
-    --ppf-nav-muted: #9aa3b2;
-    --ppf-nav-active-bg: #141a25;
-    --ppf-nav-active-color: #3b82f6;
-    --ppf-section-title: #9fb0c8;
+    --ppf-nav-bg: rgba(9, 14, 28, 0.94);
+    --ppf-nav-border: rgba(148, 163, 184, 0.18);
+    --ppf-nav-text: #f8fafc;
+    --ppf-nav-muted: rgba(203, 213, 225, 0.7);
+    --ppf-nav-active-bg: rgba(56, 189, 248, 0.15);
+    --ppf-nav-active-color: #38bdf8;
+    --ppf-section-title: rgba(148, 163, 184, 0.82);
   }
   .ppf-nav-overlay {
     position: fixed; inset: 0;
-    background: rgba(0,0,0,0.4);
-    backdrop-filter: blur(2px);
+    background: rgba(2,6,23,0.55);
+    backdrop-filter: blur(6px);
     opacity: 0; pointer-events: none;
     transition: opacity .2s ease;
     z-index: 4500;
@@ -193,9 +193,10 @@ if ($isAdmin) {
     background: var(--ppf-nav-bg);
     border-right: 1px solid var(--ppf-nav-border);
     transform: translateX(-100%);
-    transition: transform .24s ease;
+    transition: transform .24s ease, box-shadow .24s ease;
     z-index: 5000;
     display: flex; flex-direction: column;
+    box-shadow: 0 32px 60px rgba(2,6,23,0.55);
   }
   .ppf-sidenav-header {
     display:flex; align-items:center; justify-content:space-between;
@@ -218,7 +219,7 @@ if ($isAdmin) {
     border: 1px solid transparent; font-weight: 500;
   }
   .ppf-nav-link:hover {
-    background: #141a25; border-color: var(--ppf-nav-border);
+    background: rgba(56,189,248,0.08); border-color: rgba(56,189,248,0.25);
   }
   .ppf-nav-link.active {
     background: var(--ppf-nav-active-bg);
@@ -233,18 +234,18 @@ if ($isAdmin) {
   .ppf-section-head {
     width: 100%;
     display:flex; align-items:center; justify-content:space-between;
-    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+    background: linear-gradient(180deg, rgba(56,189,248,0.08), rgba(15,23,42,0));
     padding: 10px 12px; border: 0; cursor: pointer; color: var(--ppf-section-title);
     font-weight: 600; letter-spacing: .2px;
   }
-  .ppf-section-head:hover { background: rgba(255,255,255,0.04); }
+  .ppf-section-head:hover { background: rgba(56,189,248,0.12); }
   .ppf-section-left { display:flex; gap: 10px; align-items:center; }
   .ppf-section-icon { opacity: .9; display:flex; }
   .ppf-section-title { font-size: 13px; text-transform: uppercase; }
   .ppf-section-caret { font-size: 12px; color: var(--ppf-nav-muted); transition: transform .18s ease; }
   .ppf-section-head.expanded .ppf-section-caret { transform: rotate(180deg); }
 
-  .ppf-section-body { padding: 8px; background: rgba(255,255,255,0.01); }
+  .ppf-section-body { padding: 8px; background: rgba(15,23,42,0.4); }
   .ppf-section-body .ppf-nav-link + .ppf-nav-link { margin-top: 4px; }
 
   /* Tiny submenu under an item (for + Create / filters) */
@@ -255,9 +256,9 @@ if ($isAdmin) {
     display:inline-block; font-size: 12px; color: var(--ppf-nav-muted); text-decoration:none;
     padding: 4px 6px; border-radius: 6px; border: 1px dashed var(--ppf-nav-border);
     margin-right: 6px; margin-top: 6px;
-    background: rgba(255,255,255,0.02);
+    background: rgba(56,189,248,0.05);
   }
-  .ppf-submenu-mini a:hover { color: var(--ppf-nav-text); background: #141a25; }
+  .ppf-submenu-mini a:hover { color: var(--ppf-nav-text); background: rgba(56,189,248,0.12); border-color: rgba(56,189,248,0.35); }
 
   /* Mobile open state */
   html.ppf-nav-open .ppf-sidenav { transform: translateX(0); }
@@ -279,7 +280,7 @@ if ($isAdmin) {
           echo render_section($sec, $current);
         }
       } else {
-        echo '<div style="color:#9aa3b2;font-size:12px;padding:10px 12px">No navigation available for your role.</div>';
+        echo '<div style="color:rgba(203,213,225,0.75);font-size:12px;padding:10px 12px">No navigation available for your role.</div>';
       }
     ?>
   </div>

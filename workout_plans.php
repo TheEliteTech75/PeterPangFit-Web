@@ -684,10 +684,15 @@ require_once __DIR__ . '/ppf_nav.php';
 <title>Workout Plans · Peter Pang Fit</title>
 <style>
   :root{
-    --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6;
-    --line:#1c212b; --chip:#1f2430; --ok:#10b981; --warn:#ef4444;
+    color-scheme:dark;
+    --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8;
+    --line:rgba(148,163,184,0.18); --chip:rgba(15,23,42,0.7); --ok:#10b981; --warn:#ef4444;
   }
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  html,body{margin:0;padding:0;background:
+      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
+      linear-gradient(155deg, var(--bg), var(--bg-alt));
+    color:var(--text);
     font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
   a{color:var(--brand);text-decoration:none}
   a:hover{text-decoration:underline}
@@ -710,23 +715,23 @@ require_once __DIR__ . '/ppf_nav.php';
 
 .btn{
   display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);
-  color:#e6e8ee;padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none
+  color:#f8fafc;padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none
 }
 .btn:hover{filter:brightness(1.06)}
-.btn.brand{background:#1f2f55;border-color:#284072}
-.btn.warn{background:#2a1617;border-color:#5b1b20;color:#ffb4b4}
+.btn.brand{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35)}
+.btn.warn{background:#2a1617;border-color:rgba(248,113,113,0.45);color:#f87171}
 .btn.small{padding:6px 10px;font-size:13px}
 
   .wrap{max-width:none;width:95%;margin:18px auto;padding:0 16px}
-  .card{background:#151923;border:1px solid var(--line);border-radius:14px;padding:14px}
+  .card{background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:14px}
   .muted{color:var(--muted)}
-  .flash{margin:16px auto 0 auto;max-width:none;width:calc(100% - 32px);padding:12px;border-radius:10px;border:1px solid;background:#10161a}
-  .flash.ok{border-color:#204a36;color:#a7f3d0}
+  .flash{margin:16px auto 0 auto;max-width:none;width:calc(100% - 32px);padding:12px;border-radius:10px;border:1px solid;background:rgba(8,13,23,0.85)}
+  .flash.ok{border-color:rgba(34,197,94,0.45);color:#a7f3d0}
   .flash.err{border-color:#4a2020;color:#fca5a5}
 
   table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
   th,td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{background:#0f1218;text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
+  th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
   tr:last-child td{border-bottom:none}
 
   /* Hover to highlight plan row; click to expand */
@@ -744,7 +749,7 @@ require_once __DIR__ . '/ppf_nav.php';
     outline-offset:-2px;
     transition: background .2s ease, outline-color .2s ease;
   }
-  .expand{display:none;background:#0f1218}
+  .expand{display:none;background:rgba(8,13,23,0.95)}
   .expand td{border-top:1px solid var(--line)}
   .row-actions{display:flex;gap:8px;flex-wrap:wrap}
 
@@ -752,7 +757,7 @@ require_once __DIR__ . '/ppf_nav.php';
   .ex-click:hover{background:#141a25}
   .ex-click:active{filter:brightness(1.06)}
 
-  .thumb-mini{height:54px;width:96px;overflow:hidden;border-radius:6px;border:1px solid var(--line);background:#0f1218}
+  .thumb-mini{height:54px;width:96px;overflow:hidden;border-radius:6px;border:1px solid var(--line);background:rgba(8,13,23,0.95)}
   .thumb-mini img{height:100%;width:100%;object-fit:cover;display:block}
   @media (min-width:1400px){ .thumb-mini{height:68px;width:120px} }
 
@@ -764,12 +769,12 @@ require_once __DIR__ . '/ppf_nav.php';
   /* Modals */
   .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000}
   .modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(860px,94vw);
-    background:#151923;border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001}
+    background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:16px;display:none;z-index:3001}
   .modal h3{margin:0 0 10px 0;font-size:16px}
   .modal .row{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
   .modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
   .input, select, textarea{
-    width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;
+    width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;
     padding:10px 12px;border-radius:10px;box-sizing:border-box
   }
   .listbox{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -778,14 +783,14 @@ require_once __DIR__ . '/ppf_nav.php';
     border:1px solid var(--line);border-radius:999px;padding:6px 10px}
   .handle{cursor:grab;opacity:.85}
   .ex-row{display:flex;align-items:center;gap:8px;padding:6px;border:1px dashed var(--line);border-radius:8px;margin-bottom:6px}
-  .ex-row:hover{background:#0f1218}
+  .ex-row:hover{background:rgba(8,13,23,0.95)}
   .xlink{color:#fca5a5;cursor:pointer;text-decoration:none}
-  .fine{font-size:12px;color:#9aa3b2}
+  .fine{font-size:12px;color:#cbd5f5}
 
   /* Assign modal per-user editor */
   .user-item{border-top:1px solid var(--line);padding:8px 0}
   .user-item:first-child{border-top:0}
-  .plan-ex-table{width:100%;border-collapse:collapse;background:#111521;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .plan-ex-table{width:100%;border-collapse:collapse;background:rgba(11,18,30,0.9);border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .plan-ex-table th, .plan-ex-table td{padding:8px 10px;border-bottom:1px solid var(--line)}
   .plan-ex-table tr:last-child td{border-bottom:0}
 </style>
@@ -885,15 +890,15 @@ require_once __DIR__ . '/ppf_nav.php';
   <table style="width:100%;border-collapse:collapse;margin-top:6px">
     <thead>
       <tr>
-        <th style="background:#0f1218">Exercise ID</th>
-        <th style="background:#0f1218">Exercise</th>
-        <th style="background:#0f1218">Description</th> <!-- Renamed from Notes -->
-        <th style="background:#0f1218">Media</th>
-        <th style="background:#0f1218">Created</th>
-        <th style="background:#0f1218">Created By</th>
-        <th style="background:#0f1218">Edited</th>
-        <th style="background:#0f1218">Edited By</th>
-        <th style="background:#0f1218">Used In # Plans</th>
+        <th style="background:rgba(8,13,23,0.95)">Exercise ID</th>
+        <th style="background:rgba(8,13,23,0.95)">Exercise</th>
+        <th style="background:rgba(8,13,23,0.95)">Description</th> <!-- Renamed from Notes -->
+        <th style="background:rgba(8,13,23,0.95)">Media</th>
+        <th style="background:rgba(8,13,23,0.95)">Created</th>
+        <th style="background:rgba(8,13,23,0.95)">Created By</th>
+        <th style="background:rgba(8,13,23,0.95)">Edited</th>
+        <th style="background:rgba(8,13,23,0.95)">Edited By</th>
+        <th style="background:rgba(8,13,23,0.95)">Used In # Plans</th>
       </tr>
     </thead>
     <tbody>
@@ -1601,7 +1606,7 @@ require_once __DIR__ . '/ppf_nav.php';
             <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
               <button class="btn small" type="button" data-toggle-set-editor>Edit Sets</button>
             </div>
-            <div class="ap-set-editor" data-set-editor style="display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#0f1218">
+            <div class="ap-set-editor" data-set-editor style="display:none;margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:rgba(8,13,23,0.95)">
               <div data-set-rows></div>
               <button class="btn small" type="button" data-add-set style="margin-top:6px">Add Set</button>
             </div>
