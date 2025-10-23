@@ -344,34 +344,12 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Settings · Peter Pang Fit</title>
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: #05070d;
-      --bg-alt: #03040a;
-      --surface: rgba(9, 14, 28, 0.92);
-      --surface-alt: rgba(15, 23, 42, 0.78);
-      --surface-soft: rgba(15, 23, 42, 0.65);
-      --surface-strong: rgba(11, 16, 32, 0.94);
-      --border: rgba(148, 163, 184, 0.18);
-      --border-strong: rgba(56, 189, 248, 0.35);
-      --text: #f8fafc;
-      --muted: rgba(203, 213, 225, 0.78);
-      --muted-soft: rgba(148, 163, 184, 0.72);
-      --accent: #38bdf8;
-      --accent-soft: rgba(56, 189, 248, 0.16);
-      --danger: #f87171;
-      --warning: #fbbf24;
-      --success: #34d399;
-      --shadow: 0 30px 70px rgba(2, 6, 23, 0.55);
-    }
+    
     *, *::before, *::after { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 55%),
-        radial-gradient(circle at bottom right, rgba(110, 231, 183, 0.12), transparent 60%),
-        linear-gradient(155deg, var(--bg), var(--bg-alt));
+      background: var(--page-canvas);
       color: var(--text);
       min-height: 100vh;
     }

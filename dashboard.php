@@ -1119,34 +1119,34 @@ $CAT_PALETTE = [
   <title>Dashboard</title>
   <style>
     :root{
-      --c-bg:#0b0e14; --c-card:#101521; --c-text:#e6eef8;
-      --c-muted:#9bb2c8;
+      --c-bg: var(--page-canvas); --c-card: var(--panel-elevated); --c-text: var(--text);
+      --c-muted: color-mix(in srgb, var(--muted) 82%, var(--text) 18%);
 
-      --c-accent:#3c82f6; --c-accent-2:#6c5bd6;
-      --violet-2:#b794f4;
+      --c-accent: color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 70%, var(--text) 30%); --c-accent-2: color-mix(in srgb, var(--theme-swatch-3, var(--primary)) 65%, var(--text) 35%);
+      --violet-2: color-mix(in srgb, var(--theme-swatch-3, var(--primary)) 55%, var(--theme-swatch-2, var(--brand)) 45%);
 
-      --green-1:#22c55e; --green-2:#16a34a;
-      --slate-1:#94a3b8; --slate-2:#64748b;
-      --warn-1:#f59e0b; --warn-2:#ef4444;
+      --green-1: var(--success); --green-2: color-mix(in srgb, var(--success) 70%, var(--theme-swatch-3, var(--primary)) 30%);
+      --slate-1: color-mix(in srgb, var(--muted) 65%, var(--text) 35%); --slate-2: color-mix(in srgb, var(--muted-soft, rgba(148,163,184,0.72)) 75%, var(--text) 25%);
+      --warn-1: color-mix(in srgb, var(--warning) 75%, var(--text) 25%); --warn-2: color-mix(in srgb, var(--danger) 70%, var(--text) 30%);
 
       /* Invites palette (4 segments) */
-      --inv-accepted-1:#60a5fa; --inv-accepted-2:#38bdf8;
-      --inv-pending-1:#a78bfa;  --inv-pending-2:#7c3aed;
-      --inv-expired-1:#f59e0b;  --inv-expired-2:#ef4444;
-      --inv-registered-1:#10b981; --inv-registered-2:#059669;
+      --inv-accepted-1: color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 80%, var(--theme-swatch-3, var(--primary)) 20%); --inv-accepted-2: color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 92%, var(--theme-swatch-3, var(--primary)) 8%);
+      --inv-pending-1: color-mix(in srgb, var(--theme-swatch-3, var(--primary)) 75%, var(--theme-swatch-2, var(--brand)) 25%);  --inv-pending-2: color-mix(in srgb, var(--theme-swatch-3, var(--primary)) 90%, var(--theme-swatch-2, var(--brand)) 10%);
+      --inv-expired-1: color-mix(in srgb, var(--warning) 82%, var(--danger) 18%);  --inv-expired-2: color-mix(in srgb, var(--danger) 88%, var(--warning) 12%);
+      --inv-registered-1: color-mix(in srgb, var(--success) 88%, var(--theme-swatch-3, var(--primary)) 12%); --inv-registered-2: color-mix(in srgb, var(--success) 94%, var(--theme-swatch-3, var(--primary)) 6%);
 
-      --sec-pass:#60a5fa;
-      --sec-twofa-app:#34d399;
-      --sec-twofa-email:#fbbf24;
-      --sec-passkey:#c084fc;
-      --sec-trusted:#f472b6;
-      --sec-gap:rgba(148,163,184,0.35);
+      --sec-pass: color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 80%, var(--text) 20%);
+      --sec-twofa-app: color-mix(in srgb, var(--success) 80%, var(--text) 20%);
+      --sec-twofa-email: color-mix(in srgb, var(--warning) 75%, var(--text) 25%);
+      --sec-passkey: color-mix(in srgb, var(--theme-swatch-3, var(--primary)) 80%, var(--text) 20%);
+      --sec-trusted: color-mix(in srgb, var(--brand) 75%, var(--text) 25%);
+      --sec-gap: var(--line);
 
-      --spark-fill:#1a2440;
-      --spark-bar:#4f8cf9;
-      --spark-bar-2:#8e7df0;
+      --spark-fill: color-mix(in srgb, var(--panel-muted) 90%, rgba(0,0,0,0.02) 10%);
+      --spark-bar: color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 80%, var(--text) 20%);
+      --spark-bar-2: color-mix(in srgb, var(--theme-swatch-3, var(--primary)) 80%, var(--text) 20%);
 
-      --border:#1b2332; --radius:14px;
+      --border: var(--card-border); --radius:18px;
       --dash-header-offset:72px;
     }
 
@@ -1158,7 +1158,7 @@ $CAT_PALETTE = [
       .btn{ padding:7px 10px; font-size:13px; }
     }
 
-    body{background:var(--c-bg); color:var(--c-text); margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Helvetica,Arial,sans-serif;}
+    body{background:var(--page-canvas); color:var(--text); margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Helvetica,Arial,sans-serif;}
     .wrap{ max-width: 100%; margin: 0 auto; padding: 14px; box-sizing: border-box; }
     h1{margin:0 0 6px;font-size:20px}
     .muted{color:var(--c-muted);font-size:13px}

@@ -622,6 +622,32 @@ if (!function_exists('ppf_theme_catalog')) {
             $vars['--theme-swatch-' . ($i + 1)] = $candidates[$i] ?? '#05070d';
         }
 
+        $sw1 = $vars['--theme-swatch-1'] ?? '#05070d';
+        $sw2 = $vars['--theme-swatch-2'] ?? '#0ea5e9';
+        $sw3 = $vars['--theme-swatch-3'] ?? '#22d3a2';
+
+        $derived = [
+            '--page-canvas' => 'radial-gradient(circle at top left, color-mix(in srgb, var(--theme-swatch-2, ' . $sw2 . ') 22%, transparent 78%) 0%, transparent 55%),' .
+                ' radial-gradient(circle at bottom right, color-mix(in srgb, var(--theme-swatch-3, ' . $sw3 . ') 18%, transparent 82%) 0%, transparent 60%),' .
+                ' linear-gradient(155deg, var(--bg, ' . ($vars['--bg'] ?? '#05070d') . '), var(--bg-alt, ' . ($vars['--bg-alt'] ?? '#03040a') . ')))',
+            '--panel-elevated' => 'color-mix(in srgb, var(--panel, rgba(9, 14, 28, 0.92)) 88%, var(--theme-swatch-2, ' . $sw2 . ') 12%)',
+            '--panel-muted' => 'color-mix(in srgb, var(--surface-alt, rgba(15, 23, 42, 0.78)) 92%, rgba(255, 255, 255, 0.04) 8%)',
+            '--chip-bg' => 'color-mix(in srgb, var(--surface-alt, rgba(15, 23, 42, 0.78)) 74%, var(--theme-swatch-3, ' . $sw3 . ') 26%)',
+            '--chip-border' => 'color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.18)) 75%, var(--theme-swatch-2, ' . $sw2 . ') 25%)',
+            '--card-shadow' => '0 28px 60px color-mix(in srgb, var(--theme-swatch-2, ' . $sw2 . ') 28%, rgba(2, 6, 23, 0.6) 72%)',
+            '--card-border' => 'color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.18)) 68%, var(--theme-swatch-2, ' . $sw2 . ') 32%)',
+            '--heading-accent' => 'linear-gradient(135deg, color-mix(in srgb, var(--theme-swatch-2, ' . $sw2 . ') 70%, var(--text, #f8fafc) 30%), color-mix(in srgb, var(--theme-swatch-3, ' . $sw3 . ') 65%, var(--text, #f8fafc) 35%))',
+            '--badge-muted' => 'color-mix(in srgb, var(--theme-swatch-1, ' . $sw1 . ') 28%, rgba(255, 255, 255, 0.08) 72%)',
+            '--input-bg' => 'color-mix(in srgb, var(--surface, rgba(9, 14, 28, 0.92)) 84%, rgba(255, 255, 255, 0.04) 16%)',
+            '--input-border' => 'color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.18)) 70%, var(--theme-swatch-2, ' . $sw2 . ') 30%)',
+        ];
+
+        foreach ($derived as $name => $value) {
+            if (!isset($vars[$name])) {
+                $vars[$name] = $value;
+            }
+        }
+
         return $vars;
     }
 

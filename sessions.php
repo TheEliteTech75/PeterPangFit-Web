@@ -194,23 +194,9 @@ foreach ($sessions as $s) {
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sessions · Peter Pang Fit</title>
   <style>
-  :root{
-    color-scheme:dark;
-    --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --surface-soft:rgba(15,23,42,0.7);
-    --text:#f8fafc; --muted:#cbd5f5;
-    --brand:#38bdf8; --brand-strong:#0ea5e9;
-    --line:rgba(148,163,184,0.18);
-    --danger:#f87171; --danger-bg:rgba(127,29,29,0.45); --danger-line:rgba(248,113,113,0.45);
-    /* Gold theme (also reused for VPN/Expired pills) */
-    --gold:#fbbf24; --gold-bg:rgba(202,138,4,0.22); --gold-text:#fde68a;
-    /* Inactive slate */
-    --inactive-bg:rgba(148,163,184,0.14); --inactive-br:rgba(148,163,184,0.32); --inactive-text:#e2e8f0;
-  }
+  
   html,body{ margin:0;padding:0;color:var(--text);
-    background:
-      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
-      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
-      linear-gradient(155deg, var(--bg), var(--bg-alt));
+    background: var(--page-canvas);
     font:14px/1.5 'Manrope',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif; overflow-x:hidden;}
   a{color:var(--brand);text-decoration:none} a:hover{text-decoration:underline}
 
