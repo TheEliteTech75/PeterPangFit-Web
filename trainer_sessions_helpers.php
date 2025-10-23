@@ -398,7 +398,7 @@ if (!function_exists('ppf_trainer_sessions_dashboard_rollup')) {
             ) s ON s.package_id = p.id
             {$where}
             GROUP BY p.client_id, u.first_name, u.last_name, u.email
-            ORDER BY (CASE WHEN next_session_at IS NULL THEN 1 ELSE 0 END), next_session_at, u.last_name, u.first_name
+            ORDER BY u.last_name, u.first_name
         ";
 
         if (!$stmt = $conn->prepare($sql)) {
@@ -456,6 +456,33 @@ if (!function_exists('ppf_trainer_sessions_dashboard_rollup')) {
         }
 
         $stmt->close();
+
+        if (!empty($allClients)) {
+            usort($allClients, static function (array $a, array $b): int {
+                $aRaw = $a['next_session_at'] ?? null;
+                $bRaw = $b['next_session_at'] ?? null;
+
+                $aTime = $aRaw ? strtotime((string)$aRaw) : false;
+                $bTime = $bRaw ? strtotime((string)$bRaw) : false;
+                $aTime = ($aTime !== false) ? $aTime : null;
+                $bTime = ($bTime !== false) ? $bTime : null;
+
+                $aHas = ($aTime !== null);
+                $bHas = ($bTime !== null);
+
+                if ($aHas && !$bHas) {
+                    return -1;
+                }
+                if (!$aHas && $bHas) {
+                    return 1;
+                }
+                if ($aHas && $bHas && $aTime !== $bTime) {
+                    return $aTime <=> $bTime;
+                }
+
+                return strcasecmp((string)($a['name'] ?? ''), (string)($b['name'] ?? ''));
+            });
+        }
 
         $summary['total_clients'] = count($allClients);
         if ($limit > 0 && $summary['total_clients'] > $limit) {
