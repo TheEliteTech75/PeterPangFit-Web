@@ -114,6 +114,10 @@ if ($isAdmin || $isTrainer) {
         ],
       ],
       [
+        'href' => 'trainer_sessions.php',
+        'label' => 'Sessions',
+      ],
+      [
         'href' => 'invites.php',
         'label' => 'Invites',
         'submenu' => [
