@@ -50,6 +50,8 @@ if (!function_exists('ppf_theme_catalog')) {
                 'category' => 'Default',
                 'description' => 'Our signature midnight navy with teal highlights.',
                 'preview' => ['#05070d', '#38bdf8', '#22d3a2'],
+                // Palette mirrored from the legacy :root declarations in index.php and login.php
+                // so choosing the "Default" theme reproduces the original landing/auth styling.
                 'variables' => [
                     '--bg' => '#05070d',
                     '--bg-alt' => '#03040a',
