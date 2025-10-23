@@ -470,7 +470,17 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title><?php echo h($pageTitle); ?></title>
   <style>
-    
+
+    :root {
+      --plan-nav-offset: 76px;
+      --plan-nav-safe-offset: calc(var(--plan-nav-offset) + env(safe-area-inset-top, 0px));
+      --plan-nav-gap: 0px;
+    }
+
+    body.client-plans-page {
+      font-family: 'Inter', 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+    }
+
 
     *,
     *::before,
@@ -494,8 +504,8 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       background:
         radial-gradient(circle at 12% 12%, rgba(0, 191, 255, 0.18), transparent 55%),
         radial-gradient(circle at 88% 8%, rgba(50, 205, 50, 0.1), transparent 50%),
-        linear-gradient(180deg, var(--bg), var(--surface));
-      color: var(--text);
+        linear-gradient(180deg, var(--bg, #020202), var(--surface, #0a0a0a));
+      color: var(--text, #f3f7ff);
       font-family: inherit;
       line-height: 1.6;
       min-height: 100vh;
@@ -515,7 +525,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     }
 
     a {
-      color: var(--accent);
+      color: var(--accent, #00bfff);
     }
 
     main {
@@ -533,9 +543,9 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       overflow: hidden;
       background:
         linear-gradient(145deg, rgba(0, 191, 255, 0.22), rgba(0, 0, 0, 0.35)),
-        var(--surface-alt);
-      border: 1px solid var(--card-border-subtle);
-      box-shadow: var(--shadow);
+        var(--surface-alt, #111111);
+      border: 1px solid var(--card-border-subtle, rgba(255, 255, 255, 0.08));
+      box-shadow: var(--shadow, var(--card-shadow, 0 28px 50px rgba(0, 0, 0, 0.55)));
     }
 
     .hero::before {
@@ -581,14 +591,14 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       font-size: 13px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--muted-strong);
+      color: var(--muted-strong, #c4cee0);
       width: fit-content;
     }
 
     .hero__eyebrow svg {
       width: 16px;
       height: 16px;
-      stroke: var(--accent);
+      stroke: var(--accent, #00bfff);
     }
 
     .hero__headline {
@@ -615,8 +625,8 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
 
     .hero-highlight {
       padding: clamp(18px, 3.6vw, 26px);
-      border-radius: var(--radius);
-      border: 1px solid var(--card-border);
+      border-radius: var(--radius, 20px);
+      border: 1px solid var(--card-border, rgba(0, 191, 255, 0.28));
       background:
         linear-gradient(140deg, rgba(0, 0, 0, 0.5), rgba(0, 191, 255, 0.2));
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
@@ -627,7 +637,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     .hero-highlight--action {
       position: relative;
       cursor: default;
-      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+      transition: transform var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), box-shadow var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), border-color var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .hero-highlight--ready {
@@ -638,7 +648,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     .hero-highlight--ready:focus-visible {
       outline: none;
       transform: translateY(-4px) scale(1.02);
-      border-color: var(--card-border-hover);
+      border-color: var(--card-border-hover, rgba(0, 191, 255, 0.45));
       box-shadow: 0 26px 52px rgba(0, 0, 0, 0.62);
     }
 
@@ -650,13 +660,13 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       font-size: 13px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--muted);
+      color: var(--muted, #9ca8bf);
     }
 
     .hero-highlight__name {
       font-size: clamp(20px, 3.5vw, 28px);
       font-weight: 600;
-      color: var(--text);
+      color: var(--text, #f3f7ff);
       margin: 0;
     }
 
@@ -673,8 +683,8 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
 
     .hero-stat {
       padding: 18px 20px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--card-border-subtle);
+      border-radius: var(--radius-sm, 14px);
+      border: 1px solid var(--card-border-subtle, rgba(255, 255, 255, 0.08));
       background: rgba(10, 10, 10, 0.8);
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
       display: grid;
@@ -684,13 +694,13 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     .hero-stat strong {
       display: block;
       font-size: clamp(24px, 4.5vw, 32px);
-      color: var(--accent);
+      color: var(--accent, #00bfff);
       font-weight: 700;
       line-height: 1.15;
     }
 
     .hero-stat__label {
-      color: var(--muted);
+      color: var(--muted, #9ca8bf);
       font-size: 12px;
       letter-spacing: 0.1em;
       text-transform: uppercase;
@@ -704,10 +714,10 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       gap: 16px 20px;
       margin-top: clamp(18px, 4vw, 30px);
       padding: clamp(14px, 3.5vw, 22px);
-      border-radius: var(--radius);
+      border-radius: var(--radius, 20px);
       background: rgba(8, 8, 8, 0.88);
-      border: 1px solid var(--card-border-subtle);
-      box-shadow: var(--shadow);
+      border: 1px solid var(--card-border-subtle, rgba(255, 255, 255, 0.08));
+      box-shadow: var(--shadow, var(--card-shadow, 0 28px 50px rgba(0, 0, 0, 0.55)));
     }
 
     .toolbar .search {
@@ -719,7 +729,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       border-radius: clamp(24px, 4vw, 999px);
       border: 1px solid rgba(0, 191, 255, 0.35);
       background: rgba(15, 15, 15, 0.9);
-      color: var(--muted);
+      color: var(--muted, #9ca8bf);
       min-width: 220px;
       min-height: clamp(46px, 9vw, 56px);
     }
@@ -727,14 +737,14 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     .toolbar .search svg {
       width: 18px;
       height: 18px;
-      stroke: var(--accent);
+      stroke: var(--accent, #00bfff);
     }
 
     .toolbar .search input {
       flex: 1;
       border: none;
       background: transparent;
-      color: var(--text);
+      color: var(--text, #f3f7ff);
       font-size: clamp(14px, 3.5vw, 16px);
       outline: none;
     }
@@ -748,7 +758,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       border: 1px solid rgba(255, 255, 255, 0.08);
       background: rgba(20, 20, 20, 0.82);
       font-size: 14px;
-      color: var(--muted-strong);
+      color: var(--muted-strong, #c4cee0);
       white-space: nowrap;
     }
 
@@ -756,16 +766,16 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       width: 10px;
       height: 10px;
       border-radius: 999px;
-      background: var(--accent);
+      background: var(--accent, #00bfff);
     }
 
     .chip strong {
-      color: var(--text);
+      color: var(--text, #f3f7ff);
       font-weight: 600;
     }
 
     .chip .dot.green {
-      background: var(--accent-strong);
+      background: var(--accent-strong, var(--success, #32cd32));
     }
 
     .actions {
@@ -791,7 +801,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       text-decoration: none;
       min-width: 140px;
       box-shadow: 0 16px 32px rgba(0, 191, 255, 0.28);
-      transition: transform var(--transition), box-shadow var(--transition), filter var(--transition);
+      transition: transform var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), box-shadow var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), filter var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .btn:hover,
@@ -827,7 +837,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       font-size: 14px;
       letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: var(--muted);
+      color: var(--muted, #9ca8bf);
     }
 
     .plan-nav__close {
@@ -836,12 +846,12 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       justify-content: center;
       border: none;
       background: rgba(0, 191, 255, 0.14);
-      color: var(--text);
+      color: var(--text, #f3f7ff);
       border-radius: 999px;
       width: 34px;
       height: 34px;
       cursor: pointer;
-      transition: background var(--transition), transform var(--transition);
+      transition: background var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), transform var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .plan-nav__close span {
@@ -871,19 +881,19 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       border-radius: 18px;
       border: 1px solid rgba(0, 191, 255, 0.35);
       background: rgba(10, 10, 10, 0.94);
-      color: var(--text);
+      color: var(--text, #f3f7ff);
       font-weight: 600;
       font-size: 15px;
       cursor: pointer;
       box-shadow: 0 14px 32px rgba(0, 0, 0, 0.5);
-      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+      transition: transform var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), box-shadow var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), border-color var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .plan-nav__mobile-trigger svg {
       width: 18px;
       height: 18px;
       stroke: currentColor;
-      transition: transform var(--transition);
+      transition: transform var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .plan-nav__mobile-trigger[aria-expanded="true"] svg {
@@ -928,25 +938,25 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       border-radius: 999px;
       border: 1px solid rgba(0, 191, 255, 0.38);
       background: rgba(16, 20, 24, 0.92);
-      color: var(--text);
+      color: var(--text, #f3f7ff);
       font-weight: 600;
       font-size: 14px;
       text-decoration: none;
       scroll-snap-align: center;
-      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+      transition: transform var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), box-shadow var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), border-color var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .plan-nav__button:hover,
     .plan-nav__button:focus-visible {
       outline: none;
       transform: translateY(-2px);
-      border-color: var(--card-border-hover);
+      border-color: var(--card-border-hover, rgba(0, 191, 255, 0.45));
       box-shadow: 0 16px 32px rgba(0, 191, 255, 0.28);
     }
 
     .plan-nav__button span {
       font-size: 12px;
-      color: var(--muted);
+      color: var(--muted, #9ca8bf);
     }
 
     .plan-section {
@@ -968,15 +978,15 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
 
     .plan-card {
       position: relative;
-      background: var(--surface-alt);
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--card-border-subtle);
-      box-shadow: var(--shadow);
+      background: var(--surface-alt, #111111);
+      border-radius: var(--radius-lg, 28px);
+      border: 1px solid var(--card-border-subtle, rgba(255, 255, 255, 0.08));
+      box-shadow: var(--shadow, var(--card-shadow, 0 28px 50px rgba(0, 0, 0, 0.55)));
       overflow: hidden;
       display: flex;
       flex-direction: column;
       will-change: transform, box-shadow;
-      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+      transition: transform var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), box-shadow var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), border-color var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .plan-card::after {
@@ -987,7 +997,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       pointer-events: none;
       background: linear-gradient(140deg, rgba(0, 191, 255, 0.18), rgba(0, 0, 0, 0));
       opacity: 0;
-      transition: opacity var(--transition);
+      transition: opacity var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
       z-index: 0;
     }
 
@@ -997,14 +1007,14 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     }
 
     .plan-card.plan-card--open {
-      border-color: var(--card-border);
+      border-color: var(--card-border, rgba(0, 191, 255, 0.28));
       box-shadow: 0 30px 58px rgba(0, 0, 0, 0.6);
     }
 
     @media (hover: hover) and (pointer: fine) {
       .plan-card:hover {
         transform: translateY(-6px) scale(1.01);
-        border-color: var(--card-border-hover);
+        border-color: var(--card-border-hover, rgba(0, 191, 255, 0.45));
         box-shadow: 0 32px 64px rgba(0, 0, 0, 0.62);
       }
 
@@ -1038,7 +1048,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
         linear-gradient(130deg, rgba(0, 191, 255, 0.18), rgba(0, 0, 0, 0.6));
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
       cursor: pointer;
-      transition: background var(--transition), border-color var(--transition);
+      transition: background var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), border-color var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .plan-card.plan-card--open .plan-card__header {
@@ -1083,7 +1093,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       font-size: 12px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--muted-strong);
+      color: var(--muted-strong, #c4cee0);
     }
 
     .plan-card__toggle {
@@ -1097,10 +1107,10 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       border-radius: 12px;
       padding: 10px 16px;
       background: rgba(0, 191, 255, 0.16);
-      color: var(--text);
+      color: var(--text, #f3f7ff);
       font-weight: 600;
       cursor: pointer;
-      transition: background var(--transition), transform var(--transition);
+      transition: background var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), transform var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .plan-card__toggle button:hover,
@@ -1129,13 +1139,13 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       gap: 20px;
       grid-template-columns: minmax(220px, 1fr) minmax(0, 1.2fr);
       background: rgba(20, 20, 20, 0.96);
-      border-radius: var(--radius);
+      border-radius: var(--radius, 20px);
       padding: clamp(18px, 4vw, 28px);
       border: 1px solid rgba(255, 255, 255, 0.06);
       position: relative;
       overflow: hidden;
       box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55);
-      transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+      transition: transform var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), border-color var(--transition, 200ms cubic-bezier(.33,.13,.21,.99)), box-shadow var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
       align-items: start;
     }
 
@@ -1147,12 +1157,12 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       border-radius: inherit;
       background: radial-gradient(circle at 18% 18%, rgba(0, 191, 255, 0.18), transparent 60%);
       opacity: 0;
-      transition: opacity var(--transition);
+      transition: opacity var(--transition, 200ms cubic-bezier(.33,.13,.21,.99));
     }
 
     .exercise-card:hover {
       transform: translateY(-3px);
-      border-color: var(--card-border);
+      border-color: var(--card-border, rgba(0, 191, 255, 0.28));
       box-shadow: 0 26px 48px rgba(0, 0, 0, 0.6);
     }
 
@@ -1202,7 +1212,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       gap: 10px;
       text-align: center;
       padding: 22px;
-      color: var(--muted-strong);
+      color: var(--muted-strong, #c4cee0);
       background:
         linear-gradient(160deg, rgba(0, 0, 0, 0.8), rgba(0, 191, 255, 0.18));
       border: 1px dashed rgba(0, 191, 255, 0.4);
@@ -1211,7 +1221,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     .exercise-media__fallback svg {
       width: 38px;
       height: 38px;
-      stroke: var(--accent);
+      stroke: var(--accent, #00bfff);
     }
 
     .exercise-body {
@@ -1238,14 +1248,14 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       border: 1px solid rgba(0, 191, 255, 0.3);
       font-weight: 600;
       font-size: 15px;
-      color: var(--text);
+      color: var(--text, #f3f7ff);
     }
 
     .exercise-name {
       margin: 0;
       font-size: clamp(20px, 3.5vw, 26px);
       font-weight: 600;
-      color: var(--text);
+      color: var(--text, #f3f7ff);
       flex: 1 1 auto;
     }
 
@@ -1264,7 +1274,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       background: rgba(0, 191, 255, 0.16);
       border: 1px solid rgba(0, 191, 255, 0.35);
       font-size: 13px;
-      color: var(--muted-strong);
+      color: var(--muted-strong, #c4cee0);
     }
 
     .badge svg {
@@ -1276,7 +1286,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     .notes-block {
       background: rgba(16, 18, 20, 0.9);
       border: 1px solid rgba(0, 191, 255, 0.18);
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-sm, 14px);
       padding: 16px 18px;
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
     }
@@ -1286,12 +1296,12 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       font-size: 12px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--muted);
+      color: var(--muted, #9ca8bf);
     }
 
     .notes-block p {
       margin: 0;
-      color: var(--muted-strong);
+      color: var(--muted-strong, #c4cee0);
       white-space: pre-line;
       font-size: 15px;
     }
@@ -1311,13 +1321,13 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     .page-empty {
       margin-top: 40px;
       padding: 30px;
-      border-radius: var(--radius-lg);
+      border-radius: var(--radius-lg, 28px);
       border: 1px dashed rgba(0, 191, 255, 0.3);
       background: rgba(12, 12, 12, 0.88);
-      color: var(--muted-strong);
+      color: var(--muted-strong, #c4cee0);
       font-size: 18px;
       text-align: center;
-      box-shadow: var(--shadow);
+      box-shadow: var(--shadow, var(--card-shadow, 0 28px 50px rgba(0, 0, 0, 0.55)));
     }
 
     @media (max-width: 1100px) {
@@ -1407,7 +1417,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
         margin-right: calc(50% - 50vw);
         padding: 0;
         background: rgba(8, 8, 8, 0.96);
-        border-bottom: 1px solid var(--card-border-subtle);
+        border-bottom: 1px solid var(--card-border-subtle, rgba(255, 255, 255, 0.08));
         box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55);
       }
       .plan-nav__mobile-trigger {
@@ -1430,7 +1440,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
         background: rgba(8, 8, 8, 0.96);
         backdrop-filter: blur(16px);
         border-radius: clamp(22px, 8vw, 28px);
-        border: 1px solid var(--card-border-subtle);
+        border: 1px solid var(--card-border-subtle, rgba(255, 255, 255, 0.08));
         box-shadow: 0 22px 46px rgba(0, 0, 0, 0.6);
         padding: clamp(20px, 7vw, 28px);
         width: 100%;
@@ -1614,12 +1624,12 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
         box-shadow: 0 0 0 14px rgba(0, 191, 255, 0.02);
       }
       100% {
-        box-shadow: var(--shadow);
+        box-shadow: var(--shadow, var(--card-shadow, 0 28px 50px rgba(0, 0, 0, 0.55)));
       }
     }
   </style>
 </head>
-<body>
+<body class="client-plans-page">
 
 <div class="hero">
   <div class="hero__wrap">
