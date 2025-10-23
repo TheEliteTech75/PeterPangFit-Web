@@ -8,8 +8,15 @@ require_once __DIR__ . '/totp.php';
 require_once __DIR__ . '/send_email.php'; // for email login codes
 require_once __DIR__ . '/ppf_trusted.php';
 require_once __DIR__ . '/ppf_recognized_ip.php';
+require_once __DIR__ . '/ppf_theme.php';
 
 $pending = $_SESSION['pending_user'] ?? null;
+
+$themeCandidate = $pending['theme'] ?? ($_SESSION['theme'] ?? ppf_theme_default_key());
+$themeKey = ppf_theme_resolve((string)$themeCandidate);
+$_SESSION['theme'] = $themeKey;
+$themeStyleTag = ppf_theme_render_style_block();
+$themeInitScript = '<script>(function(){var theme=' . json_encode($themeKey, JSON_UNESCAPED_SLASHES) . ';function apply(){var d=document.documentElement;d.dataset.theme=theme;var b=document.body;if(b&&!b.classList.contains("ppf-themed")){b.classList.add("ppf-themed");}}if(document.readyState!=="loading"){apply();}else{document.addEventListener("DOMContentLoaded",apply);}})();</script>';
 if (!$pending) { header('Location: login.php'); exit; }
 
 $uid   = (int)$pending['id'];
@@ -111,6 +118,7 @@ function complete_login_and_redirect(mysqli $conn, array $pending, bool $trust=f
   $_SESSION['first_name']    = $pending['first'] ?? '';
   $_SESSION['last_name']     = $pending['last'] ?? '';
   $_SESSION['photo_url']     = $pending['photo'] ?? '';
+  $_SESSION['theme']         = ppf_theme_resolve((string)($pending['theme'] ?? ''));
   $_SESSION['LAST_ACTIVITY'] = time();
   unset($_SESSION['pending_user'], $_SESSION['pending_2fa_method']);
   session_regenerate_id(true);
@@ -160,16 +168,11 @@ function column_exists(mysqli $conn, string $t, string $c): bool {
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Two-Factor Authentication · Peter Pang Fit</title>
+  <?php echo $themeStyleTag, "\n", $themeInitScript, "\n"; ?>
   <style>
-    :root{
-    color-scheme:dark;
-      --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8; --line:rgba(148,163,184,0.18);
-    }
+
     html,body{
-      margin:0; padding:0; background:
-      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
-      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
-      linear-gradient(155deg, var(--bg), var(--bg-alt)); color:var(--text);
+      margin:0; padding:0; background: var(--page-canvas); color:var(--text);
       font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
     }
     .wrap{ max-width:480px; margin:48px auto; padding:0 16px; box-sizing:border-box; }
