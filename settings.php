@@ -642,10 +642,14 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     .chips .chip {
       border-radius: 999px;
       padding: 8px 14px;
-      background: rgba(15,23,42,0.75);
-      border: 1px solid var(--border);
       font-size: .85rem;
+      border: 1px solid transparent;
     }
+    .chips .chip-current { background: rgba(56,189,248,0.2); color: #bae6fd; }
+    .chips .chip-active  { background: rgba(52,211,153,0.18); color: #bbf7d0; }
+    .chips .chip-inactive{ background: rgba(148,163,184,0.18); color: #e2e8f0; }
+    .chips .chip-expired { background: rgba(251,191,36,0.15); color: #fde68a; }
+    .chips .chip-revoked { background: rgba(248,113,113,0.18); color: #fecaca; }
 
     .actions-row {
       display: flex;
@@ -944,11 +948,11 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       </div>
 
       <div class="chips">
-        <span class="chip">Current: <?php echo $sessionCounts['current'] ?? 0; ?></span>
-        <span class="chip">Active: <?php echo $sessionCounts['active'] ?? 0; ?></span>
-        <span class="chip">Inactive: <?php echo $sessionCounts['inactive'] ?? 0; ?></span>
-        <span class="chip">Expired: <?php echo $sessionCounts['expired'] ?? 0; ?></span>
-        <span class="chip">Revoked: <?php echo $sessionCounts['revoked'] ?? 0; ?></span>
+        <span class="chip chip-current">Current: <?php echo $sessionCounts['current'] ?? 0; ?></span>
+        <span class="chip chip-active">Active: <?php echo $sessionCounts['active'] ?? 0; ?></span>
+        <span class="chip chip-inactive">Inactive: <?php echo $sessionCounts['inactive'] ?? 0; ?></span>
+        <span class="chip chip-expired">Expired: <?php echo $sessionCounts['expired'] ?? 0; ?></span>
+        <span class="chip chip-revoked">Revoked: <?php echo $sessionCounts['revoked'] ?? 0; ?></span>
       </div>
 
       <div class="table-wrapper">
