@@ -172,17 +172,20 @@ if ($isAdmin) {
 ?>
 <style>
 :root {
-    --ppf-nav-bg: var(--surface, rgba(9, 14, 28, 0.94));
-    --ppf-nav-border: var(--border, rgba(148, 163, 184, 0.18));
-    --ppf-nav-text: var(--text, #f8fafc);
-    --ppf-nav-muted: var(--muted, rgba(203, 213, 225, 0.7));
-    --ppf-nav-active-bg: var(--accent-soft, rgba(56, 189, 248, 0.15));
-    --ppf-nav-active-color: var(--accent, #38bdf8);
-    --ppf-section-title: var(--muted-soft, rgba(148, 163, 184, 0.82));
-    --ppf-nav-overlay: rgba(2, 6, 23, 0.55);
-    --ppf-nav-hover-bg: var(--accent-soft, rgba(56, 189, 248, 0.12));
-    --ppf-nav-hover-border: var(--border-strong, rgba(56, 189, 248, 0.35));
-    --ppf-nav-submenu-bg: var(--surface-soft, rgba(15, 23, 42, 0.4));
+    --ppf-nav-tone-1: color-mix(in srgb, var(--surface, rgba(9, 14, 28, 0.92)) 80%, var(--theme-swatch-1, #05070d) 20%);
+    --ppf-nav-tone-2: color-mix(in srgb, var(--surface-alt, rgba(15, 23, 42, 0.78)) 78%, var(--theme-swatch-2, #0ea5e9) 22%);
+    --ppf-nav-tone-3: color-mix(in srgb, var(--surface-soft, rgba(15, 23, 42, 0.65)) 75%, var(--theme-swatch-3, #22d3a2) 25%);
+    --ppf-nav-bg: linear-gradient(165deg, var(--ppf-nav-tone-1) 0%, var(--ppf-nav-tone-2) 48%, var(--ppf-nav-tone-3) 100%);
+    --ppf-nav-border: color-mix(in srgb, var(--ppf-nav-tone-2) 22%, rgba(255, 255, 255, 0.08) 78%);
+    --ppf-nav-text: color-mix(in srgb, var(--text, #f8fafc) 85%, var(--ppf-nav-tone-3) 15%);
+    --ppf-nav-muted: color-mix(in srgb, var(--muted, rgba(203, 213, 225, 0.78)) 75%, var(--ppf-nav-tone-2) 25%);
+    --ppf-nav-active-bg: color-mix(in srgb, var(--ppf-nav-tone-3) 22%, transparent 78%);
+    --ppf-nav-active-color: color-mix(in srgb, var(--text, #f8fafc) 70%, var(--ppf-nav-tone-3) 30%);
+    --ppf-section-title: color-mix(in srgb, var(--muted-soft, rgba(148, 163, 184, 0.72)) 78%, var(--ppf-nav-tone-2) 22%);
+    --ppf-nav-overlay: color-mix(in srgb, var(--ppf-nav-tone-1) 60%, rgba(2, 6, 23, 0.55) 40%);
+    --ppf-nav-hover-bg: color-mix(in srgb, var(--ppf-nav-tone-2) 18%, transparent 82%);
+    --ppf-nav-hover-border: color-mix(in srgb, var(--ppf-nav-tone-3) 26%, transparent 74%);
+    --ppf-nav-submenu-bg: color-mix(in srgb, var(--ppf-nav-tone-1) 32%, rgba(2, 6, 23, 0.6) 68%);
   }
   .ppf-nav-overlay {
     position: fixed; inset: 0;
@@ -195,6 +198,7 @@ if ($isAdmin) {
   .ppf-sidenav {
     position: fixed; top: 0; left: 0; height: 100vh; width: 280px;
     background: var(--ppf-nav-bg);
+    background-color: color-mix(in srgb, var(--ppf-nav-tone-1) 70%, #020617 30%);
     border-right: 1px solid var(--ppf-nav-border);
     transform: translateX(-100%);
     transition: transform .24s ease, box-shadow .24s ease;
@@ -239,7 +243,10 @@ if ($isAdmin) {
   .ppf-section-head {
     width: 100%;
     display:flex; align-items:center; justify-content:space-between;
-    background: linear-gradient(180deg, var(--accent-soft, rgba(56,189,248,0.08)), rgba(0,0,0,0));
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--ppf-nav-tone-1) 45%, transparent 55%) 0%,
+      color-mix(in srgb, var(--ppf-nav-tone-2) 55%, transparent 45%) 52%,
+      color-mix(in srgb, var(--ppf-nav-tone-3) 65%, transparent 35%) 100%);
     padding: 10px 12px; border: 0; cursor: pointer; color: var(--ppf-section-title);
     font-weight: 600; letter-spacing: .2px;
   }
@@ -261,7 +268,7 @@ if ($isAdmin) {
     display:inline-block; font-size: 12px; color: var(--ppf-nav-muted); text-decoration:none;
     padding: 4px 6px; border-radius: 6px; border: 1px dashed var(--ppf-nav-border);
     margin-right: 6px; margin-top: 6px;
-    background: var(--accent-soft, rgba(56,189,248,0.05));
+    background: color-mix(in srgb, var(--ppf-nav-tone-2) 14%, transparent 86%);
   }
   .ppf-submenu-mini a:hover {
     color: var(--ppf-nav-text);

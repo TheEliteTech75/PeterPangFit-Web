@@ -598,14 +598,43 @@ if (!function_exists('ppf_theme_catalog')) {
         return $grouped;
     }
 
+    function ppf_theme_enrich_variables(array $theme): array {
+        $vars = $theme['variables'] ?? [];
+        $preview = $theme['preview'] ?? [];
+
+        $candidates = [];
+        foreach ($preview as $color) {
+            if ($color !== null && $color !== '') {
+                $candidates[] = (string)$color;
+            }
+        }
+
+        foreach (['--bg', '--accent', '--primary', '--brand', '--primary-strong'] as $varName) {
+            if (!empty($vars[$varName])) {
+                $candidates[] = (string)$vars[$varName];
+            }
+        }
+
+        $candidates[] = '#05070d';
+        $candidates = array_values(array_unique($candidates));
+
+        for ($i = 0; $i < 3; $i++) {
+            $vars['--theme-swatch-' . ($i + 1)] = $candidates[$i] ?? '#05070d';
+        }
+
+        return $vars;
+    }
+
     function ppf_theme_render_style_block(): string {
         $themes = ppf_theme_catalog();
-        $default = $themes[ppf_theme_default_key()]['variables'];
+        $defaultTheme = $themes[ppf_theme_default_key()] ?? reset($themes);
+        $defaultVars = ppf_theme_enrich_variables($defaultTheme);
         $css = [
-            ':root {' . ppf_theme_build_css_vars($default) . '}'
+            ':root {' . ppf_theme_build_css_vars($defaultVars) . '}'
         ];
         foreach ($themes as $key => $theme) {
-            $css[] = ':root[data-theme="' . $key . '"] {' . ppf_theme_build_css_vars($theme['variables']) . '}';
+            $vars = ppf_theme_enrich_variables($theme);
+            $css[] = ':root[data-theme="' . $key . '"] {' . ppf_theme_build_css_vars($vars) . '}';
         }
         return "<style>\n" . implode("\n", $css) . "\n</style>";
     }
