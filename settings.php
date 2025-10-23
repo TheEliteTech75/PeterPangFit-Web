@@ -104,8 +104,6 @@ function ss_set(mysqli $conn, string $key, string $value): bool {
     return ppf_ss_set($conn, $key, $value);
 }
 
-$twofaSetup = $_SESSION['twofa_app_setup'] ?? null;
-
 // ---------- POST actions ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
@@ -128,70 +126,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ppf_log($conn, $uid, $email ?: null, $role ?: null, $event, 'user', (string)$uid, null);
             }
             redirect_with_flash('success', $enable ? 'Email authentication is now enabled.' : 'Email authentication has been disabled.', 'twofa');
-        }
-
-        case 'start_app_setup': {
-            $secret = strtoupper(ppf_totp_new_secret(20));
-            $_SESSION['twofa_app_setup'] = [
-                'secret' => $secret,
-                'created' => time(),
-            ];
-            redirect_with_flash('info', 'Authenticator setup started. Scan the QR code and confirm with a code to finish.', 'twofa');
-        }
-
-        case 'cancel_app_setup': {
-            unset($_SESSION['twofa_app_setup']);
-            redirect_with_flash('info', 'Authenticator setup cancelled.', 'twofa');
-        }
-
-        case 'confirm_app_setup': {
-            $setup = $_SESSION['twofa_app_setup'] ?? null;
-            $code = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));
-            if (!$setup || empty($setup['secret'])) {
-                redirect_with_flash('error', 'Setup session expired. Start again.', 'twofa');
-            }
-            if ($code === '' || !ppf_totp_verify($setup['secret'], $code, 30, 6, 8)) {
-                redirect_with_flash('error', 'Invalid authenticator code. Please try again.', 'twofa');
-            }
-            if ($st = $conn->prepare("UPDATE users SET twofa_app_enabled=1, twofa_secret=? WHERE id=?")) {
-                $secret = strtoupper($setup['secret']);
-                $st->bind_param('si', $secret, $uid);
-                $st->execute();
-                $st->close();
-            }
-            unset($_SESSION['twofa_app_setup']);
-            if (function_exists('ppf_log')) {
-                ppf_log($conn, $uid, $email ?: null, $role ?: null, 'twofa_app_enabled', 'user', (string)$uid, null);
-            }
-            redirect_with_flash('success', 'Authenticator app protection is now enabled.', 'twofa');
-        }
-
-        case 'disable_app': {
-            $code = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));
-            if ($code === '') {
-                redirect_with_flash('error', 'Enter the current authenticator code to disable it.', 'twofa');
-            }
-            $secret = '';
-            if ($st = $conn->prepare("SELECT twofa_secret FROM users WHERE id=? LIMIT 1")) {
-                $st->bind_param('i', $uid);
-                $st->execute();
-                $res = $st->get_result();
-                $row = $res ? $res->fetch_assoc() : null;
-                $st->close();
-                $secret = strtoupper(preg_replace('/\s+/', '', (string)($row['twofa_secret'] ?? '')));
-            }
-            if ($secret === '' || !ppf_totp_verify($secret, $code, 30, 6, 8)) {
-                redirect_with_flash('error', 'Authenticator code was not recognized. Try again.', 'twofa');
-            }
-            if ($st = $conn->prepare("UPDATE users SET twofa_app_enabled=0, twofa_secret=NULL WHERE id=?")) {
-                $st->bind_param('i', $uid);
-                $st->execute();
-                $st->close();
-            }
-            if (function_exists('ppf_log')) {
-                ppf_log($conn, $uid, $email ?: null, $role ?: null, 'twofa_app_disabled', 'user', (string)$uid, null);
-            }
-            redirect_with_flash('info', 'Authenticator app requirement removed.', 'twofa');
         }
 
         case 'system_settings': {
@@ -227,12 +161,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     redirect_with_flash('error', 'Unknown action.');
-}
-
-// expire stale setup state (10 minutes)
-if ($twofaSetup && isset($twofaSetup['created']) && (time() - (int)$twofaSetup['created'] > 600)) {
-    unset($_SESSION['twofa_app_setup']);
-    $twofaSetup = null;
 }
 
 $flash = settings_flash();
@@ -273,9 +201,6 @@ if ($st = $conn->prepare("SELECT email, first_name, last_name, role, twofa_email
 $twofaEmailEnabled = (int)($userRow['twofa_email_enabled'] ?? 0) === 1;
 $twofaAppEnabled   = (int)($userRow['twofa_app_enabled'] ?? 0) === 1;
 $twofaSecret       = strtoupper(preg_replace('/\s+/', '', (string)($userRow['twofa_secret'] ?? '')));
-
-$accountName = $email !== '' ? $email : ('user' . $uid . '@peterpangfit');
-$otpauthUrl  = ($twofaSetup && !empty($twofaSetup['secret'])) ? ppf_otpauth_url('Peter Pang Fit', $accountName, $twofaSetup['secret']) : null;
 
 // Passkeys
 $passkeys = [];
@@ -510,24 +435,14 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     .btn:hover { border-color: var(--border-strong); background: rgba(56,189,248,0.18); }
     .btn.secondary { background: rgba(15,23,42,0.75); }
     .btn.danger { background: rgba(248, 113, 113, 0.15); border-color: rgba(248,113,113,0.45); color: #fecaca; }
+    .btn.is-loading,
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
 
     form.inline { display: inline; }
 
-    .totp-setup {
-      margin-top: 18px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 16px;
-      align-items: start;
-    }
-    .totp-setup pre {
-      background: rgba(8, 12, 24, 0.92);
-      border: 1px dashed var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      font-size: .95rem;
-      overflow-x: auto;
-    }
     .qr-frame {
       background: rgba(8, 12, 24, 0.92);
       border: 1px solid var(--border);
@@ -548,6 +463,89 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       font-size: 1rem;
     }
     .input:focus { outline: 2px solid rgba(56,189,248,0.45); }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.72);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease;
+    }
+    .modal-backdrop.hidden { display: none; }
+    .modal-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal {
+      width: min(520px, 100%);
+      max-height: calc(100vh - 80px);
+      overflow-y: auto;
+      background: rgba(8, 12, 24, 0.98);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 24px 70px rgba(2,6,23,0.65);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .modal-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin: 0;
+    }
+    .modal-close {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 1.35rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .modal-close:hover { background: rgba(56,189,248,0.12); color: #e0f2fe; }
+    .modal-body { font-size: .95rem; }
+    .modal-body label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+    .modal-body p { color: var(--muted); margin: 0 0 12px; }
+    .modal-form { display: flex; flex-direction: column; gap: 14px; }
+    .modal-error { color: #fca5a5; font-size: .85rem; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+    .modal-info {
+      background: rgba(15,23,42,0.7);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: .9rem;
+      color: var(--muted);
+    }
+    .modal-qr {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 18px;
+    }
+    .modal-secret {
+      font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+      letter-spacing: 2px;
+      font-size: 1rem;
+      background: rgba(8, 12, 24, 0.92);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: inline-block;
+    }
 
     .table-wrapper {
       position: relative;
@@ -656,6 +654,35 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       margin-top: 16px;
     }
 
+    .editable-text {
+      cursor: pointer;
+      border-radius: 6px;
+      padding: 2px 4px;
+      display: inline-block;
+    }
+    .editable-text:focus {
+      outline: 2px solid rgba(56,189,248,0.45);
+      outline-offset: 2px;
+    }
+    .inline-edit {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .inline-edit .input {
+      flex: 1 1 220px;
+      min-width: 160px;
+    }
+    .inline-edit .btn.small {
+      flex: 0 0 auto;
+    }
+    .inline-edit-error {
+      color: #fca5a5;
+      font-size: .78rem;
+      width: 100%;
+    }
+
     .muted { color: var(--muted); }
 
     .two-col {
@@ -730,14 +757,9 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
           <strong>Email Authentication</strong>
           <span><?php echo $twofaEmailEnabled ? 'Codes can be sent to your email when needed.' : 'A backup code will be sent only after you enable this option.'; ?></span>
         </div>
-        <form method="post" class="inline">
-          <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-          <input type="hidden" name="action" value="toggle_email">
-          <input type="hidden" name="state" value="<?php echo $twofaEmailEnabled ? 'disable' : 'enable'; ?>">
-          <button class="btn<?php echo $twofaEmailEnabled ? ' secondary' : ''; ?>" type="submit">
-            <?php echo $twofaEmailEnabled ? 'Disable' : 'Enable'; ?>
-          </button>
-        </form>
+        <button class="btn<?php echo $twofaEmailEnabled ? ' secondary' : ''; ?>" type="button" id="btnToggleEmail" data-state="<?php echo $twofaEmailEnabled ? 'disable' : 'enable'; ?>">
+          <?php echo $twofaEmailEnabled ? 'Disable' : 'Enable'; ?>
+        </button>
       </div>
 
       <div class="switch-row">
@@ -745,47 +767,15 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
           <strong>Authenticator App</strong>
           <span><?php echo $twofaAppEnabled ? 'Logins require a 6-digit code from your authenticator.' : 'Pair an authenticator app like Google Authenticator or Authy for stronger protection.'; ?></span>
         </div>
-        <?php if ($twofaAppEnabled): ?>
-          <form method="post" class="inline" style="display:flex;align-items:center;gap:10px;">
-            <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-            <input type="hidden" name="action" value="disable_app">
-            <input class="input" style="width:140px;" name="code" placeholder="123456" maxlength="6" inputmode="numeric" required>
-            <button class="btn danger" type="submit">Disable</button>
-          </form>
-        <?php else: ?>
-          <form method="post" class="inline">
-            <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-            <input type="hidden" name="action" value="start_app_setup">
-            <button class="btn" type="submit">Start setup</button>
-          </form>
-        <?php endif; ?>
+        <button
+          class="btn<?php echo $twofaAppEnabled ? ' danger' : ''; ?>"
+          type="button"
+          id="btnToggleApp"
+          data-mode="<?php echo $twofaAppEnabled ? 'disable' : 'enable'; ?>"
+        >
+          <?php echo $twofaAppEnabled ? 'Disable' : 'Enable'; ?>
+        </button>
       </div>
-
-      <?php if ($twofaSetup && $otpauthUrl): ?>
-        <div class="totp-setup">
-          <div>
-            <div class="qr-frame">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&amp;data=<?php echo urlencode($otpauthUrl); ?>" alt="Authenticator QR">
-            </div>
-          </div>
-          <div>
-            <h3>Scan &amp; Confirm</h3>
-            <p class="muted">Scan the QR code with your authenticator app, or enter this secret manually:</p>
-            <pre><?php echo h(chunk_split($twofaSetup['secret'], 4, ' ')); ?></pre>
-            <form method="post" class="actions-row">
-              <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-              <input type="hidden" name="action" value="confirm_app_setup">
-              <input class="input" style="max-width:180px;" name="code" placeholder="123456" inputmode="numeric" maxlength="6" required>
-              <button class="btn" type="submit">Confirm</button>
-            </form>
-            <form method="post" class="inline" style="margin-top:12px; display:inline-block;">
-              <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-              <input type="hidden" name="action" value="cancel_app_setup">
-              <button class="btn secondary" type="submit">Cancel setup</button>
-            </form>
-          </div>
-        </div>
-      <?php endif; ?>
     </section>
 
     <section class="card" id="passkeys">
@@ -827,7 +817,13 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                 <tr data-passkey-id="<?php echo $pkId; ?>">
                   <td>
                     <div class="table-primary">
-                      <strong data-field="name"><?php echo h($pkName !== '' ? $pkName : 'Unnamed passkey'); ?></strong>
+                      <strong
+                        class="editable-text"
+                        tabindex="0"
+                        data-edit-entity="passkey"
+                        data-id="<?php echo $pkId; ?>"
+                        data-placeholder="Unnamed passkey"
+                      ><?php echo h($pkName !== '' ? $pkName : 'Unnamed passkey'); ?></strong>
                     </div>
                   </td>
                   <td data-field="created">
@@ -842,13 +838,11 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                     </div>
                   </td>
                   <td class="actions-cell">
-                    <button class="btn small ghost btn-edit-passkey" data-passkey-id="<?php echo $pkId; ?>" data-passkey-name="<?php echo h($pkName); ?>">Edit</button>
-                    <button class="btn small danger btn-delete-passkey" data-passkey-id="<?php echo $pkId; ?>">Delete</button>
-                    <form method="post" action="passkey_rename.php" class="rename-form" id="rename-passkey-<?php echo $pkId; ?>" style="display:none;">
-                      <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                      <input type="hidden" name="passkey_id" value="<?php echo $pkId; ?>">
-                      <input type="hidden" name="name" value="<?php echo h($pkName); ?>">
-                    </form>
+                    <button
+                      class="btn small danger btn-delete-passkey"
+                      data-passkey-id="<?php echo $pkId; ?>"
+                      data-passkey-name="<?php echo h($pkName !== '' ? $pkName : 'Unnamed passkey'); ?>"
+                    >Delete</button>
                   </td>
                 </tr>
               <?php endforeach; ?>
@@ -897,7 +891,13 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                 <tr data-device-id="<?php echo $tdId; ?>">
                   <td>
                     <div class="table-primary">
-                      <strong data-field="name"><?php echo h($tdName !== '' ? $tdName : 'Unnamed device'); ?></strong>
+                      <strong
+                        class="editable-text"
+                        tabindex="0"
+                        data-edit-entity="trusted-device"
+                        data-id="<?php echo $tdId; ?>"
+                        data-placeholder="Unnamed device"
+                      ><?php echo h($tdName !== '' ? $tdName : 'Unnamed device'); ?></strong>
                       <?php if ($tdExpires): ?>
                         <span class="table-subtext">Expires <?php echo fmt_datetime($tdExpires); ?></span>
                       <?php endif; ?>
@@ -915,7 +915,6 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                     </div>
                   </td>
                   <td class="actions-cell">
-                    <button class="btn small ghost btn-edit-device" data-device-id="<?php echo $tdId; ?>" data-device-name="<?php echo h($tdName); ?>">Edit</button>
                     <form method="post" action="trusted_devices_actions.php" class="inline">
                       <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                       <input type="hidden" name="action" value="delete">
@@ -969,7 +968,7 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                 <th>Timestamp</th>
                 <th>Location</th>
                 <th>Browser</th>
-                <th>Operating System</th>
+                <th>OS</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -991,7 +990,7 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                   <td>
                     <div class="table-primary">
                       <strong><?php echo h($location !== '' ? $location : 'Unknown'); ?></strong>
-                      <?php if (!empty($s['ip'])): ?><span class="table-subtext">IP <?php echo h($s['ip']); ?></span><?php endif; ?>
+                      <?php if (!empty($s['ip'])): ?><span class="table-subtext"><?php echo h($s['ip']); ?></span><?php endif; ?>
                     </div>
                   </td>
                   <td>
@@ -1003,7 +1002,6 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                   <td>
                     <div class="table-primary">
                       <strong><?php echo h($s['platform'] ?: 'Unknown'); ?></strong>
-                      <?php if ($s['user_agent']): ?><span class="table-subtext">UA fingerprint stored</span><?php endif; ?>
                     </div>
                   </td>
                   <td class="actions-cell">
@@ -1070,23 +1068,689 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     <?php endif; ?>
   </main>
 
+  <div class="modal-backdrop hidden" id="modalBackdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modalTitle"></h3>
+        <button type="button" class="modal-close" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body"></div>
+    </div>
+  </div>
+
   <script>
     const csrfToken = <?php echo json_encode($csrf, JSON_UNESCAPED_SLASHES); ?>;
 
-    async function beginPasskey(name) {
-      const formData = new FormData();
-      formData.append('name', name);
-      const res = await fetch('passkey_begin_register.php', { method: 'POST', body: formData, credentials: 'same-origin' });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Unable to start passkey registration.');
-      return data.publicKey;
+    const modalBackdrop = document.getElementById('modalBackdrop');
+    const modalBodyEl = modalBackdrop.querySelector('.modal-body');
+    const modalTitleEl = modalBackdrop.querySelector('.modal-title');
+    const modalCloseBtn = modalBackdrop.querySelector('.modal-close');
+    let modalOnClose = null;
+    let modalHideTimer = null;
+
+    function openModal({ title, render, onClose }) {
+      if (modalHideTimer) {
+        clearTimeout(modalHideTimer);
+        modalHideTimer = null;
+      }
+      modalOnClose = typeof onClose === 'function' ? onClose : null;
+      modalTitleEl.textContent = title || '';
+      modalBodyEl.innerHTML = '';
+      modalBackdrop.classList.remove('hidden');
+      modalBackdrop.setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(() => modalBackdrop.classList.add('active'));
+      render(modalBodyEl, {
+        close: closeModal,
+        setTitle: (text) => { modalTitleEl.textContent = text; }
+      });
+    }
+
+    function closeModal() {
+      if (modalBackdrop.classList.contains('hidden')) return;
+      modalBackdrop.classList.remove('active');
+      modalBackdrop.setAttribute('aria-hidden', 'true');
+      modalHideTimer = setTimeout(() => {
+        modalBackdrop.classList.add('hidden');
+        modalHideTimer = null;
+      }, 200);
+      if (modalOnClose) {
+        const cb = modalOnClose;
+        modalOnClose = null;
+        cb();
+      } else {
+        modalOnClose = null;
+      }
+    }
+
+    modalBackdrop.addEventListener('click', (evt) => {
+      if (evt.target === modalBackdrop) closeModal();
+    });
+    modalCloseBtn.addEventListener('click', closeModal);
+    document.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape') closeModal();
+    });
+
+    function setButtonLoading(button, text) {
+      if (!button) return () => {};
+      const originalText = button.textContent;
+      const originalDisabled = button.disabled;
+      button.textContent = text;
+      button.disabled = true;
+      button.classList.add('is-loading');
+      return (keepDisabled = false) => {
+        button.textContent = originalText;
+        button.classList.remove('is-loading');
+        button.disabled = keepDisabled ? true : originalDisabled;
+      };
+    }
+
+    function createFormData(fields = {}) {
+      const form = new FormData();
+      Object.entries(fields).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          form.append(key, value);
+        }
+      });
+      return form;
+    }
+
+    async function postJson(url, formData) {
+      const res = await fetch(url, { method: 'POST', body: formData, credentials: 'same-origin' });
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        throw new Error('Unexpected server response.');
+      }
+      if (!data.ok) {
+        throw new Error(data.error || 'Request failed.');
+      }
+      return data;
+    }
+
+    function makeInlineEditable(element, onSave) {
+      if (!element) return;
+      element.dataset.editing = '0';
+      element.setAttribute('role', 'button');
+      const begin = () => startInlineEdit(element, onSave);
+      element.addEventListener('click', begin);
+      element.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Enter' || evt.key === ' ') {
+          evt.preventDefault();
+          begin();
+        }
+      });
+    }
+
+    function startInlineEdit(element, onSave) {
+      if (element.dataset.editing === '1') return;
+      element.dataset.editing = '1';
+      const placeholder = element.dataset.placeholder || '';
+      const originalDisplay = element.textContent.trim();
+      const originalValue = originalDisplay === placeholder ? '' : originalDisplay;
+      const parent = element.parentNode;
+      const container = document.createElement('div');
+      container.className = 'inline-edit';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'input';
+      input.maxLength = 100;
+      input.value = originalValue;
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'btn small';
+      saveBtn.textContent = 'Save';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn small secondary';
+      cancelBtn.textContent = 'Cancel';
+      const errorEl = document.createElement('div');
+      errorEl.className = 'inline-edit-error';
+      container.append(input, saveBtn, cancelBtn, errorEl);
+      parent.replaceChild(container, element);
+      input.focus();
+      input.select();
+
+      const cleanup = (value, display) => {
+        element.textContent = display !== undefined ? display : (value || placeholder);
+        element.dataset.editing = '0';
+        container.replaceWith(element);
+        element.focus();
+      };
+
+      const cancel = () => {
+        cleanup(originalValue, originalDisplay || placeholder);
+      };
+
+      const save = async () => {
+        errorEl.textContent = '';
+        const nextValue = input.value.trim();
+        if (nextValue === '') {
+          errorEl.textContent = 'Name cannot be empty.';
+          input.focus();
+          return;
+        }
+        saveBtn.disabled = true;
+        cancelBtn.disabled = true;
+        try {
+          await onSave(nextValue);
+          cleanup(nextValue);
+        } catch (err) {
+          errorEl.textContent = err.message || err;
+          saveBtn.disabled = false;
+          cancelBtn.disabled = false;
+          input.focus();
+        }
+      };
+
+      saveBtn.addEventListener('click', save);
+      cancelBtn.addEventListener('click', cancel);
+      input.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Enter') {
+          evt.preventDefault();
+          save();
+        } else if (evt.key === 'Escape') {
+          evt.preventDefault();
+          cancel();
+        }
+      });
+      container.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape') {
+          evt.preventDefault();
+          cancel();
+        }
+      });
+      container.addEventListener('focusout', (evt) => {
+        if (!container.contains(evt.relatedTarget)) {
+          cancel();
+        }
+      });
+    }
+
+    document.querySelectorAll('[data-edit-entity="passkey"]').forEach((el) => {
+      makeInlineEditable(el, async (value) => {
+        const id = el.getAttribute('data-id');
+        if (!id) throw new Error('Missing passkey id.');
+        const form = createFormData({
+          csrf_token: csrfToken,
+          passkey_id: id,
+          name: value,
+          ajax: '1'
+        });
+        await postJson('passkey_rename.php', form);
+        const row = el.closest('tr');
+        const deleteBtn = row ? row.querySelector('.btn-delete-passkey') : null;
+        if (deleteBtn) deleteBtn.setAttribute('data-passkey-name', value);
+      });
+    });
+
+    document.querySelectorAll('[data-edit-entity="trusted-device"]').forEach((el) => {
+      makeInlineEditable(el, async (value) => {
+        const id = el.getAttribute('data-id');
+        if (!id) throw new Error('Missing device id.');
+        const form = createFormData({
+          csrf_token: csrfToken,
+          action: 'rename',
+          id,
+          name: value
+        });
+        await postJson('trusted_devices_actions.php', form);
+      });
+    });
+
+    const emailToggleBtn = document.getElementById('btnToggleEmail');
+    if (emailToggleBtn) {
+      emailToggleBtn.addEventListener('click', async () => {
+        const state = emailToggleBtn.getAttribute('data-state');
+        if (!state) return;
+        const restore = setButtonLoading(emailToggleBtn, 'Processing...');
+        try {
+          const form = createFormData({ csrf_token: csrfToken, action: 'request', state });
+          await postJson('twofa_email_actions.php', form);
+          restore(true);
+          openEmailModal(state, {
+            onSuccess: () => {
+              restore(false);
+              location.reload();
+            },
+            onCancel: () => restore(false)
+          });
+        } catch (err) {
+          restore(false);
+          alert(err.message || err);
+        }
+      });
+    }
+
+    function openEmailModal(state, callbacks = {}) {
+      let finished = false;
+      openModal({
+        title: state === 'enable' ? 'Enable Email Authentication' : 'Disable Email Authentication',
+        onClose: () => {
+          if (!finished && typeof callbacks.onCancel === 'function') callbacks.onCancel();
+        },
+        render: (body, controls) => {
+          body.innerHTML = '';
+          const intro = document.createElement('p');
+          intro.textContent = 'Enter the 6-digit code sent to your email and confirm with your current password.';
+          body.append(intro);
+          const form = document.createElement('form');
+          form.className = 'modal-form';
+
+          const codeGroup = document.createElement('div');
+          const codeLabel = document.createElement('label');
+          codeLabel.setAttribute('for', 'emailCodeInput');
+          codeLabel.textContent = 'Verification code';
+          const codeInput = document.createElement('input');
+          codeInput.id = 'emailCodeInput';
+          codeInput.className = 'input';
+          codeInput.name = 'code';
+          codeInput.inputMode = 'numeric';
+          codeInput.autocomplete = 'one-time-code';
+          codeInput.maxLength = 6;
+          codeInput.required = true;
+          codeGroup.append(codeLabel, codeInput);
+
+          const passGroup = document.createElement('div');
+          const passLabel = document.createElement('label');
+          passLabel.setAttribute('for', 'emailPasswordInput');
+          passLabel.textContent = 'Current password';
+          const passInput = document.createElement('input');
+          passInput.id = 'emailPasswordInput';
+          passInput.className = 'input';
+          passInput.type = 'password';
+          passInput.autocomplete = 'current-password';
+          passInput.required = true;
+          passGroup.append(passLabel, passInput);
+
+          const errorEl = document.createElement('div');
+          errorEl.className = 'modal-error';
+
+          const actions = document.createElement('div');
+          actions.className = 'modal-actions';
+          const cancelBtn = document.createElement('button');
+          cancelBtn.type = 'button';
+          cancelBtn.className = 'btn small secondary';
+          cancelBtn.textContent = 'Cancel';
+          const submitBtn = document.createElement('button');
+          submitBtn.type = 'submit';
+          submitBtn.className = 'btn small';
+          submitBtn.textContent = 'Confirm';
+          actions.append(cancelBtn, submitBtn);
+
+          form.append(codeGroup, passGroup, errorEl, actions);
+          body.append(form);
+          codeInput.focus();
+
+          cancelBtn.addEventListener('click', () => controls.close());
+
+          form.addEventListener('submit', async (evt) => {
+            evt.preventDefault();
+            errorEl.textContent = '';
+            const code = codeInput.value.trim();
+            const password = passInput.value;
+            if (code.length !== 6 || !/^[0-9]{6}$/.test(code)) {
+              errorEl.textContent = 'Enter the 6-digit code.';
+              codeInput.focus();
+              return;
+            }
+            const restore = setButtonLoading(submitBtn, 'Verifying...');
+            cancelBtn.disabled = true;
+            try {
+              const formData = createFormData({
+                csrf_token: csrfToken,
+                action: 'confirm',
+                state,
+                code,
+                password
+              });
+              await postJson('twofa_email_actions.php', formData);
+              finished = true;
+              controls.close();
+              if (typeof callbacks.onSuccess === 'function') callbacks.onSuccess();
+            } catch (err) {
+              errorEl.textContent = err.message || err;
+              restore(false);
+              cancelBtn.disabled = false;
+            }
+          });
+        }
+      });
+    }
+
+    const appToggleBtn = document.getElementById('btnToggleApp');
+    if (appToggleBtn) {
+      appToggleBtn.addEventListener('click', () => {
+        const mode = appToggleBtn.getAttribute('data-mode');
+        if (mode === 'enable') {
+          startAppEnableFlow(appToggleBtn);
+        } else if (mode === 'disable') {
+          startAppDisableFlow(appToggleBtn);
+        }
+      });
+    }
+
+    async function startAppEnableFlow(button) {
+      const restore = setButtonLoading(button, 'Processing...');
+      try {
+        const form = createFormData({ csrf_token: csrfToken, action: 'request_enable' });
+        await postJson('twofa_app_actions.php', form);
+        restore(true);
+        openAuthenticatorEnableModal({
+          onSuccess: () => {
+            restore(false);
+            location.reload();
+          },
+          onCancel: () => restore(false)
+        });
+      } catch (err) {
+        restore(false);
+        alert(err.message || err);
+      }
+    }
+
+    function openAuthenticatorEnableModal(callbacks = {}) {
+      let finished = false;
+      let secretPayload = null;
+      openModal({
+        title: 'Enable Authenticator App',
+        onClose: () => {
+          if (!finished && typeof callbacks.onCancel === 'function') callbacks.onCancel();
+        },
+        render: (body, controls) => renderStep1(body, controls)
+      });
+
+      function renderStep1(body, controls) {
+        body.innerHTML = '';
+        const intro = document.createElement('p');
+        intro.textContent = 'We emailed you a 6-digit code to verify this authenticator request.';
+        body.append(intro);
+        const form = document.createElement('form');
+        form.className = 'modal-form';
+        const group = document.createElement('div');
+        const label = document.createElement('label');
+        label.setAttribute('for', 'appVerifyCode');
+        label.textContent = 'Verification code';
+        const input = document.createElement('input');
+        input.id = 'appVerifyCode';
+        input.className = 'input';
+        input.inputMode = 'numeric';
+        input.autocomplete = 'one-time-code';
+        input.maxLength = 6;
+        input.required = true;
+        group.append(label, input);
+        const errorEl = document.createElement('div');
+        errorEl.className = 'modal-error';
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn small secondary';
+        cancelBtn.textContent = 'Cancel';
+        const submitBtn = document.createElement('button');
+        submitBtn.type = 'submit';
+        submitBtn.className = 'btn small';
+        submitBtn.textContent = 'Verify';
+        actions.append(cancelBtn, submitBtn);
+        form.append(group, errorEl, actions);
+        body.append(form);
+        input.focus();
+
+        cancelBtn.addEventListener('click', () => controls.close());
+        form.addEventListener('submit', async (evt) => {
+          evt.preventDefault();
+          errorEl.textContent = '';
+          const code = input.value.trim();
+          if (code.length !== 6 || !/^[0-9]{6}$/.test(code)) {
+            errorEl.textContent = 'Enter the 6-digit code.';
+            input.focus();
+            return;
+          }
+          const restore = setButtonLoading(submitBtn, 'Checking...');
+          cancelBtn.disabled = true;
+          try {
+            const data = await postJson('twofa_app_actions.php', createFormData({
+              csrf_token: csrfToken,
+              action: 'verify_code',
+              code
+            }));
+            secretPayload = data;
+            renderStep2(body, controls);
+          } catch (err) {
+            errorEl.textContent = err.message || err;
+            restore(false);
+            cancelBtn.disabled = false;
+          }
+        });
+      }
+
+      function renderStep2(body, controls) {
+        body.innerHTML = '';
+        const info = document.createElement('p');
+        info.textContent = 'Scan the QR code with your authenticator app or enter the secret manually.';
+        const qrWrap = document.createElement('div');
+        qrWrap.className = 'modal-qr';
+        const qrFrame = document.createElement('div');
+        qrFrame.className = 'qr-frame';
+        const img = document.createElement('img');
+        img.src = secretPayload.qr;
+        img.alt = 'Authenticator QR code';
+        img.width = 220;
+        img.height = 220;
+        qrFrame.append(img);
+        const secretLabel = document.createElement('div');
+        secretLabel.className = 'modal-secret';
+        const segments = secretPayload.secret.match(/.{1,4}/g);
+        secretLabel.textContent = segments ? segments.join(' ') : secretPayload.secret;
+        qrWrap.append(qrFrame, secretLabel);
+
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn small secondary';
+        cancelBtn.textContent = 'Cancel';
+        const nextBtn = document.createElement('button');
+        nextBtn.type = 'button';
+        nextBtn.className = 'btn small';
+        nextBtn.textContent = 'Next';
+        actions.append(cancelBtn, nextBtn);
+
+        body.append(info, qrWrap, actions);
+
+        cancelBtn.addEventListener('click', () => controls.close());
+        nextBtn.addEventListener('click', () => renderStep3(body, controls));
+      }
+
+      function renderStep3(body, controls) {
+        body.innerHTML = '';
+        const info = document.createElement('p');
+        info.textContent = 'Enter a code from your authenticator app and your current password to finish.';
+        const form = document.createElement('form');
+        form.className = 'modal-form';
+
+        const codeGroup = document.createElement('div');
+        const codeLabel = document.createElement('label');
+        codeLabel.setAttribute('for', 'appConfirmCode');
+        codeLabel.textContent = 'Authenticator code';
+        const codeInput = document.createElement('input');
+        codeInput.id = 'appConfirmCode';
+        codeInput.className = 'input';
+        codeInput.inputMode = 'numeric';
+        codeInput.maxLength = 6;
+        codeInput.required = true;
+        codeGroup.append(codeLabel, codeInput);
+
+        const passGroup = document.createElement('div');
+        const passLabel = document.createElement('label');
+        passLabel.setAttribute('for', 'appConfirmPassword');
+        passLabel.textContent = 'Current password';
+        const passInput = document.createElement('input');
+        passInput.id = 'appConfirmPassword';
+        passInput.className = 'input';
+        passInput.type = 'password';
+        passInput.autocomplete = 'current-password';
+        passInput.required = true;
+        passGroup.append(passLabel, passInput);
+
+        const errorEl = document.createElement('div');
+        errorEl.className = 'modal-error';
+
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn small secondary';
+        cancelBtn.textContent = 'Cancel';
+        const submitBtn = document.createElement('button');
+        submitBtn.type = 'submit';
+        submitBtn.className = 'btn small';
+        submitBtn.textContent = 'Enable';
+        actions.append(cancelBtn, submitBtn);
+
+        form.append(codeGroup, passGroup, errorEl, actions);
+        body.append(info, form);
+        codeInput.focus();
+
+        cancelBtn.addEventListener('click', () => controls.close());
+        form.addEventListener('submit', async (evt) => {
+          evt.preventDefault();
+          errorEl.textContent = '';
+          const code = codeInput.value.trim();
+          const password = passInput.value;
+          if (code.length !== 6 || !/^[0-9]{6}$/.test(code)) {
+            errorEl.textContent = 'Enter the 6-digit code.';
+            codeInput.focus();
+            return;
+          }
+          const restore = setButtonLoading(submitBtn, 'Enabling...');
+          cancelBtn.disabled = true;
+          try {
+            await postJson('twofa_app_actions.php', createFormData({
+              csrf_token: csrfToken,
+              action: 'confirm_enable',
+              code,
+              password
+            }));
+            finished = true;
+            controls.close();
+            if (typeof callbacks.onSuccess === 'function') callbacks.onSuccess();
+          } catch (err) {
+            errorEl.textContent = err.message || err;
+            restore(false);
+            cancelBtn.disabled = false;
+          }
+        });
+      }
+    }
+
+    function startAppDisableFlow(button) {
+      const restore = setButtonLoading(button, 'Processing...');
+      restore(true);
+      openAuthenticatorDisableModal({
+        onSuccess: () => {
+          restore(false);
+          location.reload();
+        },
+        onCancel: () => restore(false)
+      });
+    }
+
+    function openAuthenticatorDisableModal(callbacks = {}) {
+      let finished = false;
+      openModal({
+        title: 'Disable Authenticator App',
+        onClose: () => {
+          if (!finished && typeof callbacks.onCancel === 'function') callbacks.onCancel();
+        },
+        render: (body, controls) => {
+          body.innerHTML = '';
+          const info = document.createElement('p');
+          info.textContent = 'Enter a current authenticator code and your password to disable the authenticator app.';
+          const form = document.createElement('form');
+          form.className = 'modal-form';
+
+          const codeGroup = document.createElement('div');
+          const codeLabel = document.createElement('label');
+          codeLabel.setAttribute('for', 'appDisableCode');
+          codeLabel.textContent = 'Authenticator code';
+          const codeInput = document.createElement('input');
+          codeInput.id = 'appDisableCode';
+          codeInput.className = 'input';
+          codeInput.inputMode = 'numeric';
+          codeInput.maxLength = 6;
+          codeInput.required = true;
+          codeGroup.append(codeLabel, codeInput);
+
+          const passGroup = document.createElement('div');
+          const passLabel = document.createElement('label');
+          passLabel.setAttribute('for', 'appDisablePassword');
+          passLabel.textContent = 'Current password';
+          const passInput = document.createElement('input');
+          passInput.id = 'appDisablePassword';
+          passInput.className = 'input';
+          passInput.type = 'password';
+          passInput.autocomplete = 'current-password';
+          passInput.required = true;
+          passGroup.append(passLabel, passInput);
+
+          const errorEl = document.createElement('div');
+          errorEl.className = 'modal-error';
+          const actions = document.createElement('div');
+          actions.className = 'modal-actions';
+          const cancelBtn = document.createElement('button');
+          cancelBtn.type = 'button';
+          cancelBtn.className = 'btn small secondary';
+          cancelBtn.textContent = 'Cancel';
+          const submitBtn = document.createElement('button');
+          submitBtn.type = 'submit';
+          submitBtn.className = 'btn small danger';
+          submitBtn.textContent = 'Disable';
+          actions.append(cancelBtn, submitBtn);
+
+          form.append(codeGroup, passGroup, errorEl, actions);
+          body.append(info, form);
+          codeInput.focus();
+
+          cancelBtn.addEventListener('click', () => controls.close());
+          form.addEventListener('submit', async (evt) => {
+            evt.preventDefault();
+            errorEl.textContent = '';
+            const code = codeInput.value.trim();
+            const password = passInput.value;
+            if (code.length !== 6 || !/^[0-9]{6}$/.test(code)) {
+              errorEl.textContent = 'Enter the 6-digit code.';
+              codeInput.focus();
+              return;
+            }
+            const restore = setButtonLoading(submitBtn, 'Disabling...');
+            cancelBtn.disabled = true;
+            try {
+              await postJson('twofa_app_actions.php', createFormData({
+                csrf_token: csrfToken,
+                action: 'disable',
+                code,
+                password
+              }));
+              finished = true;
+              controls.close();
+              if (typeof callbacks.onSuccess === 'function') callbacks.onSuccess();
+            } catch (err) {
+              errorEl.textContent = err.message || err;
+              restore(false);
+              cancelBtn.disabled = false;
+            }
+          });
+        }
+      });
     }
 
     function hexToArrayBuffer(hex) {
       if (!hex) return new ArrayBuffer(0);
       const len = hex.length / 2;
       const arr = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
+      for (let i = 0; i < len; i += 1) {
         arr[i] = parseInt(hex.substr(i * 2, 2), 16);
       }
       return arr.buffer;
@@ -1095,136 +1759,341 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     function bufferToBase64url(buffer) {
       const bytes = new Uint8Array(buffer);
       let str = '';
-      for (let i = 0; i < bytes.byteLength; i++) str += String.fromCharCode(bytes[i]);
+      for (let i = 0; i < bytes.byteLength; i += 1) {
+        str += String.fromCharCode(bytes[i]);
+      }
       return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
 
-    async function completePasskey(attestation) {
-      const formData = new FormData();
-      formData.append('clientDataJSON', attestation.clientDataJSON);
-      formData.append('attestationObject', attestation.attestationObject);
-      const res = await fetch('passkey_finish_register.php', { method: 'POST', body: formData, credentials: 'same-origin' });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Passkey registration failed.');
+    async function beginPasskey(name) {
+      const data = await postJson('passkey_begin_register.php', createFormData({
+        csrf_token: csrfToken,
+        name
+      }));
+      return data.publicKey;
     }
 
-    document.getElementById('btnAddPasskey')?.addEventListener('click', async () => {
-      try {
-        if (!window.PublicKeyCredential) throw new Error('This browser does not support WebAuthn.');
-        const name = prompt('Name this passkey', 'My Passkey');
-        if (name === null || name.trim() === '') return;
-        const pubKey = await beginPasskey(name.trim());
-
-        const creationOptions = { ...pubKey };
-        creationOptions.challenge = hexToArrayBuffer(pubKey.challengeHex);
-        delete creationOptions.challengeHex;
-        if (creationOptions.user && creationOptions.user.idHex) {
-          creationOptions.user.id = hexToArrayBuffer(creationOptions.user.idHex);
-          delete creationOptions.user.idHex;
-        }
-
-        const cred = await navigator.credentials.create({ publicKey: creationOptions });
-        if (!cred) throw new Error('Credential creation was cancelled.');
-
-        await completePasskey({
-          clientDataJSON: bufferToBase64url(cred.response.clientDataJSON),
-          attestationObject: bufferToBase64url(cred.response.attestationObject),
-        });
-        location.reload();
-      } catch (err) {
-        alert(err.message || err);
+    function prepareCredentialCreationOptions(pubKey) {
+      const creationOptions = { ...pubKey };
+      creationOptions.challenge = hexToArrayBuffer(pubKey.challengeHex);
+      delete creationOptions.challengeHex;
+      if (creationOptions.user && creationOptions.user.idHex) {
+        creationOptions.user = { ...creationOptions.user, id: hexToArrayBuffer(creationOptions.user.idHex) };
+        delete creationOptions.user.idHex;
       }
-    });
+      return creationOptions;
+    }
 
-    document.querySelectorAll('.btn-edit-passkey').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.getAttribute('data-passkey-id');
-        if (!id) return;
-        const form = document.getElementById(`rename-passkey-${id}`);
-        if (!form) return;
-        const nameInput = form.querySelector('input[name="name"]');
-        const current = btn.getAttribute('data-passkey-name') || (nameInput ? nameInput.value : '');
-        const preset = current && current.trim() !== '' ? current : 'My Passkey';
-        const next = prompt('Rename passkey', preset);
-        if (next === null) return;
-        const trimmed = next.trim();
-        if (trimmed === '') { alert('Name cannot be empty.'); return; }
-        if (nameInput) nameInput.value = trimmed;
-        btn.setAttribute('data-passkey-name', trimmed);
-        form.submit();
+    async function completePasskeyRegistration(attestation, password) {
+      const form = createFormData({
+        csrf_token: csrfToken,
+        clientDataJSON: attestation.clientDataJSON,
+        attestationObject: attestation.attestationObject,
+        password
       });
-    });
+      await postJson('passkey_finish_register.php', form);
+    }
 
-    // Passkey delete flow
-    document.querySelectorAll('.btn-delete-passkey').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-passkey-id');
-        if (!id) return;
-        const password = prompt('Confirm your password to delete this passkey');
-        if (password === null) return;
+    const addPasskeyBtn = document.getElementById('btnAddPasskey');
+    if (addPasskeyBtn) {
+      addPasskeyBtn.addEventListener('click', async () => {
+        if (!window.PublicKeyCredential) {
+          alert('This browser does not support passkeys.');
+          return;
+        }
+        const restore = setButtonLoading(addPasskeyBtn, 'Processing...');
         try {
-          const code = await requestPasskeyDeleteCode();
-          const entered = prompt('Enter the 6-digit code sent to your email');
-          if (entered === null) return;
-          const form = new FormData();
-          form.append('csrf_token', csrfToken);
-          form.append('passkey_id', id);
-          form.append('password', password);
-          form.append('code', entered);
-          const res = await fetch('passkey_delete.php', { method: 'POST', body: form, credentials: 'same-origin' });
-          if (res.redirected) {
-            location.href = res.url;
+          await postJson('passkey_email_request.php', createFormData({ csrf_token: csrfToken }));
+          restore(true);
+          openPasskeyAddModal({
+            onSuccess: () => {
+              restore(false);
+              location.reload();
+            },
+            onCancel: () => restore(false)
+          });
+        } catch (err) {
+          restore(false);
+          alert(err.message || err);
+        }
+      });
+    }
+
+    function openPasskeyAddModal(callbacks = {}) {
+      let finished = false;
+      let attestation = null;
+      let passkeyName = 'My Passkey';
+      openModal({
+        title: 'Add Passkey',
+        onClose: () => {
+          if (!finished && typeof callbacks.onCancel === 'function') callbacks.onCancel();
+        },
+        render: (body, controls) => renderCodeStep(body, controls)
+      });
+
+      function renderCodeStep(body, controls) {
+        body.innerHTML = '';
+        const info = document.createElement('p');
+        info.textContent = 'Enter the 6-digit code we emailed you to begin adding a new passkey.';
+        body.append(info);
+        const form = document.createElement('form');
+        form.className = 'modal-form';
+        const codeGroup = document.createElement('div');
+        const codeLabel = document.createElement('label');
+        codeLabel.setAttribute('for', 'passkeyEmailCode');
+        codeLabel.textContent = 'Verification code';
+        const codeInput = document.createElement('input');
+        codeInput.id = 'passkeyEmailCode';
+        codeInput.className = 'input';
+        codeInput.inputMode = 'numeric';
+        codeInput.autocomplete = 'one-time-code';
+        codeInput.maxLength = 6;
+        codeInput.required = true;
+        codeGroup.append(codeLabel, codeInput);
+        const errorEl = document.createElement('div');
+        errorEl.className = 'modal-error';
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn small secondary';
+        cancelBtn.textContent = 'Cancel';
+        const submitBtn = document.createElement('button');
+        submitBtn.type = 'submit';
+        submitBtn.className = 'btn small';
+        submitBtn.textContent = 'Continue';
+        actions.append(cancelBtn, submitBtn);
+
+        form.append(codeGroup, errorEl, actions);
+        body.append(form);
+        codeInput.focus();
+
+        cancelBtn.addEventListener('click', () => controls.close());
+        form.addEventListener('submit', async (evt) => {
+          evt.preventDefault();
+          errorEl.textContent = '';
+          const code = codeInput.value.trim();
+          if (code.length !== 6 || !/^[0-9]{6}$/.test(code)) {
+            errorEl.textContent = 'Enter the 6-digit code.';
+            codeInput.focus();
             return;
           }
-          const text = await res.text();
-          if (text) {
-            console.error(text);
-            alert('Delete failed.');
+          const restore = setButtonLoading(submitBtn, 'Verifying...');
+          cancelBtn.disabled = true;
+          try {
+            await postJson('passkey_email_verify.php', createFormData({
+              csrf_token: csrfToken,
+              code
+            }));
+            renderCreationStep(body, controls);
+          } catch (err) {
+            errorEl.textContent = err.message || err;
+            restore(false);
+            cancelBtn.disabled = false;
           }
-        } catch (err) {
-          alert(err.message || err);
-        }
-      });
-    });
+        });
+      }
 
-    async function requestPasskeyDeleteCode() {
-      const res = await fetch('passkey_delete_email_request.php', { method: 'POST', credentials: 'same-origin' });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Unable to send confirmation code.');
-      return true;
+      function renderCreationStep(body, controls) {
+        body.innerHTML = '';
+        const info = document.createElement('p');
+        info.textContent = 'Name your passkey and complete the browser prompt to register it.';
+        const form = document.createElement('form');
+        form.className = 'modal-form';
+        const nameGroup = document.createElement('div');
+        const nameLabel = document.createElement('label');
+        nameLabel.setAttribute('for', 'passkeyNameInput');
+        nameLabel.textContent = 'Passkey name';
+        const nameInput = document.createElement('input');
+        nameInput.id = 'passkeyNameInput';
+        nameInput.className = 'input';
+        nameInput.maxLength = 100;
+        nameInput.value = passkeyName;
+        nameGroup.append(nameLabel, nameInput);
+        const errorEl = document.createElement('div');
+        errorEl.className = 'modal-error';
+        const infoBox = document.createElement('div');
+        infoBox.className = 'modal-info';
+        infoBox.textContent = 'Your browser or device may prompt you to use biometrics or a device PIN to finish creating this passkey.';
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn small secondary';
+        cancelBtn.textContent = 'Cancel';
+        const createBtn = document.createElement('button');
+        createBtn.type = 'button';
+        createBtn.className = 'btn small';
+        createBtn.textContent = 'Create passkey';
+        actions.append(cancelBtn, createBtn);
+        form.append(nameGroup, errorEl, infoBox, actions);
+        body.append(form);
+        nameInput.focus();
+
+        cancelBtn.addEventListener('click', () => controls.close());
+        createBtn.addEventListener('click', async () => {
+          errorEl.textContent = '';
+          const chosenName = nameInput.value.trim() || 'My Passkey';
+          const restore = setButtonLoading(createBtn, 'Waiting...');
+          cancelBtn.disabled = true;
+          nameInput.disabled = true;
+          try {
+            const options = await beginPasskey(chosenName);
+            const publicKey = prepareCredentialCreationOptions(options);
+            const credential = await navigator.credentials.create({ publicKey });
+            if (!credential) throw new Error('Passkey creation was cancelled.');
+            attestation = {
+              clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
+              attestationObject: bufferToBase64url(credential.response.attestationObject)
+            };
+            passkeyName = chosenName;
+            renderPasswordStep(body, controls);
+          } catch (err) {
+            errorEl.textContent = err.message || err;
+            restore(false);
+            cancelBtn.disabled = false;
+            nameInput.disabled = false;
+          }
+        });
+      }
+
+      function renderPasswordStep(body, controls) {
+        body.innerHTML = '';
+        const info = document.createElement('p');
+        info.textContent = `Enter your current password to finish adding “${passkeyName}”.`;
+        const form = document.createElement('form');
+        form.className = 'modal-form';
+        const passGroup = document.createElement('div');
+        const passLabel = document.createElement('label');
+        passLabel.setAttribute('for', 'passkeyPasswordInput');
+        passLabel.textContent = 'Current password';
+        const passInput = document.createElement('input');
+        passInput.id = 'passkeyPasswordInput';
+        passInput.className = 'input';
+        passInput.type = 'password';
+        passInput.autocomplete = 'current-password';
+        passInput.required = true;
+        passGroup.append(passLabel, passInput);
+        const errorEl = document.createElement('div');
+        errorEl.className = 'modal-error';
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn small secondary';
+        cancelBtn.textContent = 'Cancel';
+        const submitBtn = document.createElement('button');
+        submitBtn.type = 'submit';
+        submitBtn.className = 'btn small';
+        submitBtn.textContent = 'Finish';
+        actions.append(cancelBtn, submitBtn);
+        form.append(passGroup, errorEl, actions);
+        body.append(info, form);
+        passInput.focus();
+
+        cancelBtn.addEventListener('click', () => controls.close());
+        form.addEventListener('submit', async (evt) => {
+          evt.preventDefault();
+          errorEl.textContent = '';
+          const password = passInput.value;
+          if (password === '') {
+            errorEl.textContent = 'Enter your password.';
+            passInput.focus();
+            return;
+          }
+          const restore = setButtonLoading(submitBtn, 'Saving...');
+          cancelBtn.disabled = true;
+          try {
+            await completePasskeyRegistration(attestation, password);
+            finished = true;
+            controls.close();
+            if (typeof callbacks.onSuccess === 'function') callbacks.onSuccess();
+          } catch (err) {
+            errorEl.textContent = err.message || err;
+            restore(false);
+            cancelBtn.disabled = false;
+          }
+        });
+      }
     }
 
-    // Trusted device rename
-    document.querySelectorAll('.btn-edit-device').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const row = btn.closest('tr');
-        if (!row) return;
-        const id = btn.getAttribute('data-device-id') || row.getAttribute('data-device-id');
+    document.querySelectorAll('.btn-delete-passkey').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-passkey-id');
+        const name = btn.getAttribute('data-passkey-name') || 'this passkey';
         if (!id) return;
-        const nameCell = row.querySelector('[data-field="name"]');
-        const current = btn.getAttribute('data-device-name') || (nameCell ? nameCell.textContent.trim() : '');
-        const preset = current && current.trim() !== '' ? current : 'Trusted device';
-        const next = prompt('Rename trusted device', preset);
-        if (next === null) return;
-        const trimmed = next.trim();
-        if (trimmed === '') { alert('Name cannot be empty.'); return; }
-        try {
-          const form = new FormData();
-          form.append('csrf_token', csrfToken);
-          form.append('action', 'rename');
-          form.append('id', id);
-          form.append('name', trimmed);
-          const res = await fetch('trusted_devices_actions.php', { method: 'POST', body: form, credentials: 'same-origin' });
-          const data = await res.json();
-          if (!data.ok) throw new Error(data.error || 'Rename failed.');
-          if (nameCell) nameCell.textContent = trimmed;
-          btn.setAttribute('data-device-name', trimmed);
-        } catch (err) {
-          alert(err.message || err);
-        }
+        openPasskeyDeleteModal(id, name);
       });
     });
+
+    function openPasskeyDeleteModal(id, name) {
+      openModal({
+        title: 'Delete Passkey',
+        onClose: () => {},
+        render: (body, controls) => {
+          body.innerHTML = '';
+          const info = document.createElement('p');
+          info.textContent = `Enter your current password to delete “${name}”. We'll send a confirmation email when it's removed.`;
+          const form = document.createElement('form');
+          form.className = 'modal-form';
+          const passGroup = document.createElement('div');
+          const passLabel = document.createElement('label');
+          passLabel.setAttribute('for', 'deletePasskeyPassword');
+          passLabel.textContent = 'Current password';
+          const passInput = document.createElement('input');
+          passInput.id = 'deletePasskeyPassword';
+          passInput.className = 'input';
+          passInput.type = 'password';
+          passInput.autocomplete = 'current-password';
+          passInput.required = true;
+          passGroup.append(passLabel, passInput);
+          const errorEl = document.createElement('div');
+          errorEl.className = 'modal-error';
+          const actions = document.createElement('div');
+          actions.className = 'modal-actions';
+          const cancelBtn = document.createElement('button');
+          cancelBtn.type = 'button';
+          cancelBtn.className = 'btn small secondary';
+          cancelBtn.textContent = 'Cancel';
+          const submitBtn = document.createElement('button');
+          submitBtn.type = 'submit';
+          submitBtn.className = 'btn small danger';
+          submitBtn.textContent = 'Delete';
+          actions.append(cancelBtn, submitBtn);
+          form.append(passGroup, errorEl, actions);
+          body.append(info, form);
+          passInput.focus();
+
+          cancelBtn.addEventListener('click', () => controls.close());
+          form.addEventListener('submit', async (evt) => {
+            evt.preventDefault();
+            errorEl.textContent = '';
+            const password = passInput.value;
+            if (password === '') {
+              errorEl.textContent = 'Enter your password.';
+              passInput.focus();
+              return;
+            }
+            const restore = setButtonLoading(submitBtn, 'Deleting...');
+            cancelBtn.disabled = true;
+            try {
+              await postJson('passkey_delete.php', createFormData({
+                csrf_token: csrfToken,
+                passkey_id: id,
+                password,
+                ajax: '1'
+              }));
+              controls.close();
+              location.reload();
+            } catch (err) {
+              errorEl.textContent = err.message || err;
+              restore(false);
+              cancelBtn.disabled = false;
+            }
+          });
+        }
+      });
+    }
   </script>
 </body>
 </html>
