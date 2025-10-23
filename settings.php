@@ -739,7 +739,7 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
   <main class="settings">
     <section class="page-intro">
       <h1>Account Security</h1>
-      <p>Manage your two-factor authentication, passkeys, trusted devices, and active login sessions. Administrators can also adjust system safeguards for the whole team.</p>
+      <p>Manage your two-factor authentication, passkeys, trusted devices, and active login sessions.</p>
     </section>
 
     <?php if ($flash): ?>
