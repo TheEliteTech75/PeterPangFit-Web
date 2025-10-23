@@ -400,26 +400,96 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     .settings-subheader {
       position: sticky;
       top: 72px;
-      padding: 12px 0 4px;
+      padding: 0;
       z-index: 2200;
-      background: linear-gradient(180deg, rgba(2, 6, 23, 0.94), rgba(2, 6, 23, 0.72));
-      border-bottom: 1px solid var(--border);
-      backdrop-filter: blur(18px);
+    }
+
+    .settings-subheader::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.62));
+      backdrop-filter: blur(20px);
+      z-index: -2;
+    }
+
+    .settings-subheader::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -18px;
+      height: 18px;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.55), transparent 85%);
+      z-index: -3;
+      pointer-events: none;
+    }
+
+    .settings-subheader .subheader-frame {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+      padding: 16px 24px;
+      margin: 0 -24px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+      background:
+        linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(56, 189, 248, 0) 45%),
+        linear-gradient(315deg, rgba(110, 231, 183, 0.12), rgba(110, 231, 183, 0) 45%),
+        rgba(15, 23, 42, 0.72);
+      box-shadow: 0 18px 40px rgba(2, 6, 23, 0.45);
+      border-radius: 22px;
+    }
+
+    .settings-subheader .subheader-frame::after {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border-radius: 20px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      pointer-events: none;
+    }
+
+    .settings-subheader .subheader-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 180px;
+    }
+
+    .settings-subheader .subheader-eyebrow {
+      font-size: .75rem;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      color: rgba(226, 232, 240, 0.62);
+    }
+
+    .settings-subheader .subheader-copy {
+      margin: 0;
+      color: var(--muted);
+      font-size: .92rem;
+      max-width: 420px;
     }
 
     .settings-tabs {
       display: inline-flex;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 14px;
       align-items: center;
+      padding: 6px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     }
 
     .settings-tab {
       appearance: none;
       border: 1px solid transparent;
-      background: rgba(15, 23, 42, 0.65);
+      background: rgba(15, 23, 42, 0.4);
       color: var(--muted);
-      padding: 10px 18px;
+      padding: 10px 20px;
       border-radius: 999px;
       font-weight: 600;
       font-size: .95rem;
@@ -434,10 +504,13 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       outline: none;
     }
     .settings-tab.is-active {
-      background: rgba(56, 189, 248, 0.18);
+      background:
+        linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(37, 99, 235, 0.25)),
+        rgba(15, 23, 42, 0.8);
       color: var(--text);
-      border-color: var(--border-strong);
-      box-shadow: 0 16px 36px rgba(2, 6, 23, 0.45);
+      border-color: rgba(56, 189, 248, 0.45);
+      box-shadow: 0 16px 44px rgba(2, 6, 23, 0.55);
+      transform: translateY(-1px);
     }
 
     .flash {
@@ -916,8 +989,10 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
 
     @media (max-width: 768px) {
       main.settings { padding: 0 16px 72px; margin-top: 40px; }
-      .settings-subheader { top: 60px; padding: 10px 0 4px; }
-      .settings-tabs { gap: 8px; }
+      .settings-subheader { top: 60px; }
+      .settings-subheader .subheader-frame { flex-direction: column; align-items: flex-start; padding: 16px 18px; margin: 0 -16px; gap: 18px; }
+      .settings-subheader .subheader-copy { max-width: none; }
+      .settings-tabs { gap: 8px; justify-content: flex-start; width: 100%; }
       .switch-row { flex-direction: column; align-items: flex-start; gap: 12px; }
       .switch-row .meta { max-width: 100%; }
       .theme-grid { grid-template-columns: minmax(0, 1fr); }
@@ -942,13 +1017,19 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
     </section>
 
     <div class="settings-subheader">
-      <nav class="settings-tabs" role="tablist">
-        <button class="settings-tab is-active" type="button" id="tab-security" role="tab" aria-selected="true" aria-controls="settings-security" data-tab="security">Security</button>
-        <button class="settings-tab" type="button" id="tab-appearance" role="tab" aria-selected="false" aria-controls="settings-appearance" data-tab="appearance" tabindex="-1">Appearance</button>
+      <div class="subheader-frame">
+        <div class="subheader-meta">
+          <span class="subheader-eyebrow">Control Center</span>
+          <p class="subheader-copy">Glide between security tools, visual themes, and (if you have the keys) system levers.</p>
+        </div>
+        <nav class="settings-tabs" role="tablist">
+          <button class="settings-tab is-active" type="button" id="tab-security" role="tab" aria-selected="true" aria-controls="settings-security" data-tab="security">Security</button>
+          <button class="settings-tab" type="button" id="tab-appearance" role="tab" aria-selected="false" aria-controls="settings-appearance" data-tab="appearance" tabindex="-1">Appearance</button>
 <?php if ($isAdmin): ?>
-        <button class="settings-tab" type="button" id="tab-system" role="tab" aria-selected="false" aria-controls="settings-system" data-tab="system" tabindex="-1">System</button>
+          <button class="settings-tab" type="button" id="tab-system" role="tab" aria-selected="false" aria-controls="settings-system" data-tab="system" tabindex="-1">System</button>
 <?php endif; ?>
-      </nav>
+        </nav>
+      </div>
     </div>
 
 <?php if ($flash): ?>
