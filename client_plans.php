@@ -2,12 +2,18 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/trainer_sessions_helpers.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
 
 if (session_status() === PHP_SESSION_NONE) {
   session_start();
 }
+
+if (empty($_SESSION['csrf_token'])) {
+  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
 
 if (!function_exists('h')) {
   function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -406,6 +412,72 @@ function cp_format_set_detail_line(array $detail): ?string {
   return 'Set ' . (int)$num . $suffix;
 }
 
+function cp_money($amount): string {
+  $amount = (float)$amount;
+  $sign = $amount < 0 ? '-' : '';
+  $abs = abs($amount);
+  return $sign . '$' . number_format($abs, 2);
+}
+
+function cp_format_datetime(?string $iso): string {
+  if (!$iso) return '—';
+  try {
+    $dt = new DateTime($iso);
+    return $dt->format('M j, Y g:i A');
+  } catch (Throwable $e) {
+    return (string)$iso;
+  }
+}
+
+function cp_session_financial_map(array $package, array $sessions): array {
+  $price = max(0.0, (float)($package['price_per_session'] ?? 0));
+  $payments = max(0.0, (float)($package['payments_total'] ?? 0));
+  $refunds = max(0.0, (float)($package['refunds_total'] ?? 0));
+  $net = max(0.0, $payments - $refunds);
+  $sorted = $sessions;
+  usort($sorted, function ($a, $b) {
+    $aTs = strtotime($a['scheduled_start'] ?? '') ?: 0;
+    $bTs = strtotime($b['scheduled_start'] ?? '') ?: 0;
+    if ($aTs === $bTs) {
+      return ((int)($a['id'] ?? 0)) <=> ((int)($b['id'] ?? 0));
+    }
+    return $aTs <=> $bTs;
+  });
+  $map = [];
+  if ($price <= 0.0) {
+    foreach ($sorted as $row) {
+      $sid = (int)($row['id'] ?? 0);
+      $map[$sid] = ['amount' => 0.0, 'label' => '—'];
+    }
+    return $map;
+  }
+  $fullUnits = (int)floor($net / $price);
+  $partialRemainder = $net - ($fullUnits * $price);
+  $index = 0;
+  foreach ($sorted as $row) {
+    $sid = (int)($row['id'] ?? 0);
+    $paid = 0.0;
+    if ($index < $fullUnits) {
+      $paid = $price;
+    } elseif ($index === $fullUnits && $partialRemainder > 0) {
+      $paid = $partialRemainder;
+    }
+    $status = 'Not refunded';
+    $epsilon = 0.01;
+    if ($paid <= $epsilon && $refunds > 0) {
+      $status = 'Refunded';
+    } elseif ($paid > $epsilon && $paid < ($price - $epsilon)) {
+      $status = 'Partially refunded';
+    }
+    $map[$sid] = [
+      'amount' => round($paid, 2),
+      'label' => $status,
+    ];
+    $index++;
+  }
+  return $map;
+}
+
 function total_duration_str(array $rows): string {
   $sum = 0;
   foreach ($rows as $r) {
@@ -461,6 +533,32 @@ $heroLine = $latestPlanAssignedStr
 $firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
 $latestPlanName = $latestPlan['plan_name'] ?? '';
 $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan_id'] : null;
+
+ppf_trainer_sessions_ensure_schema($conn);
+$sessionPackages = ppf_trainer_sessions_fetch_packages($conn, null, $client_id);
+$sessionTotalsPurchased = 0;
+$sessionTotalsUsed = 0;
+$sessionTotalsRemaining = 0;
+foreach ($sessionPackages as &$sessionPkg) {
+  $sessionPkg['purchased_sessions'] = (int)($sessionPkg['purchased_sessions'] ?? 0);
+  $sessionPkg['completed_count'] = (int)($sessionPkg['completed_count'] ?? 0);
+  $sessionPkg['remaining_sessions'] = max(0, $sessionPkg['purchased_sessions'] - $sessionPkg['completed_count']);
+  $sessionPkg['price_per_session'] = (float)($sessionPkg['price_per_session'] ?? 0.0);
+  $sessionPkg['payments_total'] = (float)($sessionPkg['payments_total'] ?? 0.0);
+  $sessionPkg['refunds_total'] = (float)($sessionPkg['refunds_total'] ?? 0.0);
+  $pid = (int)($sessionPkg['id'] ?? 0);
+  $sessionPkg['sessions'] = $pid > 0 ? ppf_trainer_sessions_fetch_sessions_for_package($conn, $pid) : [];
+  $sessionPkg['financials'] = cp_session_financial_map($sessionPkg, $sessionPkg['sessions']);
+  $sessionPkg['scheduled_sessions'] = array_values(array_filter($sessionPkg['sessions'], function ($row) {
+    return strtolower((string)($row['status'] ?? '')) === 'scheduled';
+  }));
+  $sessionTotalsPurchased += $sessionPkg['purchased_sessions'];
+  $sessionTotalsUsed += $sessionPkg['completed_count'];
+  $sessionTotalsRemaining += $sessionPkg['remaining_sessions'];
+}
+unset($sessionPkg);
+$hasSessionPackages = !empty($sessionPackages);
+$canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
 ?>
 <!DOCTYPE html>
@@ -747,6 +845,225 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       color: var(--text, #f3f7ff);
       font-size: clamp(14px, 3.5vw, 16px);
       outline: none;
+    }
+
+    .sessions {
+      margin: clamp(28px, 6vw, 60px) auto;
+      max-width: min(1080px, 100% - 32px);
+      display: grid;
+      gap: clamp(18px, 4vw, 28px);
+    }
+
+    .sessions__header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+    }
+
+    .sessions__header h2 {
+      margin: 0;
+      font-size: clamp(22px, 4vw, 28px);
+      color: var(--text, #f3f7ff);
+    }
+
+    .sessions__header p {
+      margin: 0;
+      color: var(--muted, #9ca8bf);
+      font-size: 14px;
+    }
+
+    .sessions__totals {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      flex: 1;
+      min-width: 260px;
+    }
+
+    .sessions-total {
+      padding: 14px 16px;
+      border-radius: var(--radius-sm, 14px);
+      border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
+      background: var(--panel, rgba(10, 10, 10, 0.82));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card-border, rgba(255, 255, 255, 0.08)) 35%, transparent 65%);
+      display: grid;
+      gap: 6px;
+    }
+
+    .sessions-total span {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+      color: var(--muted, #9ca8bf);
+    }
+
+    .sessions-total strong {
+      font-size: clamp(20px, 4vw, 26px);
+      color: var(--text, #f3f7ff);
+    }
+
+    .session-card {
+      background: var(--panel, rgba(10, 10, 10, 0.82));
+      border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
+      border-radius: var(--radius, 20px);
+      padding: clamp(18px, 4vw, 26px);
+      box-shadow: var(--shadow, var(--card-shadow, 0 28px 50px rgba(0, 0, 0, 0.55)));
+      display: grid;
+      gap: clamp(16px, 3vw, 24px);
+    }
+
+    .session-card__header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .session-card__title {
+      margin: 0;
+      font-size: clamp(18px, 3.6vw, 22px);
+      color: var(--text, #f3f7ff);
+    }
+
+    .session-card__meta {
+      margin-top: 4px;
+      color: var(--muted, #9ca8bf);
+      font-size: 13px;
+    }
+
+    .session-card__counts {
+      display: grid;
+      gap: 6px;
+      text-align: right;
+      min-width: 180px;
+    }
+
+    .session-card__counts span {
+      font-size: 12px;
+      color: var(--muted, #9ca8bf);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+
+    .session-card__counts strong {
+      display: block;
+      font-size: 18px;
+      color: var(--text, #f3f7ff);
+    }
+
+    .session-card__table-wrap {
+      border-radius: var(--radius-sm, 14px);
+      border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
+      overflow: hidden;
+      background: color-mix(in srgb, var(--panel, rgba(10, 10, 10, 0.82)) 88%, transparent 12%);
+    }
+
+    .session-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 640px;
+    }
+
+    .session-table th,
+    .session-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+      font-size: 13px;
+      text-align: left;
+      color: var(--text, #f3f7ff);
+    }
+
+    .session-table th {
+      background: color-mix(in srgb, var(--panel-elevated, rgba(15, 15, 15, 0.9)) 85%, transparent 15%);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 11px;
+      color: color-mix(in srgb, var(--muted, #9ca8bf) 85%, var(--text, #f3f7ff) 15%);
+    }
+
+    .session-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .session-table td.session-cell--actions {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .session-empty {
+      color: var(--muted, #9ca8bf);
+      font-size: 14px;
+    }
+
+    .session-end-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 16px;
+      border-radius: 12px;
+      border: 1px solid color-mix(in srgb, var(--brand, #38bdf8) 55%, transparent 45%);
+      background: color-mix(in srgb, var(--brand, #38bdf8) 32%, transparent 68%);
+      color: var(--text, #f3f7ff);
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 12px 24px color-mix(in srgb, var(--brand, #38bdf8) 20%, transparent 80%);
+    }
+
+    .session-end-btn:hover:not([disabled]),
+    .session-end-btn:focus-visible:not([disabled]) {
+      background: color-mix(in srgb, var(--brand, #38bdf8) 42%, transparent 58%);
+      transform: translateY(-1px);
+    }
+
+    .session-end-btn[disabled] {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .session-end-btn.is-processing {
+      cursor: wait;
+      background: color-mix(in srgb, var(--brand, #38bdf8) 18%, var(--muted, #9ca8bf) 82%);
+      box-shadow: none;
+    }
+
+    .session-end-btn.is-complete {
+      cursor: default;
+      background: color-mix(in srgb, var(--success, #32cd32) 32%, transparent 68%);
+      border-color: color-mix(in srgb, var(--success, #32cd32) 55%, transparent 45%);
+      color: color-mix(in srgb, var(--success, #32cd32) 70%, var(--text, #f3f7ff) 30%);
+      box-shadow: none;
+    }
+
+    @media (max-width: 720px) {
+      .sessions {
+        max-width: 100%;
+        margin: clamp(22px, 6vw, 40px) 16px;
+      }
+
+      .sessions__header {
+        align-items: flex-start;
+      }
+
+      .sessions__totals {
+        min-width: 0;
+      }
+
+      .session-card__counts {
+        width: 100%;
+        text-align: left;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+
+      .session-card__table-wrap {
+        overflow-x: auto;
+      }
     }
 
     .chip {
@@ -1629,7 +1946,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     }
   </style>
 </head>
-<body class="client-plans-page">
+<body class="client-plans-page" data-csrf="<?php echo h($csrf_token); ?>">
 
 <div class="hero">
   <div class="hero__wrap">
@@ -1669,6 +1986,20 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
           <span class="hero-stat__label">First plan posted</span>
           <strong><?php echo h($firstDate); ?></strong>
         </div>
+        <?php if ($hasSessionPackages): ?>
+          <div class="hero-stat">
+            <span class="hero-stat__label">Sessions purchased</span>
+            <strong id="sessionsTotalPurchased" data-session-total="purchased"><?php echo $sessionTotalsPurchased; ?></strong>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat__label">Sessions used</span>
+            <strong id="sessionsTotalUsed" data-session-total="used"><?php echo $sessionTotalsUsed; ?></strong>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat__label">Sessions remaining</span>
+            <strong id="sessionsTotalRemaining" data-session-total="remaining"><?php echo $sessionTotalsRemaining; ?></strong>
+          </div>
+        <?php endif; ?>
       </div>
     </div>
     <div class="toolbar">
@@ -1687,6 +2018,120 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
     </div>
   </div>
 </div>
+
+<?php if ($hasSessionPackages): ?>
+<section class="sessions" aria-labelledby="sessionsHeading">
+  <div class="sessions__header">
+    <div>
+      <h2 id="sessionsHeading">Training Sessions</h2>
+      <p>Track your prepaid sessions, upcoming appointments, and wrap them up when you finish.</p>
+    </div>
+    <div class="sessions__totals">
+      <div class="sessions-total">
+        <span>Purchased</span>
+        <strong data-session-total="purchased"><?php echo $sessionTotalsPurchased; ?></strong>
+      </div>
+      <div class="sessions-total">
+        <span>Used</span>
+        <strong data-session-total="used"><?php echo $sessionTotalsUsed; ?></strong>
+      </div>
+      <div class="sessions-total">
+        <span>Remaining</span>
+        <strong data-session-total="remaining"><?php echo $sessionTotalsRemaining; ?></strong>
+      </div>
+    </div>
+  </div>
+
+  <?php foreach ($sessionPackages as $sessionPkg):
+    $pkgId = (int)($sessionPkg['id'] ?? 0);
+    $packageName = trim((string)($sessionPkg['package_name'] ?? 'Session Package')) ?: 'Session Package';
+    $priceEach = (float)($sessionPkg['price_per_session'] ?? 0.0);
+    $priceLabel = $priceEach > 0 ? (cp_money($priceEach) . ' each') : 'Custom rate';
+    $scheduledSessions = $sessionPkg['scheduled_sessions'];
+    $financials = $sessionPkg['financials'];
+    $purchasedCount = (int)($sessionPkg['purchased_sessions'] ?? 0);
+    $completedCount = (int)($sessionPkg['completed_count'] ?? 0);
+    $remainingCount = (int)($sessionPkg['remaining_sessions'] ?? max(0, $purchasedCount - $completedCount));
+  ?>
+    <article class="session-card" data-package-id="<?php echo $pkgId; ?>">
+      <header class="session-card__header">
+        <div>
+          <h3 class="session-card__title"><?php echo h($packageName); ?></h3>
+          <div class="session-card__meta">
+            <?php echo $purchasedCount; ?> sessions purchased · <?php echo h($priceLabel); ?>
+          </div>
+        </div>
+        <div class="session-card__counts" data-package-summary="<?php echo $pkgId; ?>">
+          <div>
+            <span>Used</span>
+            <strong data-package-used="<?php echo $pkgId; ?>"><?php echo $completedCount; ?></strong>
+          </div>
+          <div>
+            <span>Remaining</span>
+            <strong data-package-remaining="<?php echo $pkgId; ?>"><?php echo $remainingCount; ?></strong>
+          </div>
+        </div>
+      </header>
+
+      <?php if ($scheduledSessions): ?>
+        <div class="session-card__table-wrap">
+          <table class="session-table">
+            <thead>
+              <tr>
+                <th scope="col">Session</th>
+                <th scope="col">Starts</th>
+                <th scope="col">Ends</th>
+                <th scope="col">Price paid</th>
+                <th scope="col">Refund status</th>
+                <th scope="col" class="session-cell--actions">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($scheduledSessions as $idx => $session):
+                $sid = (int)($session['id'] ?? 0);
+                $financial = $financials[$sid] ?? ['amount' => 0.0, 'label' => 'Not refunded'];
+                $startIso = $session['scheduled_start'] ?? null;
+                $endIso = $session['scheduled_end'] ?? ($startIso ?? null);
+                $startLabel = cp_format_datetime($startIso);
+                $endLabel = cp_format_datetime($session['scheduled_end'] ?? null);
+                $paidLabel = cp_money($financial['amount'] ?? 0.0);
+                $refundLabel = $financial['label'] ?? 'Not refunded';
+                $statusKey = strtolower((string)($session['status'] ?? 'scheduled'));
+              ?>
+                <tr data-session-row="<?php echo $sid; ?>">
+                  <td><?php echo h('Session ' . ($idx + 1)); ?></td>
+                  <td><?php echo h($startLabel); ?></td>
+                  <td><?php echo h($endLabel); ?></td>
+                  <td><?php echo h($paidLabel); ?></td>
+                  <td><?php echo h($refundLabel); ?></td>
+                  <td class="session-cell--actions">
+                    <?php if ($canCloseSessions): ?>
+                      <button type="button"
+                              class="session-end-btn"
+                              data-session-end="true"
+                              data-session-id="<?php echo $sid; ?>"
+                              data-package-id="<?php echo $pkgId; ?>"
+                              data-session-status="<?php echo h($statusKey); ?>"
+                              data-session-end-iso="<?php echo h($endIso ?? ''); ?>"
+                              data-session-start-iso="<?php echo h($startIso ?? ''); ?>"
+                              data-session-label="<?php echo h('Session ' . ($idx + 1)); ?>"
+                              <?php if ($statusKey !== 'scheduled'): ?>disabled aria-disabled="true"<?php else: ?>disabled<?php endif; ?>>End Session</button>
+                    <?php else: ?>
+                      <span class="session-empty">Contact your coach to close this session.</span>
+                    <?php endif; ?>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      <?php else: ?>
+        <p class="session-empty">No upcoming sessions are scheduled. Reach out to your coach to book the next one.</p>
+      <?php endif; ?>
+    </article>
+  <?php endforeach; ?>
+</section>
+<?php endif; ?>
 
 <main>
   <?php if (!$plans): ?>
@@ -2322,6 +2767,146 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
       }
     });
   }
+
+  const sessionButtons = Array.from(document.querySelectorAll('[data-session-end]'));
+  const csrfToken = document.body && document.body.dataset ? (document.body.dataset.csrf || '') : '';
+  const sessionTotalsTargets = {
+    purchased: Array.from(document.querySelectorAll('[data-session-total="purchased"]')),
+    used: Array.from(document.querySelectorAll('[data-session-total="used"]')),
+    remaining: Array.from(document.querySelectorAll('[data-session-total="remaining"]')),
+  };
+  const packageTotals = new Map();
+  document.querySelectorAll('[data-package-summary]').forEach(el => {
+    const pkgId = el.dataset.packageSummary;
+    if (!pkgId) return;
+    const usedEl = el.querySelector('[data-package-used]');
+    const remainingEl = el.querySelector('[data-package-remaining]');
+    packageTotals.set(String(pkgId), { used: usedEl, remaining: remainingEl });
+  });
+
+  function updateSessionButtonState(btn) {
+    if (!btn) return;
+    if (btn.classList.contains('is-complete') || btn.dataset.completed === 'true') {
+      btn.disabled = true;
+      btn.textContent = 'Completed';
+      btn.classList.add('is-complete');
+      btn.setAttribute('aria-disabled', 'true');
+      return;
+    }
+    const status = (btn.dataset.sessionStatus || '').toLowerCase();
+    if (status !== 'scheduled') {
+      btn.disabled = true;
+      btn.textContent = 'Completed';
+      btn.classList.add('is-complete');
+      btn.setAttribute('aria-disabled', 'true');
+      return;
+    }
+    const endIso = btn.dataset.sessionEndIso || '';
+    const startIso = btn.dataset.sessionStartIso || '';
+    let referenceTime = endIso ? Date.parse(endIso) : NaN;
+    if (!isFinite(referenceTime)) {
+      referenceTime = startIso ? Date.parse(startIso) : NaN;
+    }
+    if (!isFinite(referenceTime)) {
+      btn.disabled = true;
+      return;
+    }
+    const now = Date.now();
+    const windowStart = referenceTime - (15 * 60 * 1000);
+    if (now >= windowStart) {
+      if (!btn.classList.contains('is-processing')) {
+        btn.disabled = false;
+        btn.removeAttribute('aria-disabled');
+        btn.textContent = 'End Session';
+      }
+    } else {
+      btn.disabled = true;
+      btn.textContent = 'End Session';
+    }
+  }
+
+  function refreshSessionButtons() {
+    sessionButtons.forEach(updateSessionButtonState);
+  }
+
+  if (sessionButtons.length) {
+    refreshSessionButtons();
+    window.setInterval(refreshSessionButtons, 60000);
+  }
+
+  async function completeSession(btn) {
+    if (!btn) return;
+    const sessionId = btn.dataset.sessionId;
+    if (!sessionId) return;
+    const params = new URLSearchParams();
+    params.set('action', 'complete_session');
+    params.set('session_id', sessionId);
+    if (csrfToken) {
+      params.set('csrf_token', csrfToken);
+    }
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.classList.add('is-processing');
+    btn.textContent = 'Processing…';
+    try {
+      const response = await fetch('client_sessions_actions.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
+        credentials: 'same-origin',
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || !payload.ok) {
+        const message = payload && payload.message ? payload.message : 'Unable to complete the session right now.';
+        throw new Error(message);
+      }
+      btn.classList.remove('is-processing');
+      btn.classList.add('is-complete');
+      btn.dataset.completed = 'true';
+      btn.dataset.sessionStatus = 'completed';
+      btn.textContent = 'Completed';
+      btn.setAttribute('aria-disabled', 'true');
+      const pkgTotals = payload.package_totals || null;
+      const pkgId = pkgTotals && typeof pkgTotals.package_id !== 'undefined'
+        ? String(pkgTotals.package_id)
+        : (btn.dataset.packageId ? String(btn.dataset.packageId) : '');
+      if (pkgId) {
+        const summary = packageTotals.get(pkgId);
+        if (summary) {
+          if (summary.used && pkgTotals && typeof pkgTotals.used !== 'undefined') {
+            summary.used.textContent = pkgTotals.used;
+          }
+          if (summary.remaining && pkgTotals && typeof pkgTotals.remaining !== 'undefined') {
+            summary.remaining.textContent = pkgTotals.remaining;
+          }
+        }
+      }
+      const overall = payload.overall_totals || null;
+      if (overall) {
+        ['purchased', 'used', 'remaining'].forEach(key => {
+          if (typeof overall[key] === 'undefined') return;
+          sessionTotalsTargets[key].forEach(node => {
+            node.textContent = overall[key];
+          });
+        });
+      }
+    } catch (error) {
+      btn.classList.remove('is-processing');
+      btn.disabled = false;
+      btn.textContent = originalLabel || 'End Session';
+      window.alert(error && error.message ? error.message : 'Unable to complete the session right now.');
+      refreshSessionButtons();
+      return;
+    }
+    refreshSessionButtons();
+  }
+
+  sessionButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled || btn.classList.contains('is-processing') || btn.classList.contains('is-complete')) return;
+      completeSession(btn);
+    });
+  });
 })();
 </script>
 
