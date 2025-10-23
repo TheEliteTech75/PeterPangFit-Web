@@ -641,7 +641,7 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
 
       <div class="span-12" style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">
         <button class="btn brand" type="submit">Save Changes</button>
-        <a class="btn" href="dashboard.php">Cancel</a>
+        <a class="btn" href="#" onclick="window.history.back(); return false;">Cancel</a>
         <button class="btn" type="button" id="btnChangePassword">Change Password</button>
       </div>
     </form>
