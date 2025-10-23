@@ -1,6 +1,38 @@
 <?php
 // ppf_theme.php — central theme catalog + helpers
 
+if (!function_exists('ppf_theme_alpha')) {
+    /**
+     * Convert a hex color to an rgba() string using the supplied alpha value.
+     * Accepts #rgb and #rrggbb; falls back to a teal accent when parsing fails.
+     */
+    function ppf_theme_alpha(string $hex, float $alpha): string {
+        $hex = trim($hex);
+        if ($hex === '') {
+            return 'rgba(56, 189, 248, ' . max(0, min(1, $alpha)) . ')';
+        }
+
+        if ($hex[0] === '#') {
+            $hex = substr($hex, 1);
+        }
+
+        if (strlen($hex) === 3) {
+            $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+        }
+
+        if (strlen($hex) !== 6 || preg_match('/[^0-9a-f]/i', $hex)) {
+            return 'rgba(56, 189, 248, ' . max(0, min(1, $alpha)) . ')';
+        }
+
+        $r = hexdec(substr($hex, 0, 2));
+        $g = hexdec(substr($hex, 2, 2));
+        $b = hexdec(substr($hex, 4, 2));
+
+        $alpha = max(0, min(1, $alpha));
+        return 'rgba(' . $r . ', ' . $g . ', ' . $b . ', ' . $alpha . ')';
+    }
+}
+
 if (!function_exists('ppf_theme_catalog')) {
     /**
      * Returns the available themes keyed by slug.
@@ -622,35 +654,83 @@ if (!function_exists('ppf_theme_catalog')) {
             $vars['--theme-swatch-' . ($i + 1)] = $candidates[$i] ?? '#05070d';
         }
 
-        $sw1 = $vars['--theme-swatch-1'] ?? '#05070d';
-        $sw2 = $vars['--theme-swatch-2'] ?? '#0ea5e9';
-        $sw3 = $vars['--theme-swatch-3'] ?? '#22d3a2';
+        $bg     = $vars['--bg'] ?? '#05070d';
+        $bgAlt  = $vars['--bg-alt'] ?? '#03040a';
+        $surface    = $vars['--surface'] ?? 'rgba(9, 14, 28, 0.92)';
+        $surfaceAlt = $vars['--surface-alt'] ?? 'rgba(15, 23, 42, 0.78)';
+        $border     = $vars['--border'] ?? 'rgba(148, 163, 184, 0.18)';
+        $accent     = $vars['--accent'] ?? '#38bdf8';
+        $primary    = $vars['--primary'] ?? '#6ee7b7';
+        $brand      = $vars['--brand'] ?? $accent;
 
-        $derived = [
-            '--page-canvas' => 'radial-gradient(circle at top left, color-mix(in srgb, var(--theme-swatch-2, ' . $sw2 . ') 22%, transparent 78%) 0%, transparent 55%),' .
-                ' radial-gradient(circle at bottom right, color-mix(in srgb, var(--theme-swatch-3, ' . $sw3 . ') 18%, transparent 82%) 0%, transparent 60%),' .
-                ' linear-gradient(155deg, var(--bg, ' . ($vars['--bg'] ?? '#05070d') . '), var(--bg-alt, ' . ($vars['--bg-alt'] ?? '#03040a') . ')))',
-            '--panel-elevated' => 'color-mix(in srgb, var(--panel, rgba(9, 14, 28, 0.92)) 88%, var(--theme-swatch-2, ' . $sw2 . ') 12%)',
-            '--panel-muted' => 'color-mix(in srgb, var(--surface-alt, rgba(15, 23, 42, 0.78)) 92%, rgba(255, 255, 255, 0.04) 8%)',
-            '--chip-bg' => 'color-mix(in srgb, var(--surface-alt, rgba(15, 23, 42, 0.78)) 74%, var(--theme-swatch-3, ' . $sw3 . ') 26%)',
-            '--chip-border' => 'color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.18)) 75%, var(--theme-swatch-2, ' . $sw2 . ') 25%)',
-            '--card-shadow' => '0 28px 60px color-mix(in srgb, var(--theme-swatch-2, ' . $sw2 . ') 28%, rgba(2, 6, 23, 0.6) 72%)',
-            '--card-border' => 'color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.18)) 68%, var(--theme-swatch-2, ' . $sw2 . ') 32%)',
-            '--heading-accent' => 'linear-gradient(135deg, color-mix(in srgb, var(--theme-swatch-2, ' . $sw2 . ') 70%, var(--text, #f8fafc) 30%), color-mix(in srgb, var(--theme-swatch-3, ' . $sw3 . ') 65%, var(--text, #f8fafc) 35%))',
-            '--badge-muted' => 'color-mix(in srgb, var(--theme-swatch-1, ' . $sw1 . ') 28%, rgba(255, 255, 255, 0.08) 72%)',
-            '--input-bg' => 'color-mix(in srgb, var(--surface, rgba(9, 14, 28, 0.92)) 84%, rgba(255, 255, 255, 0.04) 16%)',
-            '--input-border' => 'color-mix(in srgb, var(--border, rgba(148, 163, 184, 0.18)) 70%, var(--theme-swatch-2, ' . $sw2 . ') 30%)',
-        ];
+        if (!isset($vars['--accent-soft'])) {
+            $vars['--accent-soft'] = ppf_theme_alpha($accent, 0.18);
+        }
 
-        foreach ($derived as $name => $value) {
-            if (!isset($vars[$name])) {
-                $vars[$name] = $value;
-            }
+        if (!isset($vars['--page-canvas'])) {
+            $vars['--page-canvas'] = 'radial-gradient(circle at top left, ' . ppf_theme_alpha($accent, 0.22) . ' 0%, transparent 55%),'
+                . ' radial-gradient(circle at bottom right, ' . ppf_theme_alpha($primary, 0.16) . ' 0%, transparent 60%),'
+                . ' linear-gradient(155deg, ' . $bg . ', ' . $bgAlt . ')';
+        }
+
+        if (!isset($vars['--panel-elevated'])) {
+            $vars['--panel-elevated'] = $vars['--panel'] ?? $surface;
+        }
+
+        if (!isset($vars['--panel-muted'])) {
+            $vars['--panel-muted'] = $surfaceAlt;
+        }
+
+        if (!isset($vars['--chip-bg'])) {
+            $vars['--chip-bg'] = 'color-mix(in srgb, ' . $surfaceAlt . ' 86%, ' . $accent . ' 14%)';
+        }
+
+        if (!isset($vars['--chip-border'])) {
+            $vars['--chip-border'] = 'color-mix(in srgb, ' . $border . ' 74%, ' . $accent . ' 26%)';
+        }
+
+        if (!isset($vars['--chip'])) {
+            $vars['--chip'] = 'color-mix(in srgb, ' . $surface . ' 78%, ' . $primary . ' 22%)';
+        }
+
+        if (!isset($vars['--card-border'])) {
+            $vars['--card-border'] = $border;
+        }
+
+        if (!isset($vars['--card-border-subtle'])) {
+            $vars['--card-border-subtle'] = 'color-mix(in srgb, ' . $border . ' 65%, transparent 35%)';
+        }
+
+        if (!isset($vars['--card-border-hover'])) {
+            $vars['--card-border-hover'] = 'color-mix(in srgb, ' . $border . ' 55%, ' . $accent . ' 45%)';
+        }
+
+        if (!isset($vars['--card-shadow'])) {
+            $vars['--card-shadow'] = '0 24px 48px ' . ppf_theme_alpha($bg, 0.55);
+        }
+
+        if (!isset($vars['--heading-accent'])) {
+            $vars['--heading-accent'] = 'linear-gradient(135deg, ' . $accent . ', ' . $brand . ')';
+        }
+
+        if (!isset($vars['--badge-muted'])) {
+            $vars['--badge-muted'] = ppf_theme_alpha($accent, 0.24);
+        }
+
+        if (!isset($vars['--input-bg'])) {
+            $vars['--input-bg'] = 'color-mix(in srgb, ' . $surface . ' 92%, rgba(255, 255, 255, 0.04) 8%)';
+        }
+
+        if (!isset($vars['--input-border'])) {
+            $vars['--input-border'] = 'color-mix(in srgb, ' . $border . ' 78%, ' . $accent . ' 22%)';
+        }
+
+        if (!isset($vars['--line'])) {
+            $vars['--line'] = $border;
         }
 
         return $vars;
     }
-
     function ppf_theme_render_style_block(): string {
         $themes = ppf_theme_catalog();
         $defaultTheme = $themes[ppf_theme_default_key()] ?? reset($themes);
