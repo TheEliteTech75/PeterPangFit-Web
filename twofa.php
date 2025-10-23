@@ -8,6 +8,7 @@ require_once __DIR__ . '/totp.php';
 require_once __DIR__ . '/send_email.php'; // for email login codes
 require_once __DIR__ . '/ppf_trusted.php';
 require_once __DIR__ . '/ppf_recognized_ip.php';
+require_once __DIR__ . '/ppf_theme.php';
 
 $pending = $_SESSION['pending_user'] ?? null;
 if (!$pending) { header('Location: login.php'); exit; }
@@ -111,6 +112,7 @@ function complete_login_and_redirect(mysqli $conn, array $pending, bool $trust=f
   $_SESSION['first_name']    = $pending['first'] ?? '';
   $_SESSION['last_name']     = $pending['last'] ?? '';
   $_SESSION['photo_url']     = $pending['photo'] ?? '';
+  $_SESSION['theme']         = ppf_theme_resolve((string)($pending['theme'] ?? ''));
   $_SESSION['LAST_ACTIVITY'] = time();
   unset($_SESSION['pending_user'], $_SESSION['pending_2fa_method']);
   session_regenerate_id(true);

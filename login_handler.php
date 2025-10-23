@@ -10,6 +10,7 @@ require_once __DIR__ . '/geo.php';
 require_once __DIR__ . '/ppf_trusted.php';
 require_once __DIR__ . '/ppf_recognized_ip.php';
 require_once __DIR__ . '/ppf_lockout.php';
+require_once __DIR__ . '/ppf_theme.php';
 
 // ----------------------------------------------
 const RATE_LIMIT_WINDOW_SEC = 15 * 60;
@@ -96,6 +97,8 @@ $ip    = function_exists('ppf_client_ip') ? ppf_client_ip() : ($_SERVER['REMOTE_
 $email = strtolower(trim($_POST['email'] ?? ''));
 $password = (string)($_POST['password'] ?? '');
 
+ppf_theme_ensure_column($conn);
+
 // Honeypot
 foreach (HONEYPOT_FIELDS as $hp) {
   if (!empty($_POST[$hp] ?? '')) {
@@ -124,7 +127,7 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $password ===
 }
 
 // Fetch user (include locked_until so we can check lock state)
-$st = $conn->prepare("SELECT id, email, password_hash, role, first_name, last_name, photo_url,
+$st = $conn->prepare("SELECT id, email, password_hash, role, first_name, last_name, photo_url, theme,
                              twofa_email_enabled, twofa_app_enabled, is_active, locked_until
                       FROM users WHERE LOWER(email)=LOWER(?) LIMIT 1");
 if (!$st) { rate_limit_record_failure(); if (rate_limit_fail_count()>=2) force_captcha_on(); back_to_login_invalid_creds(); }
@@ -220,6 +223,8 @@ if (!$twofaEmailOn && !$twofaAppOn) {
 // If 2FA would be required, allow skip when current cookie is a valid trusted device.
 if (($twofaEmailOn || $twofaAppOn) && ppf_td_validate_for_user($conn, $uid)) {
   // Complete login immediately (same branch as "no 2FA")
+  $resolvedTheme = ppf_theme_resolve((string)($user['theme'] ?? ''));
+
   $_SESSION['user_id']       = $uid;
   $_SESSION['email']         = $user['email'];
   $_SESSION['role']          = $user['role'];
@@ -227,6 +232,7 @@ if (($twofaEmailOn || $twofaAppOn) && ppf_td_validate_for_user($conn, $uid)) {
   $_SESSION['middle_name']   = $user['middle_name'] ?? '';
   $_SESSION['last_name']     = $user['last_name'] ?? '';
   $_SESSION['photo_url']     = $user['photo_url'] ?? '';
+  $_SESSION['theme']         = $resolvedTheme;
   $_SESSION['LAST_ACTIVITY'] = time();
   session_regenerate_id(true);
 
@@ -269,6 +275,8 @@ $twofaAppOn   = (int)($user['twofa_app_enabled']   ?? 0) === 1;
 
 if (!$twofaEmailOn && !$twofaAppOn) {
   // complete login immediately (no 2FA)
+  $resolvedTheme = ppf_theme_resolve((string)($user['theme'] ?? ''));
+
   $_SESSION['user_id']       = $uid;
   $_SESSION['email']         = $user['email'];
   $_SESSION['role']          = $user['role'];
@@ -276,6 +284,7 @@ if (!$twofaEmailOn && !$twofaAppOn) {
   $_SESSION['middle_name']   = $user['middle_name'] ?? '';
   $_SESSION['last_name']     = $user['last_name'] ?? '';
   $_SESSION['photo_url']     = $user['photo_url'] ?? '';
+  $_SESSION['theme']         = $resolvedTheme;
   $_SESSION['LAST_ACTIVITY'] = time();
   session_regenerate_id(true);
 
@@ -320,6 +329,7 @@ $_SESSION['pending_user'] = [
   'first' => $user['first_name'] ?? '',
   'last'  => $user['last_name'] ?? '',
   'photo' => $user['photo_url'] ?? '',
+  'theme' => ppf_theme_resolve((string)($user['theme'] ?? '')),
 ];
 
 // If both enabled, ask which method; else auto-select

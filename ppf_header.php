@@ -2,6 +2,8 @@
 // ppf_header.php — shared top-right profile menu, styled same as dashboard.php
 // Sticky header version: stays visible at top on scroll.
 
+require_once __DIR__ . '/ppf_theme.php';
+
 if (!function_exists('h')) {
   function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 }
@@ -42,7 +44,14 @@ function role_default_avatar(?string $role): ?string {
   return null;
 }
 $roleDefault = $photo ? null : role_default_avatar($role);
+
+$themeKey = $USER_THEME ?? ($_SESSION['theme'] ?? ppf_theme_default_key());
+$themeKey = ppf_theme_resolve((string)$themeKey);
+$_SESSION['theme'] = $themeKey;
+$themeStyleTag = ppf_theme_render_style_block();
+$themeInitScript = '<script>(function(){var d=document.documentElement;d.dataset.theme=' . json_encode($themeKey, JSON_UNESCAPED_SLASHES) . ';})();</script>';
 ?>
+<?php echo $themeStyleTag, "\n", $themeInitScript, "\n"; ?>
 <style>
 /* ===== Shared Header — refreshed gradient palette ===== */
 :root {

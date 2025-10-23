@@ -5,9 +5,10 @@ if (session_status() === PHP_SESSION_NONE):
     session_start();
 endif;
 
-require_once __DIR__ . '/db.php';   // must define $conn (mysqli)
-require_once __DIR__ . '/logs.php'; // safe include (no redirects/output)
-require_once __DIR__ . '/geo.php';  // <-- NEW (IP + geo helpers)
+require_once __DIR__ . '/db.php';        // must define $conn (mysqli)
+require_once __DIR__ . '/logs.php';      // safe include (no redirects/output)
+require_once __DIR__ . '/geo.php';       // <-- NEW (IP + geo helpers)
+require_once __DIR__ . '/ppf_theme.php'; // Theme helpers (color palettes)
 
 /* 1) Require authentication */
 if (empty($_SESSION['user_id'])):
@@ -118,3 +119,14 @@ $USER_ROLE       = $_SESSION['role']       ?? null;
 $USER_FIRST_NAME = $_SESSION['first_name'] ?? null;
 $USER_LAST_NAME  = $_SESSION['last_name']  ?? null;
 $USER_PHOTO_URL  = $_SESSION['photo_url']  ?? null;
+$USER_THEME      = null;
+
+try {
+    $currentTheme = $_SESSION['theme'] ?? ppf_theme_default_key();
+    $resolvedTheme = ppf_theme_resolve((string)$currentTheme);
+    $_SESSION['theme'] = $resolvedTheme;
+    $USER_THEME = $resolvedTheme;
+} catch (Throwable $e) {
+    $_SESSION['theme'] = ppf_theme_default_key();
+    $USER_THEME = ppf_theme_default_key();
+}
