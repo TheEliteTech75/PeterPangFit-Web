@@ -1,4 +1,5 @@
 :root {
+    /* Default palette copied from the legacy index.php/login.php :root blocks */
     color-scheme: dark;
     --bg: #05070d;
     --bg-alt: #03040a;
