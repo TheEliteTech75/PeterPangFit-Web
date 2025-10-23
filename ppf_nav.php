@@ -172,20 +172,29 @@ if ($isAdmin) {
 ?>
 <style>
 :root {
-    --ppf-nav-tone-1: color-mix(in srgb, var(--surface, rgba(9, 14, 28, 0.92)) 80%, var(--theme-swatch-1, #05070d) 20%);
-    --ppf-nav-tone-2: color-mix(in srgb, var(--surface-alt, rgba(15, 23, 42, 0.78)) 78%, var(--theme-swatch-2, #0ea5e9) 22%);
-    --ppf-nav-tone-3: color-mix(in srgb, var(--surface-soft, rgba(15, 23, 42, 0.65)) 75%, var(--theme-swatch-3, #22d3a2) 25%);
-    --ppf-nav-bg: linear-gradient(165deg, var(--ppf-nav-tone-1) 0%, var(--ppf-nav-tone-2) 48%, var(--ppf-nav-tone-3) 100%);
-    --ppf-nav-border: color-mix(in srgb, var(--ppf-nav-tone-2) 22%, rgba(255, 255, 255, 0.08) 78%);
-    --ppf-nav-text: color-mix(in srgb, var(--text, #f8fafc) 85%, var(--ppf-nav-tone-3) 15%);
-    --ppf-nav-muted: color-mix(in srgb, var(--muted, rgba(203, 213, 225, 0.78)) 75%, var(--ppf-nav-tone-2) 25%);
-    --ppf-nav-active-bg: color-mix(in srgb, var(--ppf-nav-tone-3) 22%, transparent 78%);
-    --ppf-nav-active-color: color-mix(in srgb, var(--text, #f8fafc) 70%, var(--ppf-nav-tone-3) 30%);
-    --ppf-section-title: color-mix(in srgb, var(--muted-soft, rgba(148, 163, 184, 0.72)) 78%, var(--ppf-nav-tone-2) 22%);
-    --ppf-nav-overlay: color-mix(in srgb, var(--ppf-nav-tone-1) 60%, rgba(2, 6, 23, 0.55) 40%);
-    --ppf-nav-hover-bg: color-mix(in srgb, var(--ppf-nav-tone-2) 18%, transparent 82%);
-    --ppf-nav-hover-border: color-mix(in srgb, var(--ppf-nav-tone-3) 26%, transparent 74%);
-    --ppf-nav-submenu-bg: color-mix(in srgb, var(--ppf-nav-tone-1) 32%, rgba(2, 6, 23, 0.6) 68%);
+    --ppf-nav-tint-1: color-mix(in srgb, var(--theme-swatch-1, #05070d) 55%, #020617 45%);
+    --ppf-nav-tint-2: color-mix(in srgb, var(--theme-swatch-2, #0ea5e9) 48%, rgba(148, 163, 184, 0.45) 52%);
+    --ppf-nav-tint-3: color-mix(in srgb, var(--theme-swatch-3, #22d3a2) 42%, rgba(148, 163, 184, 0.3) 58%);
+
+    --ppf-nav-tone-1: color-mix(in srgb, var(--surface, rgba(9, 14, 28, 0.92)) 92%, var(--ppf-nav-tint-1) 8%);
+    --ppf-nav-tone-2: color-mix(in srgb, var(--surface-alt, rgba(15, 23, 42, 0.78)) 88%, var(--ppf-nav-tint-2) 12%);
+    --ppf-nav-tone-3: color-mix(in srgb, var(--surface-soft, rgba(15, 23, 42, 0.65)) 85%, var(--ppf-nav-tint-3) 15%);
+
+    --ppf-nav-bg: linear-gradient(155deg,
+      color-mix(in srgb, var(--ppf-nav-tone-1) 92%, transparent 8%) 0%,
+      color-mix(in srgb, var(--ppf-nav-tone-2) 88%, transparent 12%) 52%,
+      color-mix(in srgb, var(--ppf-nav-tone-3) 84%, transparent 16%) 100%);
+
+    --ppf-nav-border: color-mix(in srgb, var(--ppf-nav-tone-2) 18%, rgba(255, 255, 255, 0.08) 82%);
+    --ppf-nav-text: color-mix(in srgb, var(--text, #f8fafc) 88%, var(--ppf-nav-tint-3) 12%);
+    --ppf-nav-muted: color-mix(in srgb, var(--muted, rgba(203, 213, 225, 0.78)) 82%, var(--ppf-nav-tint-2) 18%);
+    --ppf-nav-active-bg: color-mix(in srgb, var(--ppf-nav-tone-3) 18%, rgba(148, 163, 184, 0.08) 82%);
+    --ppf-nav-active-color: color-mix(in srgb, var(--text, #f8fafc) 78%, var(--ppf-nav-tint-3) 22%);
+    --ppf-section-title: color-mix(in srgb, var(--muted-soft, rgba(148, 163, 184, 0.72)) 82%, var(--ppf-nav-tint-2) 18%);
+    --ppf-nav-overlay: color-mix(in srgb, var(--ppf-nav-tone-1) 55%, rgba(2, 6, 23, 0.55) 45%);
+    --ppf-nav-hover-bg: color-mix(in srgb, var(--ppf-nav-tone-2) 14%, rgba(148, 163, 184, 0.08) 86%);
+    --ppf-nav-hover-border: color-mix(in srgb, var(--ppf-nav-tone-3) 18%, transparent 82%);
+    --ppf-nav-submenu-bg: color-mix(in srgb, var(--ppf-nav-tone-1) 26%, rgba(2, 6, 23, 0.64) 74%);
   }
   .ppf-nav-overlay {
     position: fixed; inset: 0;
@@ -244,9 +253,9 @@ if ($isAdmin) {
     width: 100%;
     display:flex; align-items:center; justify-content:space-between;
     background: linear-gradient(135deg,
-      color-mix(in srgb, var(--ppf-nav-tone-1) 45%, transparent 55%) 0%,
-      color-mix(in srgb, var(--ppf-nav-tone-2) 55%, transparent 45%) 52%,
-      color-mix(in srgb, var(--ppf-nav-tone-3) 65%, transparent 35%) 100%);
+      color-mix(in srgb, var(--ppf-nav-tone-1) 55%, transparent 45%) 0%,
+      color-mix(in srgb, var(--ppf-nav-tone-2) 52%, transparent 48%) 52%,
+      color-mix(in srgb, var(--ppf-nav-tone-3) 50%, transparent 50%) 100%);
     padding: 10px 12px; border: 0; cursor: pointer; color: var(--ppf-section-title);
     font-weight: 600; letter-spacing: .2px;
   }
