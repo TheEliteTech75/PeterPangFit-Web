@@ -1737,6 +1737,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .clients-table td:first-child{text-align:center}
   .clients-table td:first-child input{margin:0 auto;display:block}
   .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:none;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer}
+  body.ppf-themed .clients-table .sort-btn{background:none;border:none;box-shadow:none}
   .sort-btn:hover .sort-indicator{opacity:0.8}
   .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
   .sort-indicator{font-size:10px;opacity:0.4;line-height:1}
