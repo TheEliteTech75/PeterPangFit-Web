@@ -18,6 +18,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/trainer_sessions_helpers.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
 
@@ -478,6 +479,36 @@ $pending_invites   = (int)($invite_counts['pending']    ?? 0);
 $accepted_invites  = (int)($invite_counts['accepted']   ?? 0);
 $expired_invites   = (int)($invite_counts['expired']    ?? 0);
 $registered_invites= (int)($invite_counts['registered'] ?? 0);
+
+/* ---------- Trainer session rollup (dashboard) ---------- */
+$trainer_session_rollup = [
+  'totals' => ['purchased' => 0, 'scheduled' => 0, 'completed' => 0, 'remaining' => 0],
+  'clients' => [],
+  'total_clients' => 0,
+];
+$trainer_session_totals = $trainer_session_rollup['totals'];
+$trainer_session_clients = [];
+$trainer_session_total_clients = 0;
+$trainer_session_more_count = 0;
+
+if (($can_admin || $is_client) && function_exists('ppf_trainer_sessions_dashboard_rollup')) {
+  $trainerFilter = null;
+  $clientFilter = null;
+
+  if ($can_admin && !$is_admin && isset($USER_ID) && is_numeric($USER_ID)) {
+    $trainerFilter = (int)$USER_ID;
+  }
+  if ($is_client && isset($USER_ID) && is_numeric($USER_ID)) {
+    $clientFilter = (int)$USER_ID;
+  }
+
+  $trainer_session_rollup = ppf_trainer_sessions_dashboard_rollup($conn, $trainerFilter, $clientFilter, 6);
+}
+
+$trainer_session_totals = array_merge($trainer_session_totals, (array)($trainer_session_rollup['totals'] ?? []));
+$trainer_session_clients = is_array($trainer_session_rollup['clients'] ?? null) ? $trainer_session_rollup['clients'] : [];
+$trainer_session_total_clients = (int)($trainer_session_rollup['total_clients'] ?? count($trainer_session_clients));
+$trainer_session_more_count = max(0, $trainer_session_total_clients - count($trainer_session_clients));
 
 /* ---------- Mapping helpers ---------- */
 function find_assignment_mapping(mysqli $conn): array {
@@ -1456,6 +1487,107 @@ $CAT_PALETTE = [
     }
     @media (max-width: 520px){ .donut-wrap{ grid-template-columns: 1fr; } }
 
+    .training-sessions-card .session-stats{
+      margin:10px 0 6px;
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(120px,1fr));
+      gap:10px;
+    }
+    .training-sessions-card .session-stat{
+      padding:10px 12px;
+      border:1px solid var(--card-border);
+      border-radius:12px;
+      background:color-mix(in srgb, var(--panel-muted) 82%, transparent 18%);
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      min-height:60px;
+    }
+    .training-sessions-card .session-stat .label{
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      color:var(--c-muted);
+    }
+    .training-sessions-card .session-stat .value{
+      font-size:20px;
+      font-weight:700;
+      color:var(--text);
+    }
+    .training-sessions-card .session-stat .meta{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .training-sessions-card .client-list{
+      list-style:none;
+      margin:12px 0 0;
+      padding:0;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .training-sessions-card .client{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      border:1px solid var(--card-border);
+      border-radius:12px;
+      padding:10px 12px;
+      background:color-mix(in srgb, var(--panel) 88%, transparent 12%);
+    }
+    .training-sessions-card .client-main{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      min-width:0;
+    }
+    .training-sessions-card .client-name{
+      font-weight:600;
+      color:var(--text);
+      font-size:14px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .training-sessions-card .client-remaining{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .training-sessions-card .client-meta{
+      text-align:right;
+      font-size:12px;
+      color:var(--muted);
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      align-items:flex-end;
+    }
+    .training-sessions-card .client-meta time{
+      font-weight:600;
+      color:var(--text);
+    }
+    .training-sessions-card .empty{
+      margin:12px 0 0;
+      font-size:13px;
+      color:var(--muted);
+    }
+    .training-sessions-card .more{
+      margin:6px 0 0;
+      font-size:12px;
+      color:var(--muted);
+    }
+    @container (max-width: 340px){
+      .training-sessions-card .client{
+        flex-direction:column;
+        align-items:flex-start;
+        gap:6px;
+      }
+      .training-sessions-card .client-meta{
+        align-items:flex-start;
+        text-align:left;
+      }
+    }
+
     /* Center pack for donut card */
     .center-pack{
       display:grid;
@@ -1775,6 +1907,89 @@ $CAT_PALETTE = [
           <div class="actions">
             <a class="btn primary" href="invites.php">Manage Invites</a>
             <a class="btn" href="create_invite_form.php">Send Invite</a>
+          </div>
+        </article>
+
+        <!-- TRAINING SESSIONS SUMMARY -->
+        <article class="card training-sessions-card" data-card-key="trainer-sessions">
+          <h3>Training Sessions</h3>
+
+          <div class="session-stats" role="list">
+            <div class="session-stat" role="listitem">
+              <span class="label">Purchased</span>
+              <span class="value"><?php echo number_format((int)($trainer_session_totals['purchased'] ?? 0)); ?></span>
+            </div>
+            <div class="session-stat" role="listitem">
+              <span class="label">Scheduled</span>
+              <span class="value"><?php echo number_format((int)($trainer_session_totals['scheduled'] ?? 0)); ?></span>
+            </div>
+            <div class="session-stat" role="listitem">
+              <span class="label">Completed</span>
+              <span class="value"><?php echo number_format((int)($trainer_session_totals['completed'] ?? 0)); ?></span>
+            </div>
+            <div class="session-stat" role="listitem">
+              <span class="label">Remaining</span>
+              <span class="value"><?php echo number_format((int)($trainer_session_totals['remaining'] ?? 0)); ?></span>
+            </div>
+          </div>
+
+          <?php if ($trainer_session_total_clients > 0 && $trainer_session_clients): ?>
+            <ul class="client-list">
+              <?php foreach ($trainer_session_clients as $client):
+                $purchased = (int)($client['purchased'] ?? 0);
+                $completed = (int)($client['completed'] ?? 0);
+                $remaining = (int)($client['remaining'] ?? max(0, $purchased - $completed));
+                if ($remaining < 0) { $remaining = 0; }
+                $scheduled = (int)($client['scheduled'] ?? 0);
+                $parts = [];
+                if ($purchased > 0) {
+                  $parts[] = number_format($purchased) . ' purchased';
+                }
+                $parts[] = number_format($completed) . ' completed';
+                $parts[] = number_format($remaining) . ' remaining';
+                if ($scheduled > 0) {
+                  $parts[] = number_format($scheduled) . ' scheduled';
+                }
+                $detailLine = implode(' · ', $parts);
+                $nextIso = $client['next_session_at'] ?? null;
+                $nextAttr = '';
+                $nextLabel = '';
+                if ($nextIso) {
+                  $ts = strtotime($nextIso);
+                  if ($ts !== false) {
+                    $nextAttr = date('c', $ts);
+                    $nextLabel = date('M j, Y g:i A', $ts);
+                  } else {
+                    $nextAttr = (string)$nextIso;
+                    $nextLabel = (string)$nextIso;
+                  }
+                }
+              ?>
+                <li class="client">
+                  <div class="client-main">
+                    <span class="client-name"><?php echo h((string)($client['name'] ?? 'Client')); ?></span>
+                    <span class="client-remaining"><?php echo h($detailLine); ?></span>
+                  </div>
+                  <div class="client-meta">
+                    <span>Next</span>
+                    <?php if ($nextLabel): ?>
+                      <time datetime="<?php echo h($nextAttr); ?>"><?php echo h($nextLabel); ?></time>
+                    <?php else: ?>
+                      <span>—</span>
+                    <?php endif; ?>
+                  </div>
+                </li>
+              <?php endforeach; ?>
+            </ul>
+            <?php if ($trainer_session_more_count > 0): ?>
+              <p class="more">+ <?php echo number_format($trainer_session_more_count); ?> more clients</p>
+            <?php endif; ?>
+          <?php else: ?>
+            <p class="empty">No training session packages yet.</p>
+          <?php endif; ?>
+
+          <div class="actions" style="margin-top:12px;">
+            <a class="btn primary" href="trainer_sessions.php">Manage Sessions</a>
           </div>
         </article>
 

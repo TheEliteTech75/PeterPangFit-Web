@@ -336,6 +336,165 @@ if (!function_exists('ppf_trainer_sessions_fetch_transactions_for_package')) {
     }
 }
 
+if (!function_exists('ppf_trainer_sessions_dashboard_rollup')) {
+    /**
+     * Aggregate session package metrics for dashboard widgets.
+     * Returns totals and up to $limit client rows (ordered by upcoming session).
+     */
+    function ppf_trainer_sessions_dashboard_rollup(mysqli $conn, ?int $trainerId = null, ?int $clientId = null, int $limit = 6): array {
+        ppf_trainer_sessions_ensure_schema($conn);
+
+        $summary = [
+            'totals' => [
+                'purchased' => 0,
+                'scheduled' => 0,
+                'completed' => 0,
+                'remaining' => 0,
+            ],
+            'clients' => [],
+            'total_clients' => 0,
+        ];
+
+        if (!function_exists('table_exists') || !table_exists($conn, 'trainer_session_packages')) {
+            return $summary;
+        }
+
+        $where = ' WHERE 1=1';
+        $params = [];
+        $types = '';
+
+        if ($trainerId !== null && $trainerId > 0) {
+            $where .= ' AND p.trainer_id = ?';
+            $params[] = $trainerId;
+            $types .= 'i';
+        }
+        if ($clientId !== null && $clientId > 0) {
+            $where .= ' AND p.client_id = ?';
+            $params[] = $clientId;
+            $types .= 'i';
+        }
+
+        $sql = "
+            SELECT
+                p.client_id,
+                u.first_name,
+                u.last_name,
+                u.email,
+                SUM(p.purchased_sessions) AS purchased_total,
+                SUM(COALESCE(s.scheduled_open, 0)) AS scheduled_total,
+                SUM(COALESCE(s.completed_count, 0)) AS completed_total,
+                SUM(GREATEST(p.purchased_sessions - COALESCE(s.completed_count, 0), 0)) AS remaining_total,
+                MIN(s.next_session_at) AS next_session_at
+            FROM trainer_session_packages p
+            JOIN users u ON u.id = p.client_id
+            LEFT JOIN (
+                SELECT
+                    package_id,
+                    SUM(status='scheduled') AS scheduled_open,
+                    SUM(status='completed') AS completed_count,
+                    MIN(CASE WHEN status='scheduled' THEN scheduled_start END) AS next_session_at
+                FROM trainer_sessions
+                GROUP BY package_id
+            ) s ON s.package_id = p.id
+            {$where}
+            GROUP BY p.client_id, u.first_name, u.last_name, u.email
+            ORDER BY MIN(s.next_session_at) IS NULL, MIN(s.next_session_at) ASC, u.last_name, u.first_name
+        ";
+
+        if (!$stmt = $conn->prepare($sql)) {
+            return $summary;
+        }
+
+        if ($params) {
+            $bind = [$types];
+            foreach ($params as $idx => $val) {
+                $bind[] = &$params[$idx];
+            }
+            call_user_func_array([$stmt, 'bind_param'], $bind);
+        }
+
+        if (!$stmt->execute()) {
+            $stmt->close();
+            return $summary;
+        }
+
+        $res = $stmt->get_result();
+        $allClients = [];
+        while ($row = $res->fetch_assoc()) {
+            $purchased = (int)($row['purchased_total'] ?? 0);
+            $scheduled = (int)($row['scheduled_total'] ?? 0);
+            $completed = (int)($row['completed_total'] ?? 0);
+            $remaining = (int)($row['remaining_total'] ?? max(0, $purchased - $completed));
+            if ($remaining < 0) {
+                $remaining = 0;
+            }
+
+            $first = trim((string)($row['first_name'] ?? ''));
+            $last  = trim((string)($row['last_name'] ?? ''));
+            $email = trim((string)($row['email'] ?? ''));
+            $name = trim($first . ' ' . $last);
+            if ($name === '') {
+                $name = $email !== '' ? $email : 'Client #' . (int)($row['client_id'] ?? 0);
+            }
+
+            $client = [
+                'client_id' => (int)($row['client_id'] ?? 0),
+                'name' => $name,
+                'purchased' => $purchased,
+                'scheduled' => $scheduled,
+                'completed' => $completed,
+                'remaining' => $remaining,
+                'next_session_at' => $row['next_session_at'] ?? null,
+            ];
+
+            $summary['totals']['purchased'] += $purchased;
+            $summary['totals']['scheduled'] += $scheduled;
+            $summary['totals']['completed'] += $completed;
+            $summary['totals']['remaining'] += $remaining;
+
+            $allClients[] = $client;
+        }
+
+        $stmt->close();
+
+        if (!empty($allClients)) {
+            usort($allClients, static function (array $a, array $b): int {
+                $aRaw = $a['next_session_at'] ?? null;
+                $bRaw = $b['next_session_at'] ?? null;
+
+                $aTime = $aRaw ? strtotime((string)$aRaw) : false;
+                $bTime = $bRaw ? strtotime((string)$bRaw) : false;
+                $aTime = ($aTime !== false) ? $aTime : null;
+                $bTime = ($bTime !== false) ? $bTime : null;
+
+                $aHas = ($aTime !== null);
+                $bHas = ($bTime !== null);
+
+                if ($aHas && !$bHas) {
+                    return -1;
+                }
+                if (!$aHas && $bHas) {
+                    return 1;
+                }
+                if ($aHas && $bHas && $aTime !== $bTime) {
+                    return $aTime <=> $bTime;
+                }
+
+                return strcasecmp((string)($a['name'] ?? ''), (string)($b['name'] ?? ''));
+            });
+        }
+
+        $summary['total_clients'] = count($allClients);
+        if ($limit > 0 && $summary['total_clients'] > $limit) {
+            $summary['clients'] = array_slice($allClients, 0, $limit);
+        } else {
+            $summary['clients'] = $allClients;
+        }
+
+        return $summary;
+    }
+}
+
 if (!function_exists('ppf_trainer_sessions_within_window')) {
     /**
      * Helper to determine if now is within the scheduled window.
