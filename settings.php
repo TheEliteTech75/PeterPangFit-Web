@@ -637,7 +637,7 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      margin: 20px 0 0;
+      margin: 20px 0 24px;
     }
     .chips .chip {
       border-radius: 999px;
@@ -757,7 +757,7 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
           <strong>Email Authentication</strong>
           <span><?php echo $twofaEmailEnabled ? 'Codes can be sent to your email when needed.' : 'A backup code will be sent only after you enable this option.'; ?></span>
         </div>
-        <button class="btn<?php echo $twofaEmailEnabled ? ' secondary' : ''; ?>" type="button" id="btnToggleEmail" data-state="<?php echo $twofaEmailEnabled ? 'disable' : 'enable'; ?>">
+        <button class="btn<?php echo $twofaEmailEnabled ? ' danger' : ''; ?>" type="button" id="btnToggleEmail" data-state="<?php echo $twofaEmailEnabled ? 'disable' : 'enable'; ?>">
           <?php echo $twofaEmailEnabled ? 'Disable' : 'Enable'; ?>
         </button>
       </div>
@@ -936,10 +936,10 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
           <h2>Login Sessions</h2>
           <p class="muted">Review where you're signed in and sign out devices you no longer recognize.</p>
         </div>
-        <form method="post" action="sessions_actions.php" class="inline">
+        <form method="post" action="sessions_actions.php" class="inline" onsubmit="return confirm('Sign out all other sessions? This will keep only your current session active.');">
           <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
           <input type="hidden" name="action" value="signout_all_others">
-          <button class="btn danger" type="submit">Sign out others</button>
+          <button class="btn danger" type="submit">Sign Out Others</button>
         </form>
       </div>
 
@@ -990,7 +990,6 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
                   <td>
                     <div class="table-primary">
                       <strong><?php echo h($location !== '' ? $location : 'Unknown'); ?></strong>
-                      <?php if (!empty($s['ip'])): ?><span class="table-subtext"><?php echo h($s['ip']); ?></span><?php endif; ?>
                     </div>
                   </td>
                   <td>
