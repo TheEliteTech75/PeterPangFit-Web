@@ -20,6 +20,19 @@ if (!function_exists('h')) {
 }
 .ppf-brand {
   font-weight:800;font-size:22px;color:var(--header-text, #f8fafc);letter-spacing:-.02em;
+  text-decoration:none;display:inline-flex;align-items:center;
+  transition:color .3s ease,text-shadow .3s ease,transform .3s ease;
+}
+.ppf-brand:hover,
+.ppf-brand:focus-visible {
+  color:color-mix(in srgb, var(--header-text, #f8fafc) 70%, var(--theme-swatch-2, var(--brand, #38bdf8)) 30%);
+  text-shadow:0 10px 26px color-mix(in srgb, var(--theme-swatch-1, var(--brand, #38bdf8)) 45%, transparent 55%);
+  transform:translateY(-1px);
+}
+.ppf-brand:focus-visible {
+  outline:2px solid color-mix(in srgb, var(--theme-swatch-2, var(--brand, #38bdf8)) 55%, transparent 45%);
+  outline-offset:4px;
+  border-radius:10px;
 }
 .ppf-right {
   display:flex;align-items:center;gap:10px;
@@ -34,5 +47,5 @@ if (!function_exists('h')) {
 </style>
 
 <header class="ppf-topbar">
-  <div class="ppf-brand">Peter Pang Fit</div>
+  <a class="ppf-brand" href="/index.php">Peter Pang Fit</a>
 </header>

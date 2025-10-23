@@ -68,7 +68,22 @@ $themeInitScript = '<script>(function(){var theme=' . json_encode($themeKey, JSO
   top: 0;
   z-index: 3000;
 }
-.ppf-brand { font-weight:800;font-size:22px;color:var(--header-text, var(--text));letter-spacing:-.02em; }
+.ppf-brand {
+  font-weight:800;font-size:22px;color:var(--header-text, var(--text));letter-spacing:-.02em;
+  text-decoration:none;display:inline-flex;align-items:center;
+  transition:color .3s ease,text-shadow .3s ease,transform .3s ease;
+}
+.ppf-brand:hover,
+.ppf-brand:focus-visible {
+  color:color-mix(in srgb, var(--header-text, var(--text)) 70%, var(--theme-swatch-2, var(--brand)) 30%);
+  text-shadow:0 10px 26px color-mix(in srgb, var(--theme-swatch-1, var(--brand)) 45%, transparent 55%);
+  transform:translateY(-1px);
+}
+.ppf-brand:focus-visible {
+  outline:2px solid color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 55%, transparent 45%);
+  outline-offset:4px;
+  border-radius:10px;
+}
 .ppf-user { margin-left:auto;position:relative;display:flex;align-items:center; z-index: 3200; }
 .ppf-chip {
   display:flex;align-items:center;gap:10px;
@@ -193,7 +208,7 @@ body.ppf-themed .dash-settings-toggle {
     </svg>
   </button>
   <?php endif; ?>
-  <div class="ppf-brand">Peter Pang Fit</div>
+  <a class="ppf-brand" href="/index.php">Peter Pang Fit</a>
   <div class="ppf-user">
     <div class="ppf-chip" id="ppfUserChip" aria-haspopup="true" aria-expanded="false">
       <div class="ppf-avatar">
