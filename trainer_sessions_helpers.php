@@ -398,7 +398,7 @@ if (!function_exists('ppf_trainer_sessions_dashboard_rollup')) {
             ) s ON s.package_id = p.id
             {$where}
             GROUP BY p.client_id, u.first_name, u.last_name, u.email
-            ORDER BY u.last_name, u.first_name
+            ORDER BY MIN(s.next_session_at) IS NULL, MIN(s.next_session_at) ASC, u.last_name, u.first_name
         ";
 
         if (!$stmt = $conn->prepare($sql)) {
