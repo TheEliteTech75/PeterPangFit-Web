@@ -142,15 +142,8 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Create Invite · Peter Pang Fit</title>
 <style>
-  :root{
-    color-scheme:dark;
-    --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8;
-    --line:rgba(148,163,184,0.18); --chip:rgba(15,23,42,0.7); --ok:#10b981; --warn:#ef4444;
-  }
-  html,body{margin:0;padding:0;background:
-      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
-      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
-      linear-gradient(155deg, var(--bg), var(--bg-alt));
+  
+  html,body{margin:0;padding:0;background: var(--page-canvas);
     color:var(--text);
     font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
   a{color:var(--brand);text-decoration:none}

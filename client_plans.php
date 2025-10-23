@@ -470,33 +470,7 @@ $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title><?php echo h($pageTitle); ?></title>
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: #020202;
-      --bg-soft: #050505;
-      --surface: #0a0a0a;
-      --surface-alt: #111111;
-      --card: #161616;
-      --card-border: rgba(0, 191, 255, 0.28);
-      --card-border-subtle: rgba(255, 255, 255, 0.08);
-      --card-border-hover: rgba(0, 191, 255, 0.45);
-      --text: #f3f7ff;
-      --muted: #9ca8bf;
-      --muted-strong: #c4cee0;
-      --accent: #00bfff;
-      --accent-soft: rgba(0, 191, 255, 0.15);
-      --accent-strong: #32cd32;
-      --danger: #ff4c4c;
-      --shadow: 0 28px 50px rgba(0, 0, 0, 0.55);
-      --radius-lg: 28px;
-      --radius: 20px;
-      --radius-sm: 14px;
-      --transition: 200ms cubic-bezier(.33,.13,.21,.99);
-      --plan-nav-offset: 76px;
-      --plan-nav-safe-offset: calc(var(--plan-nav-offset) + env(safe-area-inset-top, 0px));
-      --plan-nav-gap: 0px;
-      font-family: 'Inter', 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-    }
+    
 
     *,
     *::before,
