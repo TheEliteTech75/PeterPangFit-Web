@@ -68,7 +68,7 @@ $themeInitScript = '<script>(function(){var theme=' . json_encode($themeKey, JSO
   top: 0;
   z-index: 3000;
 }
-.ppf-brand { font-weight:800;font-size:22px;color:var(--text);letter-spacing:-.02em; }
+.ppf-brand { font-weight:800;font-size:22px;color:var(--header-text, var(--text));letter-spacing:-.02em; }
 .ppf-user { margin-left:auto;position:relative;display:flex;align-items:center; z-index: 3200; }
 .ppf-chip {
   display:flex;align-items:center;gap:10px;

@@ -19,7 +19,7 @@ if (!function_exists('h')) {
   z-index: 1000;
 }
 .ppf-brand {
-  font-weight:800;font-size:22px;color:#f8fafc;letter-spacing:-.02em;
+  font-weight:800;font-size:22px;color:var(--header-text, #f8fafc);letter-spacing:-.02em;
 }
 .ppf-right {
   display:flex;align-items:center;gap:10px;
