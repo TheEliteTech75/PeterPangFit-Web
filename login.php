@@ -18,6 +18,7 @@ $forceCaptcha = !empty($_SESSION['force_captcha']);
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Login - Peter Pang Fit</title>
   <?php if ($forceCaptcha): ?>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -123,6 +124,7 @@ $forceCaptcha = !empty($_SESSION['force_captcha']);
       align-items: center;
       justify-content: center;
       padding: clamp(32px, 6vw, 72px) 24px;
+      scroll-margin-top: 90px;
     }
 
     .auth-panel {
@@ -273,13 +275,61 @@ $forceCaptcha = !empty($_SESSION['force_captcha']);
     }
 
     @media (max-width: 520px) {
+      body {
+        min-height: 100dvh;
+      }
+
+      header.site-header {
+        position: static;
+      }
+
       .header-inner {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: center;
+        gap: 12px;
         padding: 16px;
+      }
+
+      .header-link {
+        justify-content: center;
+      }
+
+      main {
+        align-items: stretch;
+        justify-content: flex-start;
+        padding: 24px 18px 48px;
       }
 
       .auth-panel {
         border-radius: 22px;
-        padding: 28px 22px;
+        padding: 24px 20px 32px;
+        gap: 20px;
+        box-shadow: 0 24px 50px rgba(2, 6, 23, 0.55);
+      }
+
+      .auth-panel header h1 {
+        font-size: 1.55rem;
+      }
+
+      .auth-panel p {
+        font-size: 0.92rem;
+      }
+
+      label {
+        font-size: 0.88rem;
+      }
+
+      input[type="email"],
+      input[type="password"] {
+        font-size: 0.95rem;
+        padding: 13px 14px;
+      }
+
+      input[type="submit"],
+      #btn-passkey {
+        font-size: 0.95rem;
+        padding: 13px;
       }
     }
   </style>
