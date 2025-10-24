@@ -38,6 +38,17 @@ function ts_json($data): ?string {
     return $json === false ? null : $json;
 }
 
+function ts_shape_session(array $session): array {
+    return [
+        'id' => (int)($session['id'] ?? 0),
+        'status' => strtolower((string)($session['status'] ?? 'scheduled')),
+        'scheduled_start' => $session['scheduled_start'] ?? null,
+        'scheduled_end' => $session['scheduled_end'] ?? null,
+        'actual_start_at' => $session['actual_start_at'] ?? null,
+        'actual_end_at' => $session['actual_end_at'] ?? null,
+    ];
+}
+
 function ts_format_email_datetime(?string $iso): string {
     if (!$iso) return 'unscheduled';
     try {
@@ -351,6 +362,164 @@ if ($action === 'delete_session') {
     respond(false, 'Failed to cancel session.');
 }
 
+if ($action === 'start_session' || $action === 'end_session') {
+    $sessionId = max(0, (int)($_POST['session_id'] ?? 0));
+    if ($sessionId <= 0) respond(false, 'Invalid session.');
+
+    $sql = "SELECT s.*, p.package_name, p.trainer_id, p.client_id,
+                   u.email AS client_email, u.first_name AS client_first, u.last_name AS client_last,
+                   t.email AS trainer_email, t.first_name AS trainer_first, t.last_name AS trainer_last
+            FROM trainer_sessions s
+            JOIN trainer_session_packages p ON p.id = s.package_id
+            LEFT JOIN users u ON u.id = p.client_id
+            LEFT JOIN users t ON t.id = p.trainer_id
+            WHERE s.id = ? LIMIT 1";
+    if (!$stmt = $conn->prepare($sql)) respond(false, 'Failed to load session.');
+    $stmt->bind_param('i', $sessionId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $session = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    if (!$session) respond(false, 'Session not found.');
+    if ($role !== 'admin' && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
+
+    $status = strtolower((string)($session['status'] ?? 'scheduled'));
+    $nowString = date('Y-m-d H:i:s');
+
+    if ($action === 'start_session') {
+        if ($status === 'completed') {
+            respond(true, 'Session already completed.', ['session' => ts_shape_session($session)]);
+        }
+        if ($status === 'cancelled') {
+            respond(false, 'Cancelled sessions cannot be started.');
+        }
+        if ($status === 'in_progress' && !empty($session['actual_start_at'])) {
+            respond(true, 'Session already in progress.', ['session' => ts_shape_session($session)]);
+        }
+        if (!ppf_trainer_sessions_within_window($session)) {
+            respond(false, 'Sessions can only be started within the allowed window.');
+        }
+
+        $updateSql = "UPDATE trainer_sessions
+                      SET status='in_progress', actual_start_at = COALESCE(actual_start_at, NOW()), timer_started_by = IF(actual_start_at IS NULL, ?, timer_started_by), updated_at = NOW()
+                      WHERE id = ? AND status IN ('scheduled','in_progress')";
+        if (!$updateStmt = $conn->prepare($updateSql)) {
+            respond(false, 'Unable to update the session.');
+        }
+        $updateStmt->bind_param('ii', $actorId, $sessionId);
+        if (!$updateStmt->execute()) {
+            $err = $updateStmt->error;
+            $updateStmt->close();
+            respond(false, 'Failed to start the session. ' . $err);
+        }
+        $affected = $updateStmt->affected_rows;
+        $updateStmt->close();
+
+        if ($affected <= 0 && $status !== 'in_progress') {
+            respond(false, 'Session is no longer pending.');
+        }
+
+        $session['status'] = 'in_progress';
+        if (empty($session['actual_start_at'])) {
+            $session['actual_start_at'] = $nowString;
+        }
+        $session['timer_started_by'] = $actorId;
+
+        if (function_exists('ppf_log')) {
+            $details = ts_json([
+                'session_id' => $sessionId,
+                'package_id' => $session['package_id'] ?? null,
+                'started_at' => $session['actual_start_at'],
+                'started_by' => $actorId,
+                'source' => 'trainer_dashboard',
+            ]);
+            ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_session_started', 'session', (string)$sessionId, $details);
+        }
+
+        respond(true, 'Session started.', [
+            'session' => ts_shape_session($session),
+        ]);
+    }
+
+    if ($status === 'completed' && !empty($session['actual_end_at'])) {
+        respond(true, 'Session already completed.', ['session' => ts_shape_session($session)]);
+    }
+    if ($status === 'cancelled') {
+        respond(false, 'Cancelled sessions cannot be ended.');
+    }
+    if (!ppf_trainer_sessions_within_window($session)) {
+        respond(false, 'Sessions can only be ended within the allowed window.');
+    }
+    if (empty($session['actual_start_at']) && $status !== 'in_progress') {
+        respond(false, 'Please start the session before ending it.');
+    }
+
+    $updateSql = "UPDATE trainer_sessions
+                  SET status='completed', actual_end_at = NOW(), completed_at = NOW(), completion_marked_by = ?, timer_ended_by = ?, duration_seconds = CASE WHEN actual_start_at IS NULL THEN duration_seconds ELSE TIMESTAMPDIFF(SECOND, actual_start_at, NOW()) END, updated_at = NOW()
+                  WHERE id = ? AND status IN ('scheduled','in_progress')";
+    if (!$updateStmt = $conn->prepare($updateSql)) {
+        respond(false, 'Unable to update the session.');
+    }
+    $updateStmt->bind_param('iii', $actorId, $actorId, $sessionId);
+    if (!$updateStmt->execute()) {
+        $err = $updateStmt->error;
+        $updateStmt->close();
+        respond(false, 'Failed to end the session. ' . $err);
+    }
+    $affected = $updateStmt->affected_rows;
+    $updateStmt->close();
+
+    if ($affected <= 0) {
+        respond(false, 'Session is no longer pending.');
+    }
+
+    $session['status'] = 'completed';
+    $session['actual_end_at'] = $nowString;
+    $session['completed_at'] = $nowString;
+    $session['completion_marked_by'] = $actorId;
+
+    $packageId = (int)($session['package_id'] ?? 0);
+    $packageTotals = null;
+    if ($packageId > 0) {
+        $summary = ppf_trainer_sessions_fetch_package_summary($conn, $packageId);
+        if ($summary) {
+            $packageTotals = [
+                'package_id' => $packageId,
+                'purchased' => (int)($summary['purchased_sessions'] ?? 0),
+                'used' => (int)($summary['completed_count'] ?? 0),
+                'remaining' => max(0, (int)($summary['purchased_sessions'] ?? 0) - (int)($summary['completed_count'] ?? 0)),
+                'scheduled' => (int)($summary['scheduled_open'] ?? 0),
+            ];
+        }
+    }
+
+    if (function_exists('ppf_log')) {
+        $details = ts_json([
+            'session_id' => $sessionId,
+            'package_id' => $session['package_id'] ?? null,
+            'completed_at' => $nowString,
+            'completed_by' => $actorId,
+            'source' => 'trainer_dashboard',
+        ]);
+        ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_session_completed', 'session', (string)$sessionId, $details);
+    }
+
+    $startLabel = ts_format_email_datetime($session['scheduled_start'] ?? null);
+    $packageName = $session['package_name'] ?? 'Training Session';
+    $trainerName = trim(($session['trainer_first'] ?? '') . ' ' . ($session['trainer_last'] ?? ''));
+    $clientName = trim(($session['client_first'] ?? '') . ' ' . ($session['client_last'] ?? ''));
+    $trainerEmail = $session['trainer_email'] ?? null;
+    $clientEmail = $session['client_email'] ?? null;
+    $emailBody = "Session Completed\n\nPackage: {$packageName}\nScheduled: {$startLabel}\nTrainer: {$trainerName}\nClient: {$clientName}\n\nThis session has been marked complete.";
+    if ($trainerEmail) { @send_plain_email($trainerEmail, $trainerName ?: 'Trainer', 'Session completed: ' . $packageName, $emailBody); }
+    if ($clientEmail) { @send_plain_email($clientEmail, $clientName ?: 'Client', 'Session completed: ' . $packageName, $emailBody); }
+
+    respond(true, 'Session completed.', [
+        'session' => ts_shape_session($session),
+        'package_totals' => $packageTotals,
+    ]);
+}
+
 if ($action === 'toggle_completion') {
     $sessionId = max(0, (int)($_POST['session_id'] ?? 0));
     $complete = (int)($_POST['complete'] ?? 0) === 1;
@@ -366,49 +535,14 @@ if ($action === 'toggle_completion') {
 
     $status = strtolower((string)($session['status'] ?? 'scheduled'));
     if ($complete) {
-        if ($status === 'completed') respond(true, 'Session already completed.', ['refresh' => true]);
-        if ($status !== 'scheduled') respond(false, 'Only scheduled sessions can be completed.');
-        if (!ppf_trainer_sessions_within_window($session)) {
-            respond(false, 'Completion is only available during the scheduled window.');
-        }
-        $sql = "UPDATE trainer_sessions SET status='completed', completed_at = NOW(), completion_marked_by = ?, updated_at = NOW() WHERE id = ?";
-        if ($stmt = $conn->prepare($sql)) {
-            $stmt->bind_param('ii', $actorId, $sessionId);
-            if (!$stmt->execute()) {
-                $err = $stmt->error;
-                $stmt->close();
-                respond(false, 'Failed to mark complete. ' . $err);
-            }
-            $stmt->close();
-        }
-
-        $details = ts_json([
-            'session_id' => $sessionId,
-            'package_id' => $session['package_id'] ?? null,
-            'completed_at' => date('Y-m-d H:i:s'),
-        ]);
-        if (function_exists('ppf_log')) {
-            ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_session_completed', 'session', (string)$sessionId, $details);
-        }
-
-        $start = ts_format_email_datetime($session['scheduled_start'] ?? null);
-        $packageName = $session['package_name'] ?? 'Training Session';
-        $trainerName = trim(($session['trainer_first'] ?? '') . ' ' . ($session['trainer_last'] ?? ''));
-        $clientName = trim(($session['client_first'] ?? '') . ' ' . ($session['client_last'] ?? ''));
-        $trainerEmail = $session['trainer_email'] ?? null;
-        $clientEmail = $session['client_email'] ?? null;
-        $emailBody = "Session Completed\n\nPackage: {$packageName}\nScheduled: {$start}\nTrainer: {$trainerName}\nClient: {$clientName}\n\nThis session has been marked complete.";
-        if ($trainerEmail) { @send_plain_email($trainerEmail, $trainerName ?: 'Trainer', 'Session completed: ' . $packageName, $emailBody); }
-        if ($clientEmail) { @send_plain_email($clientEmail, $clientName ?: 'Client', 'Session completed: ' . $packageName, $emailBody); }
-
-        respond(true, 'Session marked complete.', ['refresh' => true]);
+        respond(false, 'Please use the Start/End controls to complete sessions.');
     }
 
     // Re-open session
     if ($status !== 'completed') {
         respond(true, 'Session already pending.', ['refresh' => true]);
     }
-    if ($stmt = $conn->prepare("UPDATE trainer_sessions SET status='scheduled', completed_at = NULL, completion_marked_by = NULL, updated_at = NOW() WHERE id = ?")) {
+    if ($stmt = $conn->prepare("UPDATE trainer_sessions SET status='scheduled', completed_at = NULL, completion_marked_by = NULL, actual_start_at = NULL, actual_end_at = NULL, timer_started_by = NULL, timer_ended_by = NULL, duration_seconds = NULL, updated_at = NOW() WHERE id = ?")) {
         $stmt->bind_param('i', $sessionId);
         if (!$stmt->execute()) {
             $err = $stmt->error;
