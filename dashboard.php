@@ -2520,6 +2520,7 @@ $CAT_PALETTE = [
       </section>
     </div>
 
+
   </main>
 
   <div class="dash-settings-overlay" data-settings-overlay hidden></div>
