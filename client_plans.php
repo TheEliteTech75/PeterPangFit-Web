@@ -837,44 +837,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       font-size: 14px;
     }
 
-    .sessions__totals {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px;
-      flex: 1;
-      min-width: 260px;
-      align-items: stretch;
-    }
-
-    .sessions-total {
-      padding: 14px 16px;
-      border-radius: var(--radius-sm, 14px);
-      border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
-      background: var(--panel, rgba(10, 10, 10, 0.82));
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card-border, rgba(255, 255, 255, 0.08)) 35%, transparent 65%);
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 6px;
-      min-height: clamp(110px, 24vw, 140px);
-    }
-
-    .sessions-total span {
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-size: 11px;
-      color: var(--muted, #9ca8bf);
-    }
-
-    .sessions-total strong {
-      font-size: clamp(20px, 4vw, 26px);
-      color: var(--text, #f3f7ff);
-    }
-
-    .sessions-total--payments strong {
-      font-size: clamp(18px, 3.6vw, 22px);
-    }
-
     .session-card {
       background: var(--panel, rgba(10, 10, 10, 0.82));
       border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
@@ -906,21 +868,29 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     }
 
     .session-card__counts {
-      display: grid;
-      gap: 6px;
-      text-align: right;
-      min-width: 180px;
+      display: flex;
+      gap: 12px;
+      min-width: 260px;
+      flex-wrap: wrap;
+      justify-content: center;
     }
 
-    .session-card__counts span {
+    .session-card__count {
+      flex: 1 1 120px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .session-card__count span {
       font-size: 12px;
       color: var(--muted, #9ca8bf);
       text-transform: uppercase;
       letter-spacing: 0.07em;
     }
 
-    .session-card__counts strong {
-      display: block;
+    .session-card__count strong {
       font-size: 18px;
       color: var(--text, #f3f7ff);
     }
@@ -1170,14 +1140,13 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         align-items: flex-start;
       }
 
-      .sessions__totals {
+      .session-card__counts {
         min-width: 0;
+        justify-content: space-between;
       }
 
-      .session-card__counts {
-        width: 100%;
-        text-align: left;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      .session-card__count {
+        flex: 1 1 calc(33.333% - 8px);
       }
 
       .session-card__table-wrap {
@@ -2149,39 +2118,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       <h2 id="sessionsHeading">Training Sessions</h2>
       <p>Track your prepaid sessions, upcoming appointments, and wrap them up when you finish.</p>
     </div>
-    <div class="sessions__totals">
-      <div class="sessions-total">
-        <span>Purchased</span>
-        <strong data-session-total="purchased"><?php echo $sessionTotalsPurchased; ?></strong>
-      </div>
-      <div class="sessions-total">
-        <span>Used</span>
-        <strong data-session-total="used"><?php echo $sessionTotalsUsed; ?></strong>
-      </div>
-      <div class="sessions-total">
-        <span>Scheduled</span>
-        <strong data-session-total="scheduled"><?php echo $sessionTotalsScheduled; ?></strong>
-      </div>
-      <div class="sessions-total">
-        <span>Remaining</span>
-        <strong data-session-total="remaining"><?php echo $sessionTotalsRemaining; ?></strong>
-      </div>
-    </div>
-
-    <div class="sessions__payments">
-      <div class="sessions-total sessions-total--payments">
-        <span>Total paid</span>
-        <strong><?php echo h(cp_money($sessionTotalsPaid)); ?></strong>
-      </div>
-      <div class="sessions-total sessions-total--payments">
-        <span>Total refunded</span>
-        <strong><?php echo h(cp_money($sessionTotalsRefunded)); ?></strong>
-      </div>
-      <div class="sessions-total sessions-total--payments">
-        <span>Net applied</span>
-        <strong><?php echo h(cp_money($sessionTotalsNet)); ?></strong>
-      </div>
-    </div>
   </div>
 
   <?php foreach ($sessionPackages as $sessionPkg):
@@ -2190,6 +2126,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     $priceEach = (float)($sessionPkg['price_per_session'] ?? 0.0);
     $priceLabel = $priceEach > 0 ? (cp_money($priceEach) . ' each') : 'Custom rate';
     $scheduledSessions = $sessionPkg['scheduled_sessions'];
+    $scheduledCount = count($scheduledSessions);
     $purchasedCount = (int)($sessionPkg['purchased_sessions'] ?? 0);
     $completedCount = (int)($sessionPkg['completed_count'] ?? 0);
     $remainingCount = (int)($sessionPkg['remaining_sessions'] ?? max(0, $purchasedCount - $completedCount));
@@ -2208,15 +2145,15 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
           </div>
         </div>
         <div class="session-card__counts" data-package-summary="<?php echo $pkgId; ?>">
-          <div>
+          <div class="session-card__count">
             <span>Used</span>
             <strong data-package-used="<?php echo $pkgId; ?>"><?php echo $completedCount; ?></strong>
           </div>
-          <div>
+          <div class="session-card__count">
             <span>Scheduled</span>
             <strong data-package-scheduled="<?php echo $pkgId; ?>"><?php echo $scheduledCount; ?></strong>
           </div>
-          <div>
+          <div class="session-card__count">
             <span>Remaining</span>
             <strong data-package-remaining="<?php echo $pkgId; ?>"><?php echo $remainingCount; ?></strong>
           </div>
@@ -3211,6 +3148,9 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
             if (summary) {
               if (summary.used && pkgTotals && typeof pkgTotals.used !== 'undefined') {
                 summary.used.textContent = pkgTotals.used;
+              }
+              if (summary.scheduled && pkgTotals && typeof pkgTotals.scheduled !== 'undefined') {
+                summary.scheduled.textContent = pkgTotals.scheduled;
               }
               if (summary.remaining && pkgTotals && typeof pkgTotals.remaining !== 'undefined') {
                 summary.remaining.textContent = pkgTotals.remaining;
