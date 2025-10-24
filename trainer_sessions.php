@@ -84,10 +84,22 @@ function ts_datetime(?string $iso): string {
     }
 }
 
+function ts_format_duration(?int $seconds): string {
+    if ($seconds === null || $seconds < 0) {
+        return '';
+    }
+    $total = (int)$seconds;
+    $hours = intdiv($total, 3600);
+    $minutes = intdiv($total % 3600, 60);
+    $secs = $total % 60;
+    return sprintf('%02d:%02d:%02d', $hours, $minutes, $secs);
+}
+
 function ts_status_badge(string $status): string {
     $status = strtolower($status);
     $map = [
         'scheduled' => ['label' => 'Scheduled', 'class' => 'good'],
+        'in_progress' => ['label' => 'In progress', 'class' => 'progress'],
         'completed' => ['label' => 'Completed', 'class' => 'ok'],
         'cancelled' => ['label' => 'Cancelled', 'class' => 'warn'],
     ];
@@ -140,6 +152,7 @@ function ts_status_badge(string $status): string {
     table.ts-sessions tr:last-child td{border-bottom:0;}
     .status-pill{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid color-mix(in srgb, var(--chip-border) 55%, transparent 45%);font-size:12px;color:var(--text);background:color-mix(in srgb, var(--panel-muted) 80%, transparent 20%);}
     .status-pill.good{background:color-mix(in srgb, var(--success) 20%, transparent 80%);border-color:color-mix(in srgb, var(--success) 55%, transparent 45%);color:color-mix(in srgb, var(--success) 70%, var(--text) 30%);}
+    .status-pill.progress{background:color-mix(in srgb, var(--brand) 30%, transparent 70%);border-color:color-mix(in srgb, var(--brand) 55%, transparent 45%);color:color-mix(in srgb, var(--brand) 70%, var(--text) 30%);}
     .status-pill.ok{background:color-mix(in srgb, var(--brand) 24%, transparent 76%);border-color:color-mix(in srgb, var(--brand) 55%, transparent 45%);}
     .status-pill.warn{background:color-mix(in srgb, var(--danger) 24%, transparent 76%);border-color:color-mix(in srgb, var(--danger) 55%, transparent 45%);color:color-mix(in srgb, var(--danger) 70%, var(--text) 30%);}
     .ts-inline-form{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:flex-end;}
@@ -148,6 +161,17 @@ function ts_status_badge(string $status): string {
     .ts-inline-form textarea{min-height:70px;resize:vertical;}
     .ts-inline-form button{align-self:flex-end;}
     .ts-actions{display:flex;flex-wrap:wrap;gap:8px;}
+    .ts-session-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+    .ts-session-btn{display:inline-flex;align-items:center;justify-content:center;padding:7px 14px;border-radius:12px;font-size:13px;font-weight:600;border:1px solid color-mix(in srgb, var(--brand) 52%, transparent 48%);background:color-mix(in srgb, var(--brand) 24%, transparent 76%);color:var(--text);cursor:pointer;transition:transform .2s ease, box-shadow .2s ease, background .2s ease;box-shadow:0 12px 24px color-mix(in srgb, var(--brand) 20%, transparent 80%);}
+    .ts-session-btn[data-ts-start]{background:color-mix(in srgb, var(--brand) 18%, transparent 82%);}
+    .ts-session-btn[data-ts-start]:hover:not([disabled]),.ts-session-btn[data-ts-start]:focus-visible:not([disabled]){background:color-mix(in srgb, var(--brand) 32%, transparent 68%);transform:translateY(-1px);}
+    .ts-session-btn[data-ts-end]:hover:not([disabled]),.ts-session-btn[data-ts-end]:focus-visible:not([disabled]){background:color-mix(in srgb, var(--brand) 36%, transparent 64%);transform:translateY(-1px);}
+    .ts-session-btn[disabled]{opacity:.65;cursor:not-allowed;box-shadow:none;transform:none;}
+    .ts-session-btn.is-processing{cursor:wait;background:color-mix(in srgb, var(--brand) 16%, var(--muted) 84%);box-shadow:none;}
+    .ts-session-btn.is-started{background:color-mix(in srgb, var(--success) 22%, transparent 78%);border-color:color-mix(in srgb, var(--success) 55%, transparent 45%);color:color-mix(in srgb, var(--success) 72%, var(--text) 28%);box-shadow:none;}
+    .ts-session-btn.is-complete{background:color-mix(in srgb, var(--success) 30%, transparent 70%);border-color:color-mix(in srgb, var(--success) 58%, transparent 42%);color:color-mix(in srgb, var(--success) 76%, var(--text) 24%);box-shadow:none;}
+    .ts-session-btn.is-cancelled{background:color-mix(in srgb, var(--danger) 26%, transparent 74%);border-color:color-mix(in srgb, var(--danger) 58%, transparent 42%);color:color-mix(in srgb, var(--danger) 74%, var(--text) 26%);box-shadow:none;}
+    .ts-session-timer{font-variant-numeric:tabular-nums;font-weight:600;padding:6px 12px;border-radius:999px;background:color-mix(in srgb, var(--success) 16%, transparent 84%);border:1px solid color-mix(in srgb, var(--success) 46%, transparent 54%);color:color-mix(in srgb, var(--success) 70%, var(--text) 30%);}
     .ts-muted{color:var(--muted);font-size:12px;}
     .ts-timeline{margin:12px 0 0;display:flex;flex-direction:column;gap:8px;}
     .ts-transaction{border:1px solid var(--card-border);border-radius:12px;padding:10px;background:color-mix(in srgb, var(--panel-muted) 84%, transparent 16%);}
@@ -317,12 +341,12 @@ function ts_status_badge(string $status): string {
             </div>
             <div class="ts-summary-item">
               <span class="label">Completed</span>
-              <span class="value"><?php echo $completed; ?></span>
-              <span class="muted">Remaining <?php echo $remaining; ?></span>
+              <span class="value" data-ts-package-used="<?php echo $pid; ?>"><?php echo $completed; ?></span>
+              <span class="muted">Remaining <span data-ts-package-remaining="<?php echo $pid; ?>"><?php echo $remaining; ?></span></span>
             </div>
             <div class="ts-summary-item">
               <span class="label">Scheduled</span>
-              <span class="value"><?php echo $scheduled; ?></span>
+              <span class="value" data-ts-package-scheduled="<?php echo $pid; ?>"><?php echo $scheduled; ?></span>
               <span class="muted">Next: <?php echo ts_datetime($pkg['next_session_at'] ?? null); ?></span>
             </div>
             <div class="ts-summary-item">
@@ -348,38 +372,64 @@ function ts_status_badge(string $status): string {
               <?php else: foreach ($pkg['sessions'] as $session):
                 $sid = (int)$session['id'];
                 $status = strtolower((string)($session['status'] ?? 'scheduled'));
-                $canComplete = ($status === 'scheduled') ? ppf_trainer_sessions_within_window($session) : false;
-                $scheduledRange = ts_datetime($session['scheduled_start'] ?? null);
-                if (!empty($session['scheduled_end'])) {
-                    $scheduledRange .= ' – ' . ts_datetime($session['scheduled_end']);
+                $scheduledStartIso = $session['scheduled_start'] ?? null;
+                $scheduledEndIso = $session['scheduled_end'] ?? null;
+                $scheduledRange = ts_datetime($scheduledStartIso);
+                if (!empty($scheduledEndIso)) {
+                    $scheduledRange .= ' – ' . ts_datetime($scheduledEndIso);
                 }
+                $actualStartAt = $session['actual_start_at'] ?? null;
+                $actualEndAt = $session['actual_end_at'] ?? null;
+                $durationSeconds = isset($session['duration_seconds']) ? (int)$session['duration_seconds'] : null;
+                $actualStartLabel = $actualStartAt ? ts_datetime($actualStartAt) : null;
+                $actualEndLabel = $actualEndAt ? ts_datetime($actualEndAt) : null;
+                $durationLabel = $durationSeconds !== null ? ts_format_duration($durationSeconds) : '';
               ?>
-                <tr data-session="<?php echo $sid; ?>">
+                <tr data-session="<?php echo $sid; ?>"
+                    data-ts-session="<?php echo $sid; ?>"
+                    data-ts-status="<?php echo h($status); ?>"
+                    data-ts-start="<?php echo h($scheduledStartIso ?? ''); ?>"
+                    data-ts-end="<?php echo h($scheduledEndIso ?? ''); ?>"
+                    data-ts-actual-start="<?php echo h($actualStartAt ?? ''); ?>"
+                    data-ts-actual-end="<?php echo h($actualEndAt ?? ''); ?>"
+                    data-ts-duration="<?php echo $durationSeconds !== null ? $durationSeconds : ''; ?>"
+                    data-ts-package="<?php echo $pid; ?>">
                   <td>
                     <strong><?php echo h($scheduledRange); ?></strong>
                     <?php if (!empty($session['notes'])): ?>
                       <div class="ts-muted">Notes: <?php echo h($session['notes']); ?></div>
                     <?php endif; ?>
                   </td>
-                  <td><?php echo ts_status_badge($status); ?></td>
+                  <td data-ts-status-cell><?php echo ts_status_badge($status); ?></td>
                   <td>
-                    <?php if (!empty($session['completed_at'])): ?>
-                      <div>Completed <?php echo ts_datetime($session['completed_at']); ?></div>
-                    <?php else: ?>
-                      <div class="ts-muted">Pending completion</div>
-                    <?php endif; ?>
+                    <div data-ts-start-label>
+                      <?php if ($actualStartLabel): ?>
+                        Started <?php echo h($actualStartLabel); ?>
+                      <?php else: ?>
+                        <span class="ts-muted">Not started yet</span>
+                      <?php endif; ?>
+                    </div>
+                    <div data-ts-end-label>
+                      <?php if ($actualEndLabel): ?>
+                        Ended <?php echo h($actualEndLabel); ?>
+                        <?php if ($durationLabel !== ''): ?>
+                          <span class="ts-muted">· <?php echo h($durationLabel); ?></span>
+                        <?php endif; ?>
+                      <?php elseif ($status === 'in_progress' && $actualStartAt): ?>
+                        <span class="ts-muted">In progress</span>
+                      <?php else: ?>
+                        <span class="ts-muted">Awaiting completion</span>
+                      <?php endif; ?>
+                    </div>
+                    <div class="ts-session-timer" data-ts-timer<?php echo ($status === 'in_progress' && $actualStartAt && !$actualEndAt) ? '' : ' hidden'; ?>>00:00:00</div>
                   </td>
                   <td>
+                    <div class="ts-session-controls" data-ts-controls="<?php echo $sid; ?>">
+                      <button type="button" class="ts-session-btn" data-ts-start data-ts-session-id="<?php echo $sid; ?>">Start Session</button>
+                      <button type="button" class="ts-session-btn" data-ts-end data-ts-session-id="<?php echo $sid; ?>">End Session</button>
+                    </div>
                     <div class="ts-actions">
-                      <?php if ($status === 'scheduled'): ?>
-                        <form class="js-ajax" data-refresh="1">
-                          <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                          <input type="hidden" name="action" value="toggle_completion">
-                          <input type="hidden" name="session_id" value="<?php echo $sid; ?>">
-                          <input type="hidden" name="complete" value="1">
-                          <button class="btn small brand" type="submit" <?php echo $canComplete ? '' : 'disabled title="Available during scheduled window"'; ?>>Mark Complete</button>
-                        </form>
-                      <?php elseif ($status === 'completed'): ?>
+                      <?php if ($status === 'completed'): ?>
                         <form class="js-ajax" data-refresh="1">
                           <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                           <input type="hidden" name="action" value="toggle_completion">
@@ -387,8 +437,7 @@ function ts_status_badge(string $status): string {
                           <input type="hidden" name="complete" value="0">
                           <button class="btn small" type="submit">Reopen</button>
                         </form>
-                      <?php endif; ?>
-                      <?php if ($status !== 'completed'): ?>
+                      <?php else: ?>
                         <button class="btn small" type="button" data-reschedule="<?php echo $sid; ?>">Reschedule</button>
                         <form class="js-ajax" data-refresh="1">
                           <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
@@ -557,6 +606,345 @@ function ts_status_badge(string $status): string {
             row.style.display = row.style.display === 'none' ? '' : 'none';
           }
         });
+      });
+
+      const csrfToken = window.__CSRF || '';
+      const HALF_HOUR = 30 * 60 * 1000;
+      const STATUS_BADGES = {
+        scheduled: '<span class="status-pill good">Scheduled</span>',
+        in_progress: '<span class="status-pill progress">In progress</span>',
+        completed: '<span class="status-pill ok">Completed</span>',
+        cancelled: '<span class="status-pill warn">Cancelled</span>',
+      };
+
+      function parseIsoTimestamp(iso) {
+        if (!iso) return null;
+        const value = Date.parse(iso);
+        return Number.isFinite(value) ? value : null;
+      }
+
+      const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+
+      function formatDateTime(iso) {
+        const ts = parseIsoTimestamp(iso);
+        if (ts === null) return '';
+        return dateTimeFormatter.format(new Date(ts));
+      }
+
+      function formatDuration(seconds) {
+        if (!Number.isFinite(seconds) || seconds < 0) return '';
+        const total = Math.floor(seconds);
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const secs = total % 60;
+        return [hours, minutes, secs].map(part => String(part).padStart(2, '0')).join(':');
+      }
+
+      const sessionRows = new Map();
+      document.querySelectorAll('[data-ts-session]').forEach(row => {
+        const sessionId = row.getAttribute('data-ts-session');
+        if (!sessionId) return;
+        const controls = row.querySelector('[data-ts-controls]');
+        const startBtn = controls ? controls.querySelector('[data-ts-start]') : null;
+        const endBtn = controls ? controls.querySelector('[data-ts-end]') : null;
+        const timerEl = row.querySelector('[data-ts-timer]');
+        const statusCell = row.querySelector('[data-ts-status-cell]');
+        const startLabel = row.querySelector('[data-ts-start-label]');
+        const endLabel = row.querySelector('[data-ts-end-label]');
+        sessionRows.set(String(sessionId), { row, startBtn, endBtn, timerEl, statusCell, startLabel, endLabel });
+      });
+
+      const packageSummaries = new Map();
+      document.querySelectorAll('[data-ts-package-used]').forEach(el => {
+        const pkgId = el.getAttribute('data-ts-package-used');
+        if (!pkgId) return;
+        const entry = packageSummaries.get(pkgId) || {};
+        entry.used = el;
+        packageSummaries.set(pkgId, entry);
+      });
+      document.querySelectorAll('[data-ts-package-remaining]').forEach(el => {
+        const pkgId = el.getAttribute('data-ts-package-remaining');
+        if (!pkgId) return;
+        const entry = packageSummaries.get(pkgId) || {};
+        entry.remaining = el;
+        packageSummaries.set(pkgId, entry);
+      });
+      document.querySelectorAll('[data-ts-package-scheduled]').forEach(el => {
+        const pkgId = el.getAttribute('data-ts-package-scheduled');
+        if (!pkgId) return;
+        const entry = packageSummaries.get(pkgId) || {};
+        entry.scheduled = el;
+        packageSummaries.set(pkgId, entry);
+      });
+
+      function computeWindow(row) {
+        const startIso = parseIsoTimestamp(row.dataset.tsStart || '');
+        if (startIso === null) {
+          return { within: false };
+        }
+        const now = Date.now();
+        const windowStart = startIso - HALF_HOUR;
+        if (now < windowStart) {
+          return { within: false, windowStart };
+        }
+        const endIso = parseIsoTimestamp(row.dataset.tsEnd || '');
+        const windowEnd = endIso !== null ? endIso + HALF_HOUR : null;
+        if (windowEnd !== null && now > windowEnd) {
+          return { within: false, windowStart, windowEnd };
+        }
+        return { within: true, windowStart, windowEnd };
+      }
+
+      function applySessionPayload(row, payload) {
+        if (!row || !payload) return;
+        if (typeof payload.status === 'string') {
+          row.dataset.tsStatus = payload.status.toLowerCase();
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'scheduled_start')) {
+          row.dataset.tsStart = payload.scheduled_start || '';
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'scheduled_end')) {
+          row.dataset.tsEnd = payload.scheduled_end || '';
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'actual_start_at')) {
+          row.dataset.tsActualStart = payload.actual_start_at || '';
+          if (!payload.actual_end_at) {
+            row.dataset.tsDuration = '';
+          }
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'actual_end_at')) {
+          row.dataset.tsActualEnd = payload.actual_end_at || '';
+          row.dataset.tsDuration = '';
+          const startTs = parseIsoTimestamp(row.dataset.tsActualStart || '');
+          const endTs = parseIsoTimestamp(payload.actual_end_at || '');
+          if (startTs !== null && endTs !== null && endTs >= startTs) {
+            row.dataset.tsDuration = String(Math.floor((endTs - startTs) / 1000));
+          }
+        }
+      }
+
+      function updateStatusCell(entry) {
+        if (!entry.statusCell || !entry.row) return;
+        const status = (entry.row.dataset.tsStatus || '').toLowerCase();
+        entry.statusCell.innerHTML = STATUS_BADGES[status] || `<span class="status-pill">${status || 'Unknown'}</span>`;
+      }
+
+      function updateLabels(entry) {
+        if (!entry.row) return;
+        const status = (entry.row.dataset.tsStatus || '').toLowerCase();
+        const actualStartIso = entry.row.dataset.tsActualStart || '';
+        const actualEndIso = entry.row.dataset.tsActualEnd || '';
+        const durationSeconds = entry.row.dataset.tsDuration ? parseInt(entry.row.dataset.tsDuration, 10) : null;
+
+        if (entry.startLabel) {
+          entry.startLabel.innerHTML = '';
+          if (actualStartIso) {
+            entry.startLabel.appendChild(document.createTextNode(`Started ${formatDateTime(actualStartIso)}`));
+          } else {
+            const span = document.createElement('span');
+            span.className = 'ts-muted';
+            span.textContent = 'Not started yet';
+            entry.startLabel.appendChild(span);
+          }
+        }
+
+        if (entry.endLabel) {
+          entry.endLabel.innerHTML = '';
+          if (actualEndIso) {
+            entry.endLabel.appendChild(document.createTextNode(`Ended ${formatDateTime(actualEndIso)}`));
+            if (Number.isFinite(durationSeconds) && durationSeconds !== null) {
+              const span = document.createElement('span');
+              span.className = 'ts-muted';
+              span.textContent = `· ${formatDuration(durationSeconds)}`;
+              entry.endLabel.appendChild(document.createTextNode(' '));
+              entry.endLabel.appendChild(span);
+            }
+          } else if (status === 'in_progress' && actualStartIso) {
+            const span = document.createElement('span');
+            span.className = 'ts-muted';
+            span.textContent = 'In progress';
+            entry.endLabel.appendChild(span);
+          } else {
+            const span = document.createElement('span');
+            span.className = 'ts-muted';
+            span.textContent = 'Awaiting completion';
+            entry.endLabel.appendChild(span);
+          }
+        }
+      }
+
+      function updateButtons(entry) {
+        if (!entry.row) return;
+        const status = (entry.row.dataset.tsStatus || '').toLowerCase();
+        const actualStart = parseIsoTimestamp(entry.row.dataset.tsActualStart || '');
+        const actualEnd = parseIsoTimestamp(entry.row.dataset.tsActualEnd || '');
+        const { within } = computeWindow(entry.row);
+
+        if (entry.startBtn) {
+          entry.startBtn.classList.remove('is-started', 'is-complete', 'is-cancelled');
+          let label = 'Start Session';
+          entry.startBtn.disabled = true;
+          entry.startBtn.setAttribute('aria-disabled', 'true');
+          if (status === 'completed') {
+            label = 'Session Completed';
+            entry.startBtn.classList.add('is-complete');
+          } else if (status === 'cancelled') {
+            label = 'Session Cancelled';
+            entry.startBtn.classList.add('is-cancelled');
+          } else if (status === 'in_progress' || actualStart !== null) {
+            label = 'Session Started';
+            entry.startBtn.classList.add('is-started');
+          } else if (within && !entry.startBtn.classList.contains('is-processing')) {
+            entry.startBtn.disabled = false;
+            entry.startBtn.removeAttribute('aria-disabled');
+          }
+          entry.startBtn.textContent = label;
+        }
+
+        if (entry.endBtn) {
+          entry.endBtn.classList.remove('is-complete', 'is-cancelled');
+          let label = 'End Session';
+          entry.endBtn.disabled = true;
+          entry.endBtn.setAttribute('aria-disabled', 'true');
+          if (status === 'completed' || actualEnd !== null) {
+            label = 'Session Completed';
+            entry.endBtn.classList.add('is-complete');
+          } else if (status === 'cancelled') {
+            label = 'Session Cancelled';
+            entry.endBtn.classList.add('is-cancelled');
+          } else if ((status === 'in_progress' || actualStart !== null) && within && !entry.endBtn.classList.contains('is-processing')) {
+            entry.endBtn.disabled = false;
+            entry.endBtn.removeAttribute('aria-disabled');
+          }
+          entry.endBtn.textContent = label;
+        }
+      }
+
+      function updateTimer(entry) {
+        if (!entry.timerEl || !entry.row) return;
+        const status = (entry.row.dataset.tsStatus || '').toLowerCase();
+        const actualStart = parseIsoTimestamp(entry.row.dataset.tsActualStart || '');
+        const actualEnd = parseIsoTimestamp(entry.row.dataset.tsActualEnd || '');
+        if (status === 'in_progress' && actualStart !== null && actualEnd === null) {
+          const diffSeconds = Math.floor((Date.now() - actualStart) / 1000);
+          entry.timerEl.textContent = formatDuration(diffSeconds);
+          entry.timerEl.hidden = false;
+        } else {
+          entry.timerEl.hidden = true;
+        }
+      }
+
+      function refreshSession(entry) {
+        updateStatusCell(entry);
+        updateLabels(entry);
+        updateButtons(entry);
+        updateTimer(entry);
+      }
+
+      function refreshAllSessions() {
+        sessionRows.forEach(refreshSession);
+      }
+
+      refreshAllSessions();
+      if (sessionRows.size) {
+        window.setInterval(() => {
+          sessionRows.forEach(updateTimer);
+        }, 1000);
+        window.setInterval(() => {
+          sessionRows.forEach(updateButtons);
+        }, 60000);
+      }
+
+      async function sendSessionAction(sessionId, action) {
+        const params = new URLSearchParams();
+        params.set('action', action);
+        params.set('session_id', sessionId);
+        if (csrfToken) {
+          params.set('csrf_token', csrfToken);
+        }
+        const response = await fetch('trainer_sessions_actions.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params.toString(),
+          credentials: 'same-origin',
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload || !payload.ok) {
+          const message = payload && payload.message ? payload.message : 'Request failed. Please try again.';
+          throw new Error(message);
+        }
+        return payload;
+      }
+
+      function updatePackageTotals(pkgTotals) {
+        if (!pkgTotals) return;
+        const pkgId = String(pkgTotals.package_id || pkgTotals.packageId || '');
+        if (!pkgId) return;
+        const record = packageSummaries.get(pkgId);
+        if (!record) return;
+        if (record.used && typeof pkgTotals.used !== 'undefined') {
+          record.used.textContent = pkgTotals.used;
+        }
+        if (record.remaining && typeof pkgTotals.remaining !== 'undefined') {
+          record.remaining.textContent = pkgTotals.remaining;
+        }
+        if (record.scheduled && typeof pkgTotals.scheduled !== 'undefined') {
+          record.scheduled.textContent = pkgTotals.scheduled;
+        }
+      }
+
+      sessionRows.forEach(entry => {
+        const sessionId = entry.row ? entry.row.dataset.tsSession : null;
+        if (!sessionId) return;
+        if (entry.startBtn) {
+          entry.startBtn.addEventListener('click', async () => {
+            if (entry.startBtn.disabled || entry.startBtn.classList.contains('is-processing')) return;
+            const originalText = entry.startBtn.textContent;
+            entry.startBtn.classList.add('is-processing');
+            entry.startBtn.textContent = 'Starting…';
+            entry.startBtn.disabled = true;
+            entry.startBtn.setAttribute('aria-disabled', 'true');
+            try {
+              const payload = await sendSessionAction(sessionId, 'start_session');
+              applySessionPayload(entry.row, payload.session || null);
+              entry.startBtn.classList.remove('is-processing');
+              refreshSession(entry);
+            } catch (error) {
+              entry.startBtn.classList.remove('is-processing');
+              entry.startBtn.textContent = originalText || 'Start Session';
+              refreshSession(entry);
+              window.alert(error && error.message ? error.message : 'Unable to start the session.');
+            }
+          });
+        }
+        if (entry.endBtn) {
+          entry.endBtn.addEventListener('click', async () => {
+            if (entry.endBtn.disabled || entry.endBtn.classList.contains('is-processing')) return;
+            const originalText = entry.endBtn.textContent;
+            entry.endBtn.classList.add('is-processing');
+            entry.endBtn.textContent = 'Ending…';
+            entry.endBtn.disabled = true;
+            entry.endBtn.setAttribute('aria-disabled', 'true');
+            try {
+              const payload = await sendSessionAction(sessionId, 'end_session');
+              applySessionPayload(entry.row, payload.session || null);
+              updatePackageTotals(payload.package_totals || null);
+              entry.endBtn.classList.remove('is-processing');
+              refreshSession(entry);
+            } catch (error) {
+              entry.endBtn.classList.remove('is-processing');
+              entry.endBtn.textContent = originalText || 'End Session';
+              refreshSession(entry);
+              window.alert(error && error.message ? error.message : 'Unable to end the session.');
+            }
+          });
+        }
       });
 
       const modal = document.getElementById('tsModal');
