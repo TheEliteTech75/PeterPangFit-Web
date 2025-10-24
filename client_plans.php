@@ -429,55 +429,6 @@ function cp_format_datetime(?string $iso): string {
   }
 }
 
-function cp_session_financial_map(array $package, array $sessions): array {
-  $price = max(0.0, (float)($package['price_per_session'] ?? 0));
-  $payments = max(0.0, (float)($package['payments_total'] ?? 0));
-  $refunds = max(0.0, (float)($package['refunds_total'] ?? 0));
-  $net = max(0.0, $payments - $refunds);
-  $sorted = $sessions;
-  usort($sorted, function ($a, $b) {
-    $aTs = strtotime($a['scheduled_start'] ?? '') ?: 0;
-    $bTs = strtotime($b['scheduled_start'] ?? '') ?: 0;
-    if ($aTs === $bTs) {
-      return ((int)($a['id'] ?? 0)) <=> ((int)($b['id'] ?? 0));
-    }
-    return $aTs <=> $bTs;
-  });
-  $map = [];
-  if ($price <= 0.0) {
-    foreach ($sorted as $row) {
-      $sid = (int)($row['id'] ?? 0);
-      $map[$sid] = ['amount' => 0.0, 'label' => '—'];
-    }
-    return $map;
-  }
-  $fullUnits = (int)floor($net / $price);
-  $partialRemainder = $net - ($fullUnits * $price);
-  $index = 0;
-  foreach ($sorted as $row) {
-    $sid = (int)($row['id'] ?? 0);
-    $paid = 0.0;
-    if ($index < $fullUnits) {
-      $paid = $price;
-    } elseif ($index === $fullUnits && $partialRemainder > 0) {
-      $paid = $partialRemainder;
-    }
-    $status = 'Not refunded';
-    $epsilon = 0.01;
-    if ($paid <= $epsilon && $refunds > 0) {
-      $status = 'Refunded';
-    } elseif ($paid > $epsilon && $paid < ($price - $epsilon)) {
-      $status = 'Partially refunded';
-    }
-    $map[$sid] = [
-      'amount' => round($paid, 2),
-      'label' => $status,
-    ];
-    $index++;
-  }
-  return $map;
-}
-
 function total_duration_str(array $rows): string {
   $sum = 0;
   foreach ($rows as $r) {
@@ -547,11 +498,8 @@ foreach ($sessionPackages as &$sessionPkg) {
   $sessionPkg['completed_count'] = (int)($sessionPkg['completed_count'] ?? 0);
   $sessionPkg['remaining_sessions'] = max(0, $sessionPkg['purchased_sessions'] - $sessionPkg['completed_count']);
   $sessionPkg['price_per_session'] = (float)($sessionPkg['price_per_session'] ?? 0.0);
-  $sessionPkg['payments_total'] = (float)($sessionPkg['payments_total'] ?? 0.0);
-  $sessionPkg['refunds_total'] = (float)($sessionPkg['refunds_total'] ?? 0.0);
   $pid = (int)($sessionPkg['id'] ?? 0);
   $sessionPkg['sessions'] = $pid > 0 ? ppf_trainer_sessions_fetch_sessions_for_package($conn, $pid) : [];
-  $sessionPkg['financials'] = cp_session_financial_map($sessionPkg, $sessionPkg['sessions']);
   $sessionPkg['scheduled_sessions'] = array_values(array_filter($sessionPkg['sessions'], function ($row) {
     $status = strtolower((string)($row['status'] ?? ''));
     return in_array($status, ['scheduled', 'in_progress'], true);
@@ -909,7 +857,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       justify-content: center;
       gap: 6px;
       min-height: clamp(110px, 24vw, 140px);
-}
+    }
 
     .sessions-total span {
       text-transform: uppercase;
@@ -1149,7 +1097,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       cursor: pointer;
       transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
       box-shadow: 0 12px 24px color-mix(in srgb, var(--brand, #38bdf8) 18%, transparent 82%);
-  }
+    }
 
     .session-action-btn[data-session-start] {
       background: color-mix(in srgb, var(--brand, #38bdf8) 22%, transparent 78%);
@@ -2242,7 +2190,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     $priceEach = (float)($sessionPkg['price_per_session'] ?? 0.0);
     $priceLabel = $priceEach > 0 ? (cp_money($priceEach) . ' each') : 'Custom rate';
     $scheduledSessions = $sessionPkg['scheduled_sessions'];
-    $financials = $sessionPkg['financials'];
     $purchasedCount = (int)($sessionPkg['purchased_sessions'] ?? 0);
     $completedCount = (int)($sessionPkg['completed_count'] ?? 0);
     $remainingCount = (int)($sessionPkg['remaining_sessions'] ?? max(0, $purchasedCount - $completedCount));
@@ -2333,21 +2280,16 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
                 <th scope="col">Session</th>
                 <th scope="col">Starts</th>
                 <th scope="col">Ends</th>
-                <th scope="col">Price paid</th>
-                <th scope="col">Refund status</th>
                 <th scope="col" class="session-cell--actions">Action</th>
               </tr>
             </thead>
             <tbody>
               <?php foreach ($scheduledSessions as $idx => $session):
                 $sid = (int)($session['id'] ?? 0);
-                $financial = $financials[$sid] ?? ['amount' => 0.0, 'label' => 'Not refunded'];
                 $startIso = $session['scheduled_start'] ?? null;
                 $endIso = $session['scheduled_end'] ?? ($startIso ?? null);
                 $startLabel = cp_format_datetime($startIso);
                 $endLabel = cp_format_datetime($session['scheduled_end'] ?? null);
-                $paidLabel = cp_money($financial['amount'] ?? 0.0);
-                $refundLabel = $financial['label'] ?? 'Not refunded';
                 $statusKey = strtolower((string)($session['status'] ?? 'scheduled'));
                 $actualStart = $session['actual_start_at'] ?? null;
                 $actualEnd = $session['actual_end_at'] ?? null;
@@ -2364,8 +2306,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
                   <td><?php echo h('Session ' . ($idx + 1)); ?></td>
                   <td><?php echo h($startLabel); ?></td>
                   <td><?php echo h($endLabel); ?></td>
-                  <td><?php echo h($paidLabel); ?></td>
-                  <td><?php echo h($refundLabel); ?></td>
                   <td class="session-cell--actions">
                     <?php if ($canCloseSessions): ?>
                       <div class="session-action-group" data-session-controls="<?php echo $sid; ?>">
