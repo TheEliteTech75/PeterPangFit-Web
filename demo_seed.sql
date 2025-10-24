@@ -76,11 +76,12 @@ INSERT INTO users
   (id, role, is_client, is_trainer, email, password_hash, phone, birthdate, gender,
    first_name, last_name, inactivity_timeout_seconds, is_active, created_at, theme)
 VALUES
-  (1, 'admin', 0, 0, 'demo.admin@example.com', '$2y$12$AG9AG1ssGRFZKxQChYvtauOmIdEP.64Sw8gsDnUSFgseElY7l0HNu',
+  -- Passwords: DemoAdmin!2024 / DemoTrainer!2024 / DemoClient!2024
+  (1, 'admin', 0, 0, 'demo.admin@example.com', '$2y$12$/funyv8yayxn3I6LITVSXObWBpMP3fRYvfN4FxFiiXD7m4HQqqrq2',
    '+1-555-0100', '1988-05-06', 'female', 'Avery', 'Stone', 10800, 1, '2023-01-01 09:00:00', 'aurora'),
-  (2, 'trainer', 0, 1, 'demo.trainer@example.com', '$2y$12$TJHwpFo47xHXxdP8zgdSOuv0yNZRm3f1TG3WzJjOq6NmHXxdIoxzG',
+  (2, 'trainer', 0, 1, 'demo.trainer@example.com', '$2y$12$nLkM5nMYlD4kDsAt36gSmOUWmLnXJA39PwudFT.QGia4MaoA4XT4m',
    '+1-555-0101', '1990-07-14', 'male', 'Kai', 'Rivera', 7200, 1, '2023-01-03 10:30:00', 'summit'),
-  (3, 'client', 1, 0, 'demo.client@example.com', '$2y$12$XudN/tM5GOT0HpKZTRVNK.xjTApJtAqIGUFpAPU2PK9WrncJUsqbS',
+  (3, 'client', 1, 0, 'demo.client@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
    '+1-555-0102', '1995-02-22', 'female', 'Jordan', 'Parker', 7200, 1, '2023-02-10 15:45:00', 'default');
 
 -- ---------------------------------------------------------------------------
