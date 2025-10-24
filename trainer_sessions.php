@@ -131,7 +131,7 @@ function ts_status_badge(string $status): string {
     .ts-card h2{margin:0 0 12px 0;font-size:18px;}
     .ts-card h3{margin:16px 0 10px;font-size:16px;}
     .ts-card p{margin:0;color:var(--muted);}
-    .ts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;}
+    .ts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;padding-top:12px;}
     .ts-summary-item{padding:12px;border:1px solid var(--card-border);border-radius:14px;background:color-mix(in srgb, var(--panel) 88%, transparent 12%);}
     .ts-summary-item span{display:block;}
     .ts-summary-item .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
@@ -161,6 +161,7 @@ function ts_status_badge(string $status): string {
     .ts-inline-form textarea{min-height:70px;resize:vertical;}
     .ts-inline-form button{align-self:flex-end;}
     .ts-actions{display:flex;flex-wrap:wrap;gap:8px;}
+    table.ts-sessions .ts-actions{gap:12px;}
     .ts-session-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
     .ts-session-btn{display:inline-flex;align-items:center;justify-content:center;padding:7px 14px;border-radius:12px;font-size:13px;font-weight:600;border:1px solid color-mix(in srgb, var(--brand) 52%, transparent 48%);background:color-mix(in srgb, var(--brand) 24%, transparent 76%);color:var(--text);cursor:pointer;transition:transform .2s ease, box-shadow .2s ease, background .2s ease;box-shadow:0 12px 24px color-mix(in srgb, var(--brand) 20%, transparent 80%);}
     .ts-session-btn[data-ts-start]{background:color-mix(in srgb, var(--brand) 18%, transparent 82%);}
