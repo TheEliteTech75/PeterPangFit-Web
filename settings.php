@@ -156,6 +156,47 @@ function ss_set(mysqli $conn, string $key, string $value): bool {
     return ppf_ss_set($conn, $key, $value);
 }
 
+function ppf_fetch_user_credentials(mysqli $conn, int $uid): ?array {
+    if ($uid <= 0) return null;
+    $sql = "SELECT id, email, first_name, last_name, role, password_hash, twofa_secret, twofa_app_enabled FROM users WHERE id=? LIMIT 1";
+    if (!$st = $conn->prepare($sql)) {
+        return null;
+    }
+    $st->bind_param('i', $uid);
+    $st->execute();
+    $res = $st->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $st->close();
+    return $row ?: null;
+}
+
+function ppf_collect_admin_recipients(mysqli $conn): array {
+    $recipients = [];
+    if (!table_exists($conn, 'users')) {
+        return $recipients;
+    }
+    $sql = "SELECT DISTINCT email, first_name, last_name FROM users WHERE email <> '' AND LOWER(role) = 'admin'";
+    if ($st = $conn->prepare($sql)) {
+        $st->execute();
+        $res = $st->get_result();
+        while ($row = $res ? $res->fetch_assoc() : null) {
+            $email = trim((string)($row['email'] ?? ''));
+            if ($email === '') continue;
+            $key = strtolower($email);
+            if (isset($recipients[$key])) continue;
+            $first = trim((string)($row['first_name'] ?? ''));
+            $last  = trim((string)($row['last_name'] ?? ''));
+            $name  = trim($first . ' ' . $last);
+            if ($name === '') {
+                $name = $email;
+            }
+            $recipients[$key] = ['email' => $email, 'name' => $name];
+        }
+        $st->close();
+    }
+    return array_values($recipients);
+}
+
 // ---------- POST actions ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
@@ -227,27 +268,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $statusType = 'success';
             $messageParts = [];
 
+            $demoCurrentPassword = (string)($_POST['demo_current_password'] ?? '');
+            $demoTotpCode = preg_replace('/\D/', '', (string)($_POST['demo_totp_code'] ?? ''));
+            $cachedAuthRow = null;
+            $getAuthRow = function () use (&$cachedAuthRow, $conn, $uid) {
+                if ($cachedAuthRow === null) {
+                    $cachedAuthRow = ppf_fetch_user_credentials($conn, $uid);
+                }
+                return $cachedAuthRow;
+            };
+
             $demoToggleSubmitted = isset($_POST['demo_mode_enabled_present']);
             $desiredDemoEnabled = ($_POST['demo_mode_enabled'] ?? '') === '1';
             $demoToggleErrorMsg = '';
             $demoToggleSuccess = true;
             if ($demoToggleSubmitted && $desiredDemoEnabled !== $demoModeEnabled) {
                 $demoToggleSuccess = false;
-                if ($demoPrimaryConn instanceof mysqli) {
-                    try {
-                        if (function_exists('ppf_demo_set_enabled')) {
-                            $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled);
-                            $demoToggleSuccess = ($result !== false);
-                        } else {
-                            ensure_system_settings_table($demoPrimaryConn);
-                            $demoToggleSuccess = ss_set($demoPrimaryConn, 'demo_mode_enabled', $desiredDemoEnabled ? '1' : '0');
-                        }
-                    } catch (Throwable $e) {
-                        $demoToggleErrorMsg = $e->getMessage();
-                        $demoToggleSuccess = false;
-                    }
+                if ($demoCurrentPassword === '') {
+                    $demoToggleErrorMsg = 'Enter your current password to toggle Demo Mode.';
+                } elseif (strlen($demoTotpCode) !== 6) {
+                    $demoToggleErrorMsg = 'Enter the 6-digit authenticator code to toggle Demo Mode.';
                 } else {
-                    $demoToggleErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                    $authRow = $getAuthRow();
+                    if (!$authRow || empty($authRow['password_hash'])) {
+                        $demoToggleErrorMsg = 'Unable to verify your credentials. Please sign in again.';
+                    } elseif (!password_verify($demoCurrentPassword, (string)$authRow['password_hash'])) {
+                        $demoToggleErrorMsg = 'Incorrect current password.';
+                    } else {
+                        $secret = strtoupper(preg_replace('/\s+/', '', (string)($authRow['twofa_secret'] ?? '')));
+                        $appEnabled = (int)($authRow['twofa_app_enabled'] ?? 0) === 1;
+                        if (!$appEnabled || $secret === '') {
+                            $demoToggleErrorMsg = 'Authenticator app must be enabled before toggling Demo Mode.';
+                        } elseif (!ppf_totp_verify($secret, $demoTotpCode, 30, 6, 1)) {
+                            $demoToggleErrorMsg = 'Authenticator code was not recognized.';
+                        } elseif ($demoPrimaryConn instanceof mysqli) {
+                            try {
+                                if (function_exists('ppf_demo_set_enabled')) {
+                                    $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled);
+                                    $demoToggleSuccess = ($result !== false);
+                                } else {
+                                    ensure_system_settings_table($demoPrimaryConn);
+                                    $demoToggleSuccess = ss_set($demoPrimaryConn, 'demo_mode_enabled', $desiredDemoEnabled ? '1' : '0');
+                                }
+                            } catch (Throwable $e) {
+                                $demoToggleErrorMsg = $e->getMessage();
+                                $demoToggleSuccess = false;
+                            }
+                        } else {
+                            $demoToggleErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                        }
+                    }
                 }
 
                 if ($demoToggleSuccess) {
@@ -256,6 +326,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $action = $desiredDemoEnabled ? 'demo_mode_enabled' : 'demo_mode_disabled';
                         $details = $desiredDemoEnabled ? 'Demo Mode toggled on via settings.' : 'Demo Mode toggled off via settings.';
                         ppf_log($conn, $uid, $email ?: null, $role ?: null, $action, 'system', 'demo_mode', $details);
+                    }
+                    $notifyConn = $demoPrimaryConn instanceof mysqli ? $demoPrimaryConn : $conn;
+                    $recipients = $notifyConn instanceof mysqli ? ppf_collect_admin_recipients($notifyConn) : [];
+                    $stateWord = $desiredDemoEnabled ? 'enabled' : 'disabled';
+                    $actorName = '';
+                    $authRow = $getAuthRow();
+                    if ($authRow) {
+                        $first = trim((string)($authRow['first_name'] ?? ''));
+                        $last  = trim((string)($authRow['last_name'] ?? ''));
+                        $actorName = trim($first . ' ' . $last);
+                    }
+                    if ($actorName === '') {
+                        $actorName = $email !== '' ? $email : ('Admin #' . $uid);
+                    }
+                    $timestamp = date('Y-m-d H:i:s T');
+                    $ipAddress = function_exists('ppf_client_ip') ? ppf_client_ip() : ($_SERVER['REMOTE_ADDR'] ?? '');
+                    $subject = 'Demo Mode ' . ucfirst($stateWord);
+                    $bodyLines = [
+                        'Hello Admin,',
+                        '',
+                        'Demo Mode was ' . $stateWord . ' on ' . $timestamp . ' by ' . $actorName . '.',
+                    ];
+                    if ($email !== '') {
+                        $bodyLines[] = 'Account email: ' . $email;
+                    }
+                    if ($ipAddress !== '') {
+                        $bodyLines[] = 'Originating IP: ' . $ipAddress;
+                    }
+                    $bodyLines[] = '';
+                    $bodyLines[] = 'Review the System Logs for additional context if this was unexpected.';
+                    $bodyLines[] = '';
+                    $bodyLines[] = '— Peter Pang Fit';
+                    $emailBody = implode("\n", $bodyLines);
+                    $sentCount = 0;
+                    $failedEmails = [];
+                    if ($recipients) {
+                        foreach ($recipients as $recipient) {
+                            $ok = @send_plain_email($recipient['email'], $recipient['name'], $subject, $emailBody);
+                            if ($ok) {
+                                $sentCount++;
+                            } else {
+                                $failedEmails[] = $recipient['email'];
+                            }
+                        }
+                        if ($sentCount > 0 && function_exists('ppf_log')) {
+                            $details = 'Sent ' . $sentCount . ' Demo Mode ' . $stateWord . ' notification email(s).';
+                            ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_notification_sent', 'system', 'demo_mode', $details);
+                        }
+                        if ($failedEmails) {
+                            $statusType = 'error';
+                            $failureList = implode(', ', $failedEmails);
+                            $messageParts[] = 'Some admin notifications could not be delivered: ' . $failureList . '.';
+                            if (function_exists('ppf_log')) {
+                                $details = 'Failed to email: ' . $failureList;
+                                ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_notification_failed', 'system', 'demo_mode', $details);
+                            }
+                        }
+                    } else {
+                        $messageParts[] = 'No admin notification emails were sent because no admin email addresses were found.';
+                        if (function_exists('ppf_log')) {
+                            ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_notification_skipped', 'system', 'demo_mode', 'No admin recipients available.');
+                        }
                     }
                 } else {
                     $statusType = 'error';
@@ -278,26 +410,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($demoResetRequested) {
                 $demoResetSuccess = false;
                 $demoResetErrorMsg = '';
-                if ($demoPrimaryConn instanceof mysqli) {
-                    try {
-                        if (function_exists('ppf_demo_reset')) {
-                            $result = ppf_demo_reset($demoPrimaryConn);
-                            $demoResetSuccess = ($result !== false);
-                        } else {
-                            $demoResetSuccess = false;
-                            $demoResetErrorMsg = 'Demo reset helper is unavailable.';
-                        }
-                    } catch (Throwable $e) {
-                        $demoResetSuccess = false;
-                        $demoResetErrorMsg = $e->getMessage();
-                    }
+                $demoResetMessages = [];
+                $demoResetLogged = false;
+                if ($demoCurrentPassword === '') {
+                    $demoResetErrorMsg = 'Enter your current password to reset the demo data.';
                 } else {
-                    $demoResetErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                    $authRow = $getAuthRow();
+                    if (!$authRow || empty($authRow['password_hash'])) {
+                        $demoResetErrorMsg = 'Unable to verify your credentials. Please sign in again.';
+                    } elseif (!password_verify($demoCurrentPassword, (string)$authRow['password_hash'])) {
+                        $demoResetErrorMsg = 'Incorrect current password.';
+                    }
+                }
+                if ($demoResetErrorMsg === '') {
+                    if ($demoPrimaryConn instanceof mysqli) {
+                        try {
+                            if (function_exists('ppf_demo_reset')) {
+                                $result = ppf_demo_reset($demoPrimaryConn);
+                                if (is_array($result)) {
+                                    $demoResetSuccess = !empty($result['success']);
+                                    $demoResetMessages = array_map('trim', (array)($result['messages'] ?? []));
+                                    $errors = array_map('trim', (array)($result['errors'] ?? []));
+                                    $errors = array_filter($errors, static function ($val) { return $val !== ''; });
+                                    if ($errors) {
+                                        $demoResetErrorMsg = trim(implode(' ', $errors));
+                                    }
+                                    $demoResetLogged = !empty($result['logged']);
+                                } else {
+                                    $demoResetSuccess = ($result !== false);
+                                }
+                            } else {
+                                $demoResetSuccess = false;
+                                $demoResetErrorMsg = 'Demo reset helper is unavailable.';
+                            }
+                        } catch (Throwable $e) {
+                            $demoResetSuccess = false;
+                            $demoResetErrorMsg = $e->getMessage();
+                        }
+                    } else {
+                        $demoResetErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                    }
                 }
 
                 if ($demoResetSuccess) {
                     $messageParts[] = 'Demo data reset.';
-                    if (function_exists('ppf_log')) {
+                    if ($demoResetMessages) {
+                        $messageParts = array_merge($messageParts, array_filter($demoResetMessages));
+                    }
+                    if (!$demoResetLogged && function_exists('ppf_log')) {
                         ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_reset', 'system', 'demo_mode', 'Demo data reset via settings.');
                     }
                 } else {
@@ -310,7 +470,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $msg .= '.';
                     }
                     $messageParts[] = $msg;
-                    if (function_exists('ppf_log')) {
+                    if (!$demoResetLogged && function_exists('ppf_log')) {
                         $details = $demoResetErrorMsg !== '' ? $demoResetErrorMsg : 'Unknown error resetting Demo Mode data.';
                         ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_reset_failed', 'system', 'demo_mode', $details);
                     }
@@ -1164,6 +1324,13 @@ if ($demoModeControlsAvailable) {
       align-items: center;
     }
 
+    .demo-mode-credentials {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
     .demo-mode-warning {
       color: #fca5a5;
     }
@@ -1629,15 +1796,27 @@ if ($demoModeControlsAvailable) {
                 <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>"><?php echo h($demoModeStatusLabel); ?></span>
               </div>
               <p class="small-text">Toggle the sanitized training environment for walkthroughs without touching live data.</p>
+              <p class="small-text">Enter the authenticator app code and your current password to enable or disable Demo Mode. Your current password is also required to reset the demo data.</p>
               <label class="small-text" style="display:flex;align-items:center;gap:8px;">
                 <input type="checkbox" name="demo_mode_enabled" value="1" <?php echo $demoModeEnabled ? 'checked' : ''; ?> <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>> Enable Demo Mode experience
               </label>
+              <?php if (!$twofaAppEnabled): ?>
+                <p class="demo-mode-warning small-text">Enable your authenticator app before attempting to toggle Demo Mode.</p>
+              <?php endif; ?>
               <?php if ($demoModeStatusMessage): ?>
                 <p class="demo-mode-warning small-text"><?php echo h($demoModeStatusMessage); ?></p>
               <?php endif; ?>
+              <div class="demo-mode-credentials">
+                <label class="small-text" for="demo_totp_code">Authenticator app code</label>
+                <input class="input" id="demo_totp_code" name="demo_totp_code" inputmode="numeric" pattern="\d*" autocomplete="one-time-code" placeholder="6-digit code required to change Demo Mode."
+                  <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>
+                <label class="small-text" for="demo_current_password">Current password</label>
+                <input class="input" id="demo_current_password" name="demo_current_password" type="password" autocomplete="current-password" placeholder="Required for Demo Mode changes"
+                  <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>
+              </div>
               <div class="demo-mode-actions">
                 <button class="btn danger" type="submit" name="demo_reset" value="1" formnovalidate <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
-                <span class="small-text">Restore demo accounts and seed content to their defaults.</span>
+                <span class="small-text">Restore demo accounts and seed content to their defaults. Requires your current password.</span>
               </div>
             </div>
           </div>
