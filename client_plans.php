@@ -490,6 +490,9 @@ $sessionPackages = ppf_trainer_sessions_fetch_packages($conn, null, $client_id);
 $sessionTotalsPurchased = 0;
 $sessionTotalsUsed = 0;
 $sessionTotalsRemaining = 0;
+$sessionTotalsScheduled = 0;
+$sessionTotalsPaid = 0.0;
+$sessionTotalsRefunded = 0.0;
 foreach ($sessionPackages as &$sessionPkg) {
   $sessionPkg['purchased_sessions'] = (int)($sessionPkg['purchased_sessions'] ?? 0);
   $sessionPkg['completed_count'] = (int)($sessionPkg['completed_count'] ?? 0);
@@ -501,11 +504,17 @@ foreach ($sessionPackages as &$sessionPkg) {
     $status = strtolower((string)($row['status'] ?? ''));
     return in_array($status, ['scheduled', 'in_progress'], true);
   }));
+  $sessionPkg['scheduled_count'] = count($sessionPkg['scheduled_sessions']);
+  $sessionPkg['transactions'] = $pid > 0 ? ppf_trainer_sessions_fetch_transactions_for_package($conn, $pid) : [];
   $sessionTotalsPurchased += $sessionPkg['purchased_sessions'];
   $sessionTotalsUsed += $sessionPkg['completed_count'];
   $sessionTotalsRemaining += $sessionPkg['remaining_sessions'];
+  $sessionTotalsScheduled += $sessionPkg['scheduled_count'];
+  $sessionTotalsPaid += max(0.0, $sessionPkg['payments_total']);
+  $sessionTotalsRefunded += max(0.0, $sessionPkg['refunds_total']);
 }
 unset($sessionPkg);
+$sessionTotalsNet = max(0.0, $sessionTotalsPaid - $sessionTotalsRefunded);
 $hasSessionPackages = !empty($sessionPackages);
 $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
@@ -891,6 +900,112 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
       overflow: hidden;
       background: color-mix(in srgb, var(--panel, rgba(10, 10, 10, 0.82)) 88%, transparent 12%);
+    }
+
+    .session-card__payments {
+      border-radius: var(--radius-sm, 14px);
+      border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
+      background: color-mix(in srgb, var(--panel, rgba(10, 10, 10, 0.82)) 88%, transparent 12%);
+      padding: clamp(16px, 4vw, 22px);
+      display: grid;
+      gap: 18px;
+    }
+
+    .session-payments__summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .session-payments__metric {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      min-height: clamp(100px, 22vw, 128px);
+    }
+
+    .session-payments__metric span {
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      font-size: 11px;
+      color: var(--muted, #9ca8bf);
+    }
+
+    .session-payments__metric strong {
+      font-size: 16px;
+      color: var(--text, #f3f7ff);
+    }
+
+    .session-payments__history h4 {
+      margin: 0 0 12px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted, #9ca8bf);
+    }
+
+    .session-payments__items {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    .session-payments__item {
+      border-top: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+      padding-top: 12px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .session-payments__item:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .session-payments__item-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .session-payments__type {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted, #9ca8bf);
+    }
+
+    .session-payments__type--payment {
+      color: #7ee3a1;
+    }
+
+    .session-payments__type--refund {
+      color: #ff9f9f;
+    }
+
+    .session-payments__amount {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text, #f3f7ff);
+    }
+
+    .session-payments__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      font-size: 12px;
+      color: var(--muted, #9ca8bf);
+    }
+
+    .session-payments__empty {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted, #9ca8bf);
     }
 
     .session-table {
@@ -1969,6 +2084,10 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
             <strong id="sessionsTotalUsed" data-session-total="used"><?php echo $sessionTotalsUsed; ?></strong>
           </div>
           <div class="hero-stat">
+            <span class="hero-stat__label">Sessions scheduled</span>
+            <strong id="sessionsTotalScheduled" data-session-total="scheduled"><?php echo $sessionTotalsScheduled; ?></strong>
+          </div>
+          <div class="hero-stat">
             <span class="hero-stat__label">Sessions remaining</span>
             <strong id="sessionsTotalRemaining" data-session-total="remaining"><?php echo $sessionTotalsRemaining; ?></strong>
           </div>
@@ -2011,6 +2130,11 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     $purchasedCount = (int)($sessionPkg['purchased_sessions'] ?? 0);
     $completedCount = (int)($sessionPkg['completed_count'] ?? 0);
     $remainingCount = (int)($sessionPkg['remaining_sessions'] ?? max(0, $purchasedCount - $completedCount));
+    $scheduledCount = (int)($sessionPkg['scheduled_count'] ?? count($scheduledSessions));
+    $transactions = $sessionPkg['transactions'] ?? [];
+    $paymentsTotal = max(0.0, (float)($sessionPkg['payments_total'] ?? 0.0));
+    $refundsTotal = max(0.0, (float)($sessionPkg['refunds_total'] ?? 0.0));
+    $netTotal = max(0.0, $paymentsTotal - $refundsTotal);
   ?>
     <article class="session-card" data-package-id="<?php echo $pkgId; ?>">
       <header class="session-card__header">
@@ -2035,6 +2159,55 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
           </div>
         </div>
       </header>
+
+      <div class="session-card__payments">
+        <div class="session-payments__summary">
+          <div class="session-payments__metric">
+            <span>Total paid</span>
+            <strong><?php echo h(cp_money($paymentsTotal)); ?></strong>
+          </div>
+          <div class="session-payments__metric">
+            <span>Refunded</span>
+            <strong><?php echo h(cp_money($refundsTotal)); ?></strong>
+          </div>
+          <div class="session-payments__metric">
+            <span>Net applied</span>
+            <strong><?php echo h(cp_money($netTotal)); ?></strong>
+          </div>
+        </div>
+
+        <?php if ($transactions): ?>
+          <div class="session-payments__history">
+            <h4>Payment history</h4>
+            <ul class="session-payments__items">
+              <?php foreach ($transactions as $txn):
+                $type = strtolower((string)($txn['txn_type'] ?? 'payment'));
+                $typeClass = $type === 'refund' ? 'refund' : 'payment';
+                $typeLabel = $type === 'refund' ? 'Refund' : 'Payment';
+                $amountRaw = (float)($txn['amount'] ?? 0.0);
+                $amountDisplay = cp_money($type === 'refund' ? -$amountRaw : $amountRaw);
+                $createdLabel = cp_format_datetime($txn['created_at'] ?? null);
+                $description = trim((string)($txn['description'] ?? ''));
+              ?>
+              <li class="session-payments__item">
+                <div class="session-payments__item-header">
+                  <span class="session-payments__type session-payments__type--<?php echo h($typeClass); ?>"><?php echo h($typeLabel); ?></span>
+                  <span class="session-payments__amount"><?php echo h($amountDisplay); ?></span>
+                </div>
+                <div class="session-payments__meta">
+                  <span><?php echo h($createdLabel); ?></span>
+                  <?php if ($description !== ''): ?>
+                    <span><?php echo h($description); ?></span>
+                  <?php endif; ?>
+                </div>
+              </li>
+              <?php endforeach; ?>
+            </ul>
+          </div>
+        <?php else: ?>
+          <p class="session-payments__empty">No payments have been recorded for this package yet.</p>
+        <?php endif; ?>
+      </div>
 
       <?php if ($scheduledSessions): ?>
         <div class="session-card__table-wrap">
