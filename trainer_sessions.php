@@ -160,13 +160,13 @@ function ts_status_badge(string $status): string {
     .ts-inline-form input,.ts-inline-form textarea{padding:8px 10px;border-radius:10px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text);}
     .ts-inline-form textarea{min-height:70px;resize:vertical;}
     .ts-inline-form button{align-self:flex-end;}
-    .ts-actions{display:flex;flex-wrap:wrap;gap:8px;}
-    .ts-actions>*{margin:4px 10px 0 0;}
-    .ts-actions>*:last-child{margin-right:0;}
-    table.ts-sessions .ts-actions{gap:12px;}
-    .ts-session-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
-    .ts-session-controls>*{margin:4px 10px 0 0;}
-    .ts-session-controls>*:last-child{margin-right:0;}
+    .ts-actions{--ts-actions-gap:14px;display:flex;flex-wrap:wrap;align-items:center;margin:-4px calc(var(--ts-actions-gap)/-2) 0;}
+    .ts-actions>*{margin:4px calc(var(--ts-actions-gap)/2) 0;}
+    .ts-actions form{display:flex;}
+    table.ts-sessions .ts-actions{--ts-actions-gap:16px;}
+    .ts-session-controls{--ts-session-gap:16px;display:flex;flex-wrap:wrap;align-items:center;margin:-4px calc(var(--ts-session-gap)/-2) 8px;}
+    .ts-session-controls>*{margin:4px calc(var(--ts-session-gap)/2) 0;}
+    .ts-session-controls form{display:flex;}
     .ts-session-btn{display:inline-flex;align-items:center;justify-content:center;padding:7px 14px;border-radius:12px;font-size:13px;font-weight:600;border:1px solid color-mix(in srgb, var(--brand) 52%, transparent 48%);background:color-mix(in srgb, var(--brand) 24%, transparent 76%);color:var(--text);cursor:pointer;transition:transform .2s ease, box-shadow .2s ease, background .2s ease;box-shadow:0 12px 24px color-mix(in srgb, var(--brand) 20%, transparent 80%);}
     .ts-session-btn[data-ts-start]{background:color-mix(in srgb, var(--brand) 18%, transparent 82%);}
     .ts-session-btn[data-ts-start]:hover:not([disabled]),.ts-session-btn[data-ts-start]:focus-visible:not([disabled]){background:color-mix(in srgb, var(--brand) 32%, transparent 68%);transform:translateY(-1px);}
