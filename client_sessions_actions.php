@@ -27,28 +27,48 @@ function client_sessions_format_datetime(?string $iso): string {
     }
 }
 
-function client_sessions_within_completion_window(array $session): bool {
+function client_sessions_within_timer_window(array $session): bool {
     $now = new DateTimeImmutable('now');
+    $startRaw = $session['scheduled_start'] ?? null;
+    if (!$startRaw) {
+        return false;
+    }
+    try {
+        $start = new DateTimeImmutable($startRaw);
+    } catch (Throwable $e) {
+        return false;
+    }
+
+    $windowStart = $start->sub(new DateInterval('PT30M'));
+    if ($now < $windowStart) {
+        return false;
+    }
+
     $endRaw = $session['scheduled_end'] ?? null;
     if ($endRaw) {
         try {
             $end = new DateTimeImmutable($endRaw);
-            $windowStart = $end->sub(new DateInterval('PT15M'));
-            return $now >= $windowStart;
+            $windowEnd = $end->add(new DateInterval('PT30M'));
+            if ($now > $windowEnd) {
+                return false;
+            }
         } catch (Throwable $e) {
-            // fall through to start time fallback
+            // Ignore invalid end dates; treat as open ended after window start.
         }
     }
-    $startRaw = $session['scheduled_start'] ?? null;
-    if ($startRaw) {
-        try {
-            $start = new DateTimeImmutable($startRaw);
-            return $now >= $start;
-        } catch (Throwable $e) {
-            return false;
-        }
-    }
-    return false;
+
+    return true;
+}
+
+function client_sessions_shape_session(array $session): array {
+    return [
+        'id' => (int)($session['id'] ?? 0),
+        'status' => strtolower((string)($session['status'] ?? 'scheduled')),
+        'scheduled_start' => $session['scheduled_start'] ?? null,
+        'scheduled_end' => $session['scheduled_end'] ?? null,
+        'actual_start_at' => $session['actual_start_at'] ?? null,
+        'actual_end_at' => $session['actual_end_at'] ?? null,
+    ];
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -70,7 +90,8 @@ if ($actorId <= 0) {
 ppf_trainer_sessions_ensure_schema($conn);
 
 $action = (string)($_POST['action'] ?? '');
-if ($action !== 'complete_session') {
+$allowedActions = ['start_session', 'end_session'];
+if (!in_array($action, $allowedActions, true)) {
     client_sessions_respond(false, 'Unknown action.');
 }
 
@@ -116,28 +137,94 @@ if (!$allowed) {
 }
 
 $status = strtolower((string)($session['status'] ?? 'scheduled'));
-if ($status === 'completed') {
-    client_sessions_respond(true, 'Session already completed.', []);
-}
-if ($status !== 'scheduled') {
-    client_sessions_respond(false, 'Only scheduled sessions can be completed.');
+$nowString = date('Y-m-d H:i:s');
+
+if ($action === 'start_session') {
+    if ($status === 'completed') {
+        client_sessions_respond(true, 'Session already completed.', [
+            'session' => client_sessions_shape_session($session),
+        ]);
+    }
+    if ($status === 'cancelled') {
+        client_sessions_respond(false, 'Cancelled sessions cannot be started.');
+    }
+    if ($status === 'in_progress' && !empty($session['actual_start_at'])) {
+        client_sessions_respond(true, 'Session already in progress.', [
+            'session' => client_sessions_shape_session($session),
+        ]);
+    }
+    if (!client_sessions_within_timer_window($session)) {
+        client_sessions_respond(false, 'Sessions can only be started within the allowed window.');
+    }
+
+    $updateSql = "UPDATE trainer_sessions
+                  SET status='in_progress', actual_start_at = COALESCE(actual_start_at, NOW()), timer_started_by = IF(actual_start_at IS NULL, ?, timer_started_by), updated_at = NOW()
+                  WHERE id = ? AND status IN ('scheduled','in_progress')";
+    if (!$updateStmt = $conn->prepare($updateSql)) {
+        client_sessions_respond(false, 'Unable to update the session.');
+    }
+    $updateStmt->bind_param('ii', $actorId, $sessionId);
+    if (!$updateStmt->execute()) {
+        $err = $updateStmt->error;
+        $updateStmt->close();
+        client_sessions_respond(false, 'Failed to start the session. ' . $err);
+    }
+    $affected = $updateStmt->affected_rows;
+    $updateStmt->close();
+
+    if ($affected <= 0 && $status !== 'in_progress') {
+        client_sessions_respond(false, 'Session is no longer pending.');
+    }
+
+    $session['status'] = 'in_progress';
+    if (empty($session['actual_start_at'])) {
+        $session['actual_start_at'] = $nowString;
+    }
+    $session['timer_started_by'] = $actorId;
+
+    if (function_exists('ppf_log')) {
+        $details = json_encode([
+            'session_id' => $sessionId,
+            'package_id' => $session['package_id'] ?? null,
+            'started_at' => $session['actual_start_at'],
+            'started_by' => $actorId,
+            'source' => 'client_plans',
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_session_started', 'session', (string)$sessionId, $details);
+    }
+
+    client_sessions_respond(true, 'Session started.', [
+        'session' => client_sessions_shape_session($session),
+    ]);
 }
 
-if (!client_sessions_within_completion_window($session)) {
-    client_sessions_respond(false, 'Sessions can only be ended within 15 minutes of the scheduled end time.');
+// End session flow
+if ($status === 'completed' && !empty($session['actual_end_at'])) {
+    client_sessions_respond(true, 'Session already completed.', [
+        'session' => client_sessions_shape_session($session),
+    ]);
+}
+if ($status === 'cancelled') {
+    client_sessions_respond(false, 'Cancelled sessions cannot be ended.');
+}
+if (!client_sessions_within_timer_window($session)) {
+    client_sessions_respond(false, 'Sessions can only be ended within the allowed window.');
+}
+if (empty($session['actual_start_at']) && $status !== 'in_progress') {
+    client_sessions_respond(false, 'Please start the session before ending it.');
 }
 
 $updateSql = "UPDATE trainer_sessions
-              SET status='completed', completed_at = NOW(), completion_marked_by = ?, updated_at = NOW()
-              WHERE id = ? AND status='scheduled'";
+              SET status='completed', actual_end_at = NOW(), completed_at = NOW(), completion_marked_by = ?, timer_ended_by = ?, duration_seconds = CASE WHEN actual_start_at IS NULL THEN duration_seconds ELSE TIMESTAMPDIFF(SECOND, actual_start_at, NOW()) END, updated_at = NOW()
+              WHERE id = ? AND status IN ('scheduled','in_progress')";
 if (!$updateStmt = $conn->prepare($updateSql)) {
     client_sessions_respond(false, 'Unable to update the session.');
 }
-$updateStmt->bind_param('ii', $actorId, $sessionId);
+$updateStmt->bind_param('iii', $actorId, $actorId, $sessionId);
 if (!$updateStmt->execute()) {
     $err = $updateStmt->error;
     $updateStmt->close();
-    client_sessions_respond(false, 'Failed to update the session. ' . $err);
+    client_sessions_respond(false, 'Failed to end the session. ' . $err);
 }
 $affected = $updateStmt->affected_rows;
 $updateStmt->close();
@@ -146,11 +233,16 @@ if ($affected <= 0) {
     client_sessions_respond(false, 'Session is no longer pending.');
 }
 
+$session['status'] = 'completed';
+$session['actual_end_at'] = $nowString;
+$session['completed_at'] = $nowString;
+$session['completion_marked_by'] = $actorId;
+
 if (function_exists('ppf_log')) {
     $details = json_encode([
         'session_id' => $sessionId,
         'package_id' => $session['package_id'] ?? null,
-        'completed_at' => date('Y-m-d H:i:s'),
+        'completed_at' => $nowString,
         'completed_by' => $actorId,
         'source' => 'client_plans',
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -164,11 +256,13 @@ if ($packageId > 0) {
     if ($summary) {
         $purchased = (int)($summary['purchased_sessions'] ?? 0);
         $used = (int)($summary['completed_count'] ?? 0);
+        $scheduled = (int)($summary['scheduled_open'] ?? 0);
         $remaining = max(0, $purchased - $used);
         $packageTotals = [
             'package_id' => $packageId,
             'purchased' => $purchased,
             'used' => $used,
+            'scheduled' => $scheduled,
             'remaining' => $remaining,
         ];
     }
@@ -179,13 +273,16 @@ if ($clientId > 0) {
     $packages = ppf_trainer_sessions_fetch_packages($conn, null, $clientId);
     $totalPurchased = 0;
     $totalUsed = 0;
+    $totalScheduled = 0;
     foreach ($packages as $pkg) {
         $totalPurchased += (int)($pkg['purchased_sessions'] ?? 0);
         $totalUsed += (int)($pkg['completed_count'] ?? 0);
+        $totalScheduled += (int)($pkg['scheduled_open'] ?? 0);
     }
     $overallTotals = [
         'purchased' => $totalPurchased,
         'used' => $totalUsed,
+        'scheduled' => $totalScheduled,
         'remaining' => max(0, $totalPurchased - $totalUsed),
     ];
 }
@@ -207,4 +304,5 @@ if ($clientEmail) {
 client_sessions_respond(true, 'Session completed.', [
     'package_totals' => $packageTotals,
     'overall_totals' => $overallTotals,
+    'session' => client_sessions_shape_session($session),
 ]);
