@@ -550,7 +550,8 @@ foreach ($sessionPackages as &$sessionPkg) {
   $sessionPkg['sessions'] = $pid > 0 ? ppf_trainer_sessions_fetch_sessions_for_package($conn, $pid) : [];
   $sessionPkg['financials'] = cp_session_financial_map($sessionPkg, $sessionPkg['sessions']);
   $sessionPkg['scheduled_sessions'] = array_values(array_filter($sessionPkg['sessions'], function ($row) {
-    return strtolower((string)($row['status'] ?? '')) === 'scheduled';
+    $status = strtolower((string)($row['status'] ?? ''));
+    return in_array($status, ['scheduled', 'in_progress'], true);
   }));
   $sessionTotalsPurchased += $sessionPkg['purchased_sessions'];
   $sessionTotalsUsed += $sessionPkg['completed_count'];
@@ -998,47 +999,89 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       font-size: 14px;
     }
 
-    .session-end-btn {
+    .session-action-group {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .session-action-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       padding: 9px 16px;
       border-radius: 12px;
       border: 1px solid color-mix(in srgb, var(--brand, #38bdf8) 55%, transparent 45%);
-      background: color-mix(in srgb, var(--brand, #38bdf8) 32%, transparent 68%);
+      background: color-mix(in srgb, var(--brand, #38bdf8) 30%, transparent 70%);
       color: var(--text, #f3f7ff);
       font-weight: 600;
       font-size: 13px;
       cursor: pointer;
       transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-      box-shadow: 0 12px 24px color-mix(in srgb, var(--brand, #38bdf8) 20%, transparent 80%);
+      box-shadow: 0 12px 24px color-mix(in srgb, var(--brand, #38bdf8) 18%, transparent 82%);
     }
 
-    .session-end-btn:hover:not([disabled]),
-    .session-end-btn:focus-visible:not([disabled]) {
+    .session-action-btn[data-session-start] {
+      background: color-mix(in srgb, var(--brand, #38bdf8) 22%, transparent 78%);
+    }
+
+    .session-action-btn[data-session-start]:hover:not([disabled]),
+    .session-action-btn[data-session-start]:focus-visible:not([disabled]) {
+      background: color-mix(in srgb, var(--brand, #38bdf8) 34%, transparent 66%);
+      transform: translateY(-1px);
+    }
+
+    .session-action-btn[data-session-end]:hover:not([disabled]),
+    .session-action-btn[data-session-end]:focus-visible:not([disabled]) {
       background: color-mix(in srgb, var(--brand, #38bdf8) 42%, transparent 58%);
       transform: translateY(-1px);
     }
 
-    .session-end-btn[disabled] {
+    .session-action-btn[disabled] {
       opacity: 0.65;
       cursor: not-allowed;
       transform: none;
       box-shadow: none;
     }
 
-    .session-end-btn.is-processing {
+    .session-action-btn.is-processing {
       cursor: wait;
       background: color-mix(in srgb, var(--brand, #38bdf8) 18%, var(--muted, #9ca8bf) 82%);
       box-shadow: none;
     }
 
-    .session-end-btn.is-complete {
+    .session-action-btn.is-complete {
       cursor: default;
       background: color-mix(in srgb, var(--success, #32cd32) 32%, transparent 68%);
       border-color: color-mix(in srgb, var(--success, #32cd32) 55%, transparent 45%);
       color: color-mix(in srgb, var(--success, #32cd32) 70%, var(--text, #f3f7ff) 30%);
       box-shadow: none;
+    }
+
+    .session-action-btn.is-started {
+      background: color-mix(in srgb, var(--success, #32cd32) 20%, transparent 80%);
+      border-color: color-mix(in srgb, var(--success, #32cd32) 55%, transparent 45%);
+      color: color-mix(in srgb, var(--success, #32cd32) 68%, var(--text, #f3f7ff) 32%);
+    }
+
+    .session-action-btn.is-cancelled {
+      background: color-mix(in srgb, var(--danger, #ef4444) 22%, transparent 78%);
+      border-color: color-mix(in srgb, var(--danger, #ef4444) 58%, transparent 42%);
+      color: color-mix(in srgb, var(--danger, #ef4444) 70%, var(--text, #f3f7ff) 30%);
+      box-shadow: none;
+    }
+
+    .session-live-timer {
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      color: color-mix(in srgb, var(--success, #32cd32) 70%, var(--text, #f3f7ff) 30%);
+      background: color-mix(in srgb, var(--success, #32cd32) 18%, transparent 82%);
+      border-radius: 999px;
+      padding: 6px 12px;
+      border: 1px solid color-mix(in srgb, var(--success, #32cd32) 45%, transparent 55%);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success, #32cd32) 18%, transparent 82%);
     }
 
     @media (max-width: 720px) {
@@ -2097,8 +2140,18 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
                 $paidLabel = cp_money($financial['amount'] ?? 0.0);
                 $refundLabel = $financial['label'] ?? 'Not refunded';
                 $statusKey = strtolower((string)($session['status'] ?? 'scheduled'));
+                $actualStart = $session['actual_start_at'] ?? null;
+                $actualEnd = $session['actual_end_at'] ?? null;
+                $durationSeconds = $session['duration_seconds'] ?? null;
               ?>
-                <tr data-session-row="<?php echo $sid; ?>">
+                <tr data-session-row="<?php echo $sid; ?>"
+                    data-package-id="<?php echo $pkgId; ?>"
+                    data-session-status="<?php echo h($statusKey); ?>"
+                    data-session-start-iso="<?php echo h($startIso ?? ''); ?>"
+                    data-session-end-iso="<?php echo h($endIso ?? ''); ?>"
+                    data-session-actual-start="<?php echo h($actualStart ?? ''); ?>"
+                    data-session-actual-end="<?php echo h($actualEnd ?? ''); ?>"
+                    data-session-duration="<?php echo $durationSeconds !== null ? (int)$durationSeconds : ''; ?>">
                   <td><?php echo h('Session ' . ($idx + 1)); ?></td>
                   <td><?php echo h($startLabel); ?></td>
                   <td><?php echo h($endLabel); ?></td>
@@ -2106,16 +2159,19 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
                   <td><?php echo h($refundLabel); ?></td>
                   <td class="session-cell--actions">
                     <?php if ($canCloseSessions): ?>
-                      <button type="button"
-                              class="session-end-btn"
-                              data-session-end="true"
-                              data-session-id="<?php echo $sid; ?>"
-                              data-package-id="<?php echo $pkgId; ?>"
-                              data-session-status="<?php echo h($statusKey); ?>"
-                              data-session-end-iso="<?php echo h($endIso ?? ''); ?>"
-                              data-session-start-iso="<?php echo h($startIso ?? ''); ?>"
-                              data-session-label="<?php echo h('Session ' . ($idx + 1)); ?>"
-                              <?php if ($statusKey !== 'scheduled'): ?>disabled aria-disabled="true"<?php else: ?>disabled<?php endif; ?>>End Session</button>
+                      <div class="session-action-group" data-session-controls="<?php echo $sid; ?>">
+                        <button type="button"
+                                class="session-action-btn"
+                                data-session-start="true"
+                                data-session-id="<?php echo $sid; ?>"
+                                <?php if ($statusKey === 'completed'): ?>disabled aria-disabled="true"<?php endif; ?>>Start Session</button>
+                        <button type="button"
+                                class="session-action-btn"
+                                data-session-end="true"
+                                data-session-id="<?php echo $sid; ?>"
+                                <?php if ($statusKey === 'completed'): ?>disabled aria-disabled="true"<?php endif; ?>>End Session</button>
+                        <span class="session-live-timer" data-session-timer<?php echo $statusKey === 'in_progress' ? '' : ' hidden'; ?>>00:00:00</span>
+                      </div>
                     <?php else: ?>
                       <span class="session-empty">Contact your coach to close this session.</span>
                     <?php endif; ?>
@@ -2768,7 +2824,17 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     });
   }
 
-  const sessionButtons = Array.from(document.querySelectorAll('[data-session-end]'));
+  const sessionRows = new Map();
+  document.querySelectorAll('[data-session-row]').forEach(row => {
+    const sessionId = row.dataset.sessionRow;
+    if (!sessionId) return;
+    const controls = row.querySelector('[data-session-controls]');
+    const startBtn = controls ? controls.querySelector('[data-session-start]') : null;
+    const endBtn = controls ? controls.querySelector('[data-session-end]') : null;
+    const timerEl = controls ? controls.querySelector('[data-session-timer]') : null;
+    sessionRows.set(String(sessionId), { row, startBtn, endBtn, timerEl });
+  });
+
   const csrfToken = document.body && document.body.dataset ? (document.body.dataset.csrf || '') : '';
   const sessionTotalsTargets = {
     purchased: Array.from(document.querySelectorAll('[data-session-total="purchased"]')),
@@ -2784,128 +2850,243 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     packageTotals.set(String(pkgId), { used: usedEl, remaining: remainingEl });
   });
 
-  function updateSessionButtonState(btn) {
-    if (!btn) return;
-    if (btn.classList.contains('is-complete') || btn.dataset.completed === 'true') {
-      btn.disabled = true;
-      btn.textContent = 'Completed';
-      btn.classList.add('is-complete');
-      btn.setAttribute('aria-disabled', 'true');
-      return;
-    }
-    const status = (btn.dataset.sessionStatus || '').toLowerCase();
-    if (status !== 'scheduled') {
-      btn.disabled = true;
-      btn.textContent = 'Completed';
-      btn.classList.add('is-complete');
-      btn.setAttribute('aria-disabled', 'true');
-      return;
-    }
-    const endIso = btn.dataset.sessionEndIso || '';
-    const startIso = btn.dataset.sessionStartIso || '';
-    let referenceTime = endIso ? Date.parse(endIso) : NaN;
-    if (!isFinite(referenceTime)) {
-      referenceTime = startIso ? Date.parse(startIso) : NaN;
-    }
-    if (!isFinite(referenceTime)) {
-      btn.disabled = true;
-      return;
+  const HALF_HOUR_MS = 30 * 60 * 1000;
+
+  function parseIsoTimestamp(iso) {
+    if (!iso) return null;
+    const value = Date.parse(iso);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function formatDuration(totalSeconds) {
+    const secs = Math.max(0, Math.floor(totalSeconds));
+    const hours = Math.floor(secs / 3600);
+    const minutes = Math.floor((secs % 3600) / 60);
+    const seconds = secs % 60;
+    const parts = [hours, minutes, seconds].map(part => String(part).padStart(2, '0'));
+    return parts.join(':');
+  }
+
+  function computeWindow(row) {
+    const startIso = parseIsoTimestamp(row.dataset.sessionStartIso || '');
+    if (startIso === null) {
+      return { within: false };
     }
     const now = Date.now();
-    const windowStart = referenceTime - (15 * 60 * 1000);
-    if (now >= windowStart) {
-      if (!btn.classList.contains('is-processing')) {
-        btn.disabled = false;
-        btn.removeAttribute('aria-disabled');
-        btn.textContent = 'End Session';
+    const windowStart = startIso - HALF_HOUR_MS;
+    if (now < windowStart) {
+      return { within: false, windowStart };
+    }
+    const endIso = parseIsoTimestamp(row.dataset.sessionEndIso || '');
+    const windowEnd = endIso !== null ? endIso + HALF_HOUR_MS : null;
+    if (windowEnd !== null && now > windowEnd) {
+      return { within: false, windowStart, windowEnd };
+    }
+    return { within: true, windowStart, windowEnd };
+  }
+
+  function applySessionPayload(row, payload) {
+    if (!row || !payload) return;
+    if (typeof payload.status === 'string') {
+      row.dataset.sessionStatus = payload.status.toLowerCase();
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'scheduled_start')) {
+      row.dataset.sessionStartIso = payload.scheduled_start || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'scheduled_end')) {
+      row.dataset.sessionEndIso = payload.scheduled_end || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'actual_start_at')) {
+      row.dataset.sessionActualStart = payload.actual_start_at || '';
+      if (!payload.actual_end_at) {
+        row.dataset.sessionDuration = '';
       }
-    } else {
-      btn.disabled = true;
-      btn.textContent = 'End Session';
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'actual_end_at')) {
+      row.dataset.sessionDuration = '';
+      row.dataset.sessionActualEnd = payload.actual_end_at || '';
+      const startTs = parseIsoTimestamp(row.dataset.sessionActualStart || '');
+      const endTs = parseIsoTimestamp(payload.actual_end_at || '');
+      if (startTs !== null && endTs !== null && endTs >= startTs) {
+        row.dataset.sessionDuration = Math.floor((endTs - startTs) / 1000);
+      }
     }
   }
 
-  function refreshSessionButtons() {
-    sessionButtons.forEach(updateSessionButtonState);
+  function updateButtons(entry) {
+    const { row, startBtn, endBtn } = entry;
+    if (!row) return;
+    const status = (row.dataset.sessionStatus || '').toLowerCase();
+    const actualStart = parseIsoTimestamp(row.dataset.sessionActualStart || '');
+    const actualEnd = parseIsoTimestamp(row.dataset.sessionActualEnd || '');
+    const { within } = computeWindow(row);
+
+    if (startBtn) {
+      startBtn.classList.remove('is-complete', 'is-started', 'is-cancelled');
+      let label = 'Start Session';
+      startBtn.disabled = true;
+      startBtn.setAttribute('aria-disabled', 'true');
+      if (status === 'completed') {
+        label = 'Session Completed';
+        startBtn.classList.add('is-complete');
+      } else if (status === 'cancelled') {
+        label = 'Session Cancelled';
+        startBtn.classList.add('is-cancelled');
+      } else if (status === 'in_progress' || actualStart !== null) {
+        label = 'Session Started';
+        startBtn.classList.add('is-started');
+      } else if (within && !startBtn.classList.contains('is-processing')) {
+        startBtn.disabled = false;
+        startBtn.removeAttribute('aria-disabled');
+      }
+      startBtn.textContent = label;
+    }
+
+    if (endBtn) {
+      endBtn.classList.remove('is-complete', 'is-cancelled');
+      let label = 'End Session';
+      endBtn.disabled = true;
+      endBtn.setAttribute('aria-disabled', 'true');
+      if (status === 'completed' || actualEnd !== null) {
+        label = 'Session Completed';
+        endBtn.classList.add('is-complete');
+      } else if (status === 'cancelled') {
+        label = 'Session Cancelled';
+        endBtn.classList.add('is-cancelled');
+      } else if ((status === 'in_progress' || actualStart !== null) && within && !endBtn.classList.contains('is-processing')) {
+        endBtn.disabled = false;
+        endBtn.removeAttribute('aria-disabled');
+      }
+      endBtn.textContent = label;
+    }
   }
 
-  if (sessionButtons.length) {
-    refreshSessionButtons();
-    window.setInterval(refreshSessionButtons, 60000);
+  function updateTimer(entry) {
+    const { row, timerEl } = entry;
+    if (!row || !timerEl) return;
+    const status = (row.dataset.sessionStatus || '').toLowerCase();
+    const startTs = parseIsoTimestamp(row.dataset.sessionActualStart || '');
+    const endTs = parseIsoTimestamp(row.dataset.sessionActualEnd || '');
+    if (status === 'in_progress' && startTs !== null && endTs === null) {
+      const diffSeconds = Math.floor((Date.now() - startTs) / 1000);
+      timerEl.textContent = formatDuration(diffSeconds);
+      timerEl.hidden = false;
+    } else {
+      timerEl.hidden = true;
+    }
   }
 
-  async function completeSession(btn) {
-    if (!btn) return;
-    const sessionId = btn.dataset.sessionId;
-    if (!sessionId) return;
+  function refreshAllSessions() {
+    sessionRows.forEach(entry => {
+      updateButtons(entry);
+      updateTimer(entry);
+    });
+  }
+
+  refreshAllSessions();
+  if (sessionRows.size) {
+    window.setInterval(() => {
+      sessionRows.forEach(updateTimer);
+    }, 1000);
+    window.setInterval(() => {
+      sessionRows.forEach(updateButtons);
+    }, 60000);
+  }
+
+  async function sendSessionAction(sessionId, action) {
     const params = new URLSearchParams();
-    params.set('action', 'complete_session');
+    params.set('action', action);
     params.set('session_id', sessionId);
     if (csrfToken) {
       params.set('csrf_token', csrfToken);
     }
-    const originalLabel = btn.textContent;
-    btn.disabled = true;
-    btn.classList.add('is-processing');
-    btn.textContent = 'Processing…';
-    try {
-      const response = await fetch('client_sessions_actions.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params.toString(),
-        credentials: 'same-origin',
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload || !payload.ok) {
-        const message = payload && payload.message ? payload.message : 'Unable to complete the session right now.';
-        throw new Error(message);
-      }
-      btn.classList.remove('is-processing');
-      btn.classList.add('is-complete');
-      btn.dataset.completed = 'true';
-      btn.dataset.sessionStatus = 'completed';
-      btn.textContent = 'Completed';
-      btn.setAttribute('aria-disabled', 'true');
-      const pkgTotals = payload.package_totals || null;
-      const pkgId = pkgTotals && typeof pkgTotals.package_id !== 'undefined'
-        ? String(pkgTotals.package_id)
-        : (btn.dataset.packageId ? String(btn.dataset.packageId) : '');
-      if (pkgId) {
-        const summary = packageTotals.get(pkgId);
-        if (summary) {
-          if (summary.used && pkgTotals && typeof pkgTotals.used !== 'undefined') {
-            summary.used.textContent = pkgTotals.used;
-          }
-          if (summary.remaining && pkgTotals && typeof pkgTotals.remaining !== 'undefined') {
-            summary.remaining.textContent = pkgTotals.remaining;
-          }
-        }
-      }
-      const overall = payload.overall_totals || null;
-      if (overall) {
-        ['purchased', 'used', 'remaining'].forEach(key => {
-          if (typeof overall[key] === 'undefined') return;
-          sessionTotalsTargets[key].forEach(node => {
-            node.textContent = overall[key];
-          });
-        });
-      }
-    } catch (error) {
-      btn.classList.remove('is-processing');
-      btn.disabled = false;
-      btn.textContent = originalLabel || 'End Session';
-      window.alert(error && error.message ? error.message : 'Unable to complete the session right now.');
-      refreshSessionButtons();
-      return;
+    const response = await fetch('client_sessions_actions.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+      credentials: 'same-origin',
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || !payload.ok) {
+      const message = payload && payload.message ? payload.message : 'Request failed. Please try again.';
+      throw new Error(message);
     }
-    refreshSessionButtons();
+    return payload;
   }
 
-  sessionButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.disabled || btn.classList.contains('is-processing') || btn.classList.contains('is-complete')) return;
-      completeSession(btn);
-    });
+  function getPackageIdForRow(row) {
+    return row ? String(row.dataset.packageId || '') : '';
+  }
+
+  sessionRows.forEach(entry => {
+    const { row, startBtn, endBtn } = entry;
+    const sessionId = row ? row.dataset.sessionRow : null;
+    if (startBtn && sessionId) {
+      startBtn.addEventListener('click', async () => {
+        if (startBtn.disabled || startBtn.classList.contains('is-processing')) return;
+        const originalText = startBtn.textContent;
+        startBtn.classList.add('is-processing');
+        startBtn.textContent = 'Starting…';
+        startBtn.disabled = true;
+        startBtn.setAttribute('aria-disabled', 'true');
+        try {
+          const payload = await sendSessionAction(sessionId, 'start_session');
+          applySessionPayload(row, payload.session || null);
+          startBtn.classList.remove('is-processing');
+          refreshAllSessions();
+        } catch (error) {
+          startBtn.classList.remove('is-processing');
+          startBtn.textContent = originalText || 'Start Session';
+          updateButtons(entry);
+          window.alert(error && error.message ? error.message : 'Unable to start the session.');
+        }
+      });
+    }
+    if (endBtn && sessionId) {
+      endBtn.addEventListener('click', async () => {
+        if (endBtn.disabled || endBtn.classList.contains('is-processing')) return;
+        const originalText = endBtn.textContent;
+        endBtn.classList.add('is-processing');
+        endBtn.textContent = 'Ending…';
+        endBtn.disabled = true;
+        endBtn.setAttribute('aria-disabled', 'true');
+        try {
+          const payload = await sendSessionAction(sessionId, 'end_session');
+          applySessionPayload(row, payload.session || null);
+          const pkgTotals = payload.package_totals || null;
+          const pkgId = pkgTotals && typeof pkgTotals.package_id !== 'undefined'
+            ? String(pkgTotals.package_id)
+            : getPackageIdForRow(row);
+          if (pkgId) {
+            const summary = packageTotals.get(pkgId);
+            if (summary) {
+              if (summary.used && pkgTotals && typeof pkgTotals.used !== 'undefined') {
+                summary.used.textContent = pkgTotals.used;
+              }
+              if (summary.remaining && pkgTotals && typeof pkgTotals.remaining !== 'undefined') {
+                summary.remaining.textContent = pkgTotals.remaining;
+              }
+            }
+          }
+          const overall = payload.overall_totals || null;
+          if (overall) {
+            ['purchased', 'used', 'remaining'].forEach(key => {
+              if (typeof overall[key] === 'undefined') return;
+              sessionTotalsTargets[key].forEach(node => {
+                node.textContent = overall[key];
+              });
+            });
+          }
+          endBtn.classList.remove('is-processing');
+          refreshAllSessions();
+        } catch (error) {
+          endBtn.classList.remove('is-processing');
+          endBtn.textContent = originalText || 'End Session';
+          updateButtons(entry);
+          window.alert(error && error.message ? error.message : 'Unable to end the session.');
+        }
+      });
+    }
   });
 })();
 </script>
