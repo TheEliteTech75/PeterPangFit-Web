@@ -12,7 +12,10 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/logs.php';
 
 function is_admin($role){ return ($role ?? 'guest') === 'admin'; }
-if (!is_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
+if (!is_admin($USER_ROLE ?? null)) {
+  require_once __DIR__ . '/access_denied.php';
+  exit;
+}
 
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';

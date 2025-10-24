@@ -17,8 +17,7 @@ require_once __DIR__ . '/logs.php';
 $uid  = (int)($_SESSION['user_id'] ?? 0);
 $role = (string)($_SESSION['role'] ?? '');
 if ($uid <= 0 || strtolower($role) !== 'admin') {
-  http_response_code(403);
-  echo "Forbidden";
+  require_once __DIR__ . '/access_denied.php';
   exit;
 }
 

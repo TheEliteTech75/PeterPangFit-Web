@@ -29,8 +29,7 @@ function fmt_dt($s) {
 }
 // Gate: trainers & admins only
 if (!in_array($USER_ROLE, ['trainer','admin'], true)) {
-    http_response_code(403);
-    echo 'Forbidden';
+    require_once __DIR__ . '/access_denied.php';
     exit;
 }
 

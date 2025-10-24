@@ -22,8 +22,7 @@ if ($is_direct_request) {
   session_start();
   $role = strtolower(trim((string)($_SESSION['role'] ?? ($USER_ROLE ?? ''))));
   if ($role !== 'admin') {
-    http_response_code(403);
-    echo 'Forbidden';
+    require_once __DIR__ . '/access_denied.php';
     exit;
   }
 }

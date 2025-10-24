@@ -64,7 +64,10 @@ if (!function_exists('column_exists')) {
 }
 
 // --- Role gate ---
-if (!is_trainer_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
+if (!is_trainer_admin($USER_ROLE ?? null)) {
+  require_once __DIR__ . '/access_denied.php';
+  exit;
+}
 
 // ----------------------------------------------------------------------------
 // CSRF
