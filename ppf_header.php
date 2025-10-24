@@ -50,6 +50,10 @@ $themeKey = ppf_theme_resolve((string)$themeKey);
 $_SESSION['theme'] = $themeKey;
 $themeStyleTag = ppf_theme_render_style_block();
 $themeInitScript = '<script>(function(){var theme=' . json_encode($themeKey, JSON_UNESCAPED_SLASHES) . ';function apply(){var d=document.documentElement;d.dataset.theme=theme;var b=document.body;if(b&&!b.classList.contains("ppf-themed")){b.classList.add("ppf-themed");}}if(document.readyState!=="loading"){apply();}else{document.addEventListener("DOMContentLoaded",apply);}})();</script>';
+$demoAlerts = [];
+if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['demo_alerts']) && strtolower((string)$role) === 'admin') {
+  $demoAlerts = array_values(array_unique(array_map('strval', $_SESSION['demo_alerts'])));
+}
 ?>
 <?php echo $themeStyleTag, "\n", $themeInitScript, "\n"; ?>
 <style>
@@ -67,6 +71,33 @@ $themeInitScript = '<script>(function(){var theme=' . json_encode($themeKey, JSO
   position: sticky;
   top: 0;
   z-index: 3000;
+}
+.ppf-demo-alerts {
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:12px 24px;
+  background:color-mix(in srgb, var(--danger-bg, rgba(127,29,29,0.35)) 65%, var(--panel-elevated) 35%);
+  border-bottom:1px solid color-mix(in srgb, var(--danger-line, rgba(248,113,113,0.6)) 65%, var(--card-border) 35%);
+  box-shadow:0 12px 28px rgba(15,23,42,0.45);
+  color:color-mix(in srgb, #fecaca 70%, var(--text) 30%);
+}
+.ppf-demo-alerts strong {
+  font-weight:700;
+  letter-spacing:.01em;
+}
+.ppf-demo-alert {
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  font-size:13px;
+  line-height:1.45;
+}
+.ppf-demo-alert svg {
+  flex-shrink:0;
+  width:18px;
+  height:18px;
+  margin-top:2px;
 }
 .ppf-brand {
   font-weight:800;font-size:22px;color:var(--header-text, var(--text));letter-spacing:-.02em;
@@ -196,6 +227,18 @@ body.ppf-themed .dash-settings-toggle {
 }
 </style>
 
+
+<?php if ($demoAlerts): ?>
+<div class="ppf-demo-alerts" role="alert" aria-live="assertive">
+  <strong>Demo Mode Notice</strong>
+  <?php foreach ($demoAlerts as $demoAlert): ?>
+    <div class="ppf-demo-alert">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span><?php echo h($demoAlert); ?></span>
+    </div>
+  <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <header class="ppf-topbar">
   <?php if (in_array(($USER_ROLE ?? 'guest'), ['admin','trainer', 'client'], true)): ?>

@@ -10,6 +10,33 @@ require_once __DIR__ . '/logs.php';      // safe include (no redirects/output)
 require_once __DIR__ . '/geo.php';       // <-- NEW (IP + geo helpers)
 require_once __DIR__ . '/ppf_theme.php'; // Theme helpers (color palettes)
 
+// Capture any Demo Mode alerts and log them for auditing.
+if (!empty($GLOBALS['PPF_DEMO_ALERTS_BUFFER']) && session_status() === PHP_SESSION_ACTIVE) {
+    ppf_demo_store_alerts_in_session($GLOBALS['PPF_DEMO_ALERTS_BUFFER']);
+    $GLOBALS['PPF_DEMO_ALERTS_BUFFER'] = [];
+}
+
+if (!empty($_SESSION['demo_alerts_unread']) && isset($conn) && $conn instanceof mysqli && function_exists('ppf_log')) {
+    $alertsToLog = array_values(array_unique(array_map('strval', $_SESSION['demo_alerts_unread'])));
+    $_SESSION['demo_alerts_unread'] = [];
+    foreach ($alertsToLog as $alertMessage) {
+        try {
+            ppf_log(
+                $conn,
+                $_SESSION['user_id'] ?? null,
+                $_SESSION['email'] ?? null,
+                $_SESSION['role'] ?? null,
+                'demo_mode_alert',
+                'system',
+                isset($_SESSION['user_id']) ? (string)$_SESSION['user_id'] : null,
+                $alertMessage
+            );
+        } catch (Throwable $e) {
+            // Non-fatal: logging table may not exist yet.
+        }
+    }
+}
+
 /* 1) Require authentication */
 if (empty($_SESSION['user_id'])):
     header('Location: login.php');
