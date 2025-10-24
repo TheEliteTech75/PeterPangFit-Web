@@ -376,29 +376,41 @@ if (!function_exists('ppf_trainer_sessions_dashboard_rollup')) {
 
         $sql = "
             SELECT
-                p.client_id,
-                u.first_name,
-                u.last_name,
-                u.email,
-                SUM(p.purchased_sessions) AS purchased_total,
-                SUM(COALESCE(s.scheduled_open, 0)) AS scheduled_total,
-                SUM(COALESCE(s.completed_count, 0)) AS completed_total,
-                SUM(GREATEST(p.purchased_sessions - COALESCE(s.completed_count, 0), 0)) AS remaining_total,
-                MIN(s.next_session_at) AS next_session_at
-            FROM trainer_session_packages p
-            JOIN users u ON u.id = p.client_id
-            LEFT JOIN (
+                pkg.client_id,
+                pkg.first_name,
+                pkg.last_name,
+                pkg.email,
+                SUM(pkg.purchased_sessions) AS purchased_total,
+                SUM(pkg.scheduled_open) AS scheduled_total,
+                SUM(pkg.completed_count) AS completed_total,
+                SUM(pkg.remaining_sessions) AS remaining_total,
+                MIN(pkg.next_session_at) AS next_session_at
+            FROM (
                 SELECT
-                    package_id,
-                    SUM(status='scheduled') AS scheduled_open,
-                    SUM(status='completed') AS completed_count,
-                    MIN(CASE WHEN status='scheduled' THEN scheduled_start END) AS next_session_at
-                FROM trainer_sessions
-                GROUP BY package_id
-            ) s ON s.package_id = p.id
-            {$where}
-            GROUP BY p.client_id, u.first_name, u.last_name, u.email
-            ORDER BY MIN(s.next_session_at) IS NULL, MIN(s.next_session_at) ASC, u.last_name, u.first_name
+                    p.client_id,
+                    u.first_name,
+                    u.last_name,
+                    u.email,
+                    p.purchased_sessions,
+                    COALESCE(ts.scheduled_open, 0) AS scheduled_open,
+                    COALESCE(ts.completed_count, 0) AS completed_count,
+                    GREATEST(p.purchased_sessions - COALESCE(ts.completed_count, 0), 0) AS remaining_sessions,
+                    ts.next_session_at
+                FROM trainer_session_packages p
+                JOIN users u ON u.id = p.client_id
+                LEFT JOIN (
+                    SELECT
+                        package_id,
+                        SUM(status='scheduled') AS scheduled_open,
+                        SUM(status='completed') AS completed_count,
+                        MIN(CASE WHEN status='scheduled' THEN scheduled_start END) AS next_session_at
+                    FROM trainer_sessions
+                    GROUP BY package_id
+                ) ts ON ts.package_id = p.id
+                {$where}
+            ) pkg
+            GROUP BY pkg.client_id, pkg.first_name, pkg.last_name, pkg.email
+            ORDER BY (next_session_at IS NULL), next_session_at, pkg.last_name, pkg.first_name
         ";
 
         if (!$stmt = $conn->prepare($sql)) {
