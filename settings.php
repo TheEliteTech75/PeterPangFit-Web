@@ -1759,10 +1759,14 @@ if ($demoModeControlsAvailable) {
           <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>">Demo Mode: <?php echo h($demoModeStatusLabel); ?></span>
         </div>
 
-        <form method="post" class="two-col" style="margin-top:18px;">
+        <form method="post" class="two-col" style="margin-top:18px;" data-demo-mode-form="1">
           <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
           <input type="hidden" name="action" value="system_settings">
           <input type="hidden" name="demo_mode_enabled_present" value="1">
+          <input type="hidden" name="demo_mode_enabled" id="demoModeEnabledInput" value="<?php echo $demoModeEnabled ? '1' : '0'; ?>">
+          <input type="hidden" name="demo_totp_code" id="demoTotpCodeInput" value="">
+          <input type="hidden" name="demo_current_password" id="demoCurrentPasswordInput" value="">
+          <input type="hidden" name="demo_reset" id="demoResetInput" value="0">
 
           <div>
             <h3>Account Lockout (minutes)</h3>
@@ -1796,10 +1800,7 @@ if ($demoModeControlsAvailable) {
                 <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>"><?php echo h($demoModeStatusLabel); ?></span>
               </div>
               <p class="small-text">Toggle the sanitized training environment for walkthroughs without touching live data.</p>
-              <p class="small-text">Enter the authenticator app code and your current password to enable or disable Demo Mode. Your current password is also required to reset the demo data.</p>
-              <label class="small-text" style="display:flex;align-items:center;gap:8px;">
-                <input type="checkbox" name="demo_mode_enabled" value="1" <?php echo $demoModeEnabled ? 'checked' : ''; ?> <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>> Enable Demo Mode experience
-              </label>
+              <p class="small-text">You will be prompted for your authenticator app code and current password whenever you enable or disable Demo Mode. Resetting the demo data only requires your current password.</p>
               <?php if (!$twofaAppEnabled): ?>
                 <p class="demo-mode-warning small-text">Enable your authenticator app before attempting to toggle Demo Mode.</p>
               <?php endif; ?>
@@ -1815,7 +1816,12 @@ if ($demoModeControlsAvailable) {
                   <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>
               </div>
               <div class="demo-mode-actions">
-                <button class="btn danger" type="submit" name="demo_reset" value="1" formnovalidate <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
+                <?php if ($demoModeEnabled): ?>
+                <button class="btn secondary" type="button" data-demo-action="disable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Disable Demo Mode</button>
+                <?php else: ?>
+                <button class="btn" type="button" data-demo-action="enable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Enable Demo Mode</button>
+                <?php endif; ?>
+                <button class="btn danger" type="button" data-demo-action="reset" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
                 <span class="small-text">Restore demo accounts and seed content to their defaults. Requires your current password.</span>
               </div>
             </div>
@@ -2929,6 +2935,215 @@ if ($demoModeControlsAvailable) {
         }
       });
     }
+
+    (function initDemoModeModals() {
+      const demoForm = document.querySelector('form[data-demo-mode-form="1"]');
+      if (!demoForm) return;
+
+      const enableBtn = demoForm.querySelector('[data-demo-action="enable"]');
+      const disableBtn = demoForm.querySelector('[data-demo-action="disable"]');
+      const resetBtn = demoForm.querySelector('[data-demo-action="reset"]');
+      const hiddenEnabled = document.getElementById('demoModeEnabledInput');
+      const hiddenTotp = document.getElementById('demoTotpCodeInput');
+      const hiddenPassword = document.getElementById('demoCurrentPasswordInput');
+      const hiddenReset = document.getElementById('demoResetInput');
+
+      if (!hiddenEnabled || !hiddenTotp || !hiddenPassword || !hiddenReset) return;
+
+      const currentState = hiddenEnabled.value === '1';
+
+      function sanitizeCode(value) {
+        return (value || '').replace(/\D+/g, '').slice(0, 6);
+      }
+
+      function clearHiddenCreds() {
+        hiddenTotp.value = '';
+        hiddenPassword.value = '';
+        hiddenReset.value = '0';
+      }
+
+      function openToggleModal(targetEnabled) {
+        const isEnable = targetEnabled === true;
+        openModal({
+          title: isEnable ? 'Enable Demo Mode' : 'Disable Demo Mode',
+          render: (body, controls) => {
+            const intro = document.createElement('p');
+            intro.textContent = 'Enter the 6-digit authenticator app code and your current password to continue.';
+            const formEl = document.createElement('form');
+            formEl.className = 'modal-form';
+
+            const codeGroup = document.createElement('div');
+            const codeLabel = document.createElement('label');
+            codeLabel.setAttribute('for', 'demoToggleTotp');
+            codeLabel.textContent = 'Authenticator app code';
+            const codeInput = document.createElement('input');
+            codeInput.id = 'demoToggleTotp';
+            codeInput.className = 'input';
+            codeInput.type = 'text';
+            codeInput.inputMode = 'numeric';
+            codeInput.autocomplete = 'one-time-code';
+            codeInput.required = true;
+            codeInput.pattern = '\\d{6}';
+            codeInput.maxLength = 6;
+            codeInput.placeholder = '6-digit code';
+            codeGroup.append(codeLabel, codeInput);
+
+            const passGroup = document.createElement('div');
+            const passLabel = document.createElement('label');
+            passLabel.setAttribute('for', 'demoTogglePassword');
+            passLabel.textContent = 'Current password';
+            const passInput = document.createElement('input');
+            passInput.id = 'demoTogglePassword';
+            passInput.className = 'input';
+            passInput.type = 'password';
+            passInput.autocomplete = 'current-password';
+            passInput.required = true;
+            passGroup.append(passLabel, passInput);
+
+            const actions = document.createElement('div');
+            actions.className = 'modal-actions';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn small secondary';
+            cancelBtn.textContent = 'Cancel';
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'submit';
+            confirmBtn.className = 'btn small';
+            confirmBtn.textContent = isEnable ? 'Enable Demo Mode' : 'Disable Demo Mode';
+            actions.append(cancelBtn, confirmBtn);
+
+            formEl.append(codeGroup, passGroup, actions);
+            body.append(intro, formEl);
+
+            requestAnimationFrame(() => codeInput.focus());
+
+            cancelBtn.addEventListener('click', () => {
+              clearHiddenCreds();
+              controls.close();
+            });
+
+            formEl.addEventListener('submit', (evt) => {
+              evt.preventDefault();
+              const sanitizedCode = sanitizeCode(codeInput.value);
+              codeInput.value = sanitizedCode;
+              codeInput.setCustomValidity('');
+              passInput.setCustomValidity('');
+              if (!formEl.reportValidity()) {
+                return;
+              }
+              if (sanitizedCode.length !== 6) {
+                codeInput.setCustomValidity('Enter the 6-digit code.');
+                codeInput.reportValidity();
+                codeInput.setCustomValidity('');
+                return;
+              }
+              if (passInput.value === '') {
+                passInput.setCustomValidity('Enter your current password.');
+                passInput.reportValidity();
+                passInput.setCustomValidity('');
+                return;
+              }
+              hiddenTotp.value = sanitizedCode;
+              hiddenPassword.value = passInput.value;
+              hiddenReset.value = '0';
+              hiddenEnabled.value = isEnable ? '1' : '0';
+              controls.close();
+              demoForm.submit();
+            });
+          }
+        });
+      }
+
+      function openResetModal() {
+        openModal({
+          title: 'Reset Demo Data',
+          render: (body, controls) => {
+            const intro = document.createElement('p');
+            intro.textContent = 'Confirm with your current password to restore the demo seed.';
+            const formEl = document.createElement('form');
+            formEl.className = 'modal-form';
+
+            const passGroup = document.createElement('div');
+            const passLabel = document.createElement('label');
+            passLabel.setAttribute('for', 'demoResetPassword');
+            passLabel.textContent = 'Current password';
+            const passInput = document.createElement('input');
+            passInput.id = 'demoResetPassword';
+            passInput.className = 'input';
+            passInput.type = 'password';
+            passInput.autocomplete = 'current-password';
+            passInput.required = true;
+            passGroup.append(passLabel, passInput);
+
+            const actions = document.createElement('div');
+            actions.className = 'modal-actions';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn small secondary';
+            cancelBtn.textContent = 'Cancel';
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'submit';
+            confirmBtn.className = 'btn small danger';
+            confirmBtn.textContent = 'Reset Demo Data';
+            actions.append(cancelBtn, confirmBtn);
+
+            formEl.append(passGroup, actions);
+            body.append(intro, formEl);
+
+            requestAnimationFrame(() => passInput.focus());
+
+            cancelBtn.addEventListener('click', () => {
+              clearHiddenCreds();
+              controls.close();
+            });
+
+            formEl.addEventListener('submit', (evt) => {
+              evt.preventDefault();
+              passInput.setCustomValidity('');
+              if (!formEl.reportValidity()) {
+                return;
+              }
+              if (passInput.value === '') {
+                passInput.setCustomValidity('Enter your current password.');
+                passInput.reportValidity();
+                passInput.setCustomValidity('');
+                return;
+              }
+              hiddenTotp.value = '';
+              hiddenPassword.value = passInput.value;
+              hiddenReset.value = '1';
+              hiddenEnabled.value = currentState ? '1' : '0';
+              controls.close();
+              demoForm.submit();
+            });
+          }
+        });
+      }
+
+      if (enableBtn) {
+        enableBtn.addEventListener('click', () => {
+          if (!enableBtn.disabled) {
+            openToggleModal(true);
+          }
+        });
+      }
+
+      if (disableBtn) {
+        disableBtn.addEventListener('click', () => {
+          if (!disableBtn.disabled) {
+            openToggleModal(false);
+          }
+        });
+      }
+
+      if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+          if (!resetBtn.disabled) {
+            openResetModal();
+          }
+        });
+      }
+    })();
   </script>
 </body>
 </html>
