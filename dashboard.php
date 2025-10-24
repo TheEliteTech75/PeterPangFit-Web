@@ -18,6 +18,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/trainer_sessions_helpers.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
 
@@ -55,6 +56,25 @@ function safe_row_sql(mysqli $conn, string $sql, string $types = '', ...$params)
       return $row ?: null;
     }
   } catch (Throwable $e) { return null; }
+}
+
+function ppf_dashboard_format_session_time(?string $iso): array {
+  $attr = '';
+  $label = '';
+  $timestamp = null;
+  if ($iso !== null && $iso !== '') {
+    $isoStr = (string)$iso;
+    $ts = strtotime($isoStr);
+    if ($ts !== false) {
+      $timestamp = $ts;
+      $attr = date('c', $ts);
+      $label = date('M j, Y g:i A', $ts);
+    } else {
+      $attr = $isoStr;
+      $label = $isoStr;
+    }
+  }
+  return ['attr' => $attr, 'label' => $label, 'timestamp' => $timestamp];
 }
 
 /* ---------- Small sys JSON endpoint (CPU/RAM/Disk + NET RX/TX cumulative) ---------- */
@@ -478,6 +498,131 @@ $pending_invites   = (int)($invite_counts['pending']    ?? 0);
 $accepted_invites  = (int)($invite_counts['accepted']   ?? 0);
 $expired_invites   = (int)($invite_counts['expired']    ?? 0);
 $registered_invites= (int)($invite_counts['registered'] ?? 0);
+
+/* ---------- Trainer session rollup (dashboard) ---------- */
+$trainer_session_rollup = [
+  'totals' => ['purchased' => 0, 'scheduled' => 0, 'completed' => 0, 'remaining' => 0],
+  'clients' => [],
+  'total_clients' => 0,
+];
+$trainer_session_totals = $trainer_session_rollup['totals'];
+$trainer_session_clients = [];
+$trainer_session_total_clients = 0;
+$trainer_session_more_count = 0;
+
+if (($can_admin || $is_client) && function_exists('ppf_trainer_sessions_dashboard_rollup')) {
+  $trainerFilter = null;
+  $clientFilter = null;
+
+  if ($can_admin && !$is_admin && isset($USER_ID) && is_numeric($USER_ID)) {
+    $trainerFilter = (int)$USER_ID;
+  }
+  if ($is_client && isset($USER_ID) && is_numeric($USER_ID)) {
+    $clientFilter = (int)$USER_ID;
+  }
+
+  $trainer_session_rollup = ppf_trainer_sessions_dashboard_rollup($conn, $trainerFilter, $clientFilter, 6);
+}
+
+$trainer_session_totals = array_merge($trainer_session_totals, (array)($trainer_session_rollup['totals'] ?? []));
+$trainer_session_clients = is_array($trainer_session_rollup['clients'] ?? null) ? $trainer_session_rollup['clients'] : [];
+$trainer_session_total_clients = (int)($trainer_session_rollup['total_clients'] ?? count($trainer_session_clients));
+$trainer_session_more_count = max(0, $trainer_session_total_clients - count($trainer_session_clients));
+
+$ts_total_purchased = max(0, (int)($trainer_session_totals['purchased'] ?? 0));
+$ts_total_completed = max(0, (int)($trainer_session_totals['completed'] ?? 0));
+$ts_total_scheduled_raw = max(0, (int)($trainer_session_totals['scheduled'] ?? 0));
+$ts_total_remaining = max(0, (int)($trainer_session_totals['remaining'] ?? max(0, $ts_total_purchased - $ts_total_completed)));
+$ts_total_scheduled_for_donut = $ts_total_remaining > 0 ? min($ts_total_scheduled_raw, $ts_total_remaining) : 0;
+$ts_total_unscheduled = max(0, $ts_total_remaining - $ts_total_scheduled_for_donut);
+$ts_donut_total = $ts_total_completed + $ts_total_scheduled_for_donut + $ts_total_unscheduled;
+$ts_completion_pct = ($ts_total_purchased > 0) ? min(100, (int)round(($ts_total_completed / $ts_total_purchased) * 100)) : 0;
+
+$donutTS = ['r' => 42, 'sw' => 12];
+$donutTS['C'] = 2 * M_PI * $donutTS['r'];
+$segTSC = $ts_donut_total > 0 ? ($ts_total_completed / $ts_donut_total) * $donutTS['C'] : 0;
+$segTSS = $ts_donut_total > 0 ? ($ts_total_scheduled_for_donut / $ts_donut_total) * $donutTS['C'] : 0;
+$segTSO = $ts_donut_total > 0 ? ($ts_total_unscheduled / $ts_donut_total) * $donutTS['C'] : 0;
+$dashTSC = $segTSC; $gapTSC = max(0.0001, $donutTS['C'] - $dashTSC);
+$dashTSS = $segTSS; $gapTSS = max(0.0001, $donutTS['C'] - $dashTSS);
+$dashTSO = $segTSO; $gapTSO = max(0.0001, $donutTS['C'] - $dashTSO);
+$offsetTSS = $donutTS['C'] - $segTSC;
+$offsetTSO = $donutTS['C'] - ($segTSC + $segTSS);
+
+$trainer_session_focus = null;
+$trainer_session_focus_time = ['attr' => '', 'label' => '', 'timestamp' => null];
+$trainer_session_focus_completed = 0;
+$trainer_session_focus_scheduled = 0;
+$trainer_session_focus_unscheduled = 0;
+$trainer_session_focus_purchased = 0;
+
+if ($is_client && $trainer_session_clients) {
+  $uidInt = isset($USER_ID) && is_numeric($USER_ID) ? (int)$USER_ID : null;
+  foreach ($trainer_session_clients as $clientRow) {
+    if ($uidInt !== null && (int)($clientRow['client_id'] ?? 0) === $uidInt) {
+      $trainer_session_focus = $clientRow;
+      break;
+    }
+  }
+  if ($trainer_session_focus === null) {
+    $trainer_session_focus = $trainer_session_clients[0];
+  }
+
+  if (is_array($trainer_session_focus)) {
+    $trainer_session_focus_completed = max(0, (int)($trainer_session_focus['completed'] ?? 0));
+    $trainer_session_focus_scheduled = max(0, (int)($trainer_session_focus['scheduled'] ?? 0));
+    $trainer_session_focus_purchased = max(0, (int)($trainer_session_focus['purchased'] ?? 0));
+    $focusRemaining = max(0, (int)($trainer_session_focus['remaining'] ?? max(0, $trainer_session_focus_purchased - $trainer_session_focus_completed)));
+    if ($focusRemaining === 0) {
+      $trainer_session_focus_scheduled = 0;
+    } elseif ($trainer_session_focus_scheduled > $focusRemaining) {
+      $trainer_session_focus_scheduled = $focusRemaining;
+    }
+    $trainer_session_focus_unscheduled = max(0, $focusRemaining - $trainer_session_focus_scheduled);
+    $trainer_session_focus_time = ppf_dashboard_format_session_time($trainer_session_focus['next_session_at'] ?? null);
+  }
+}
+
+$ts_sessions_note = '';
+if ($ts_total_purchased === 0) {
+  $ts_sessions_note = $is_client ? 'No training session packages yet.' : 'No training session packages yet.';
+} else {
+  if ($is_client) {
+    $pieces = [];
+    if ($ts_completion_pct > 0) {
+      $pieces[] = $ts_completion_pct . '% complete';
+    }
+    if ($ts_total_scheduled_raw > 0) {
+      $pieces[] = number_format($ts_total_scheduled_raw) . ' scheduled';
+    }
+    if ($ts_total_unscheduled > 0) {
+      $pieces[] = number_format($ts_total_unscheduled) . ' to schedule';
+    }
+    if (!$pieces) {
+      $pieces[] = 'Ready to schedule your first session';
+    }
+    $ts_sessions_note = implode(' · ', $pieces);
+  } else {
+    $pieces = [];
+    $pieces[] = number_format($trainer_session_total_clients) . ' ' . ($trainer_session_total_clients === 1 ? 'client' : 'clients');
+    if ($ts_completion_pct > 0) {
+      $pieces[] = $ts_completion_pct . '% complete';
+    }
+    if ($ts_total_unscheduled > 0) {
+      $pieces[] = number_format($ts_total_unscheduled) . ' open';
+    }
+    if ($ts_total_scheduled_raw > 0) {
+      $pieces[] = number_format($ts_total_scheduled_raw) . ' scheduled';
+    }
+    $ts_sessions_note = implode(' · ', $pieces);
+  }
+}
+
+$ts_meta_purchased = $is_client ? 'In your current package' : 'Across all packages';
+$ts_meta_completed = $is_client ? 'Finished so far' : 'Completed to date';
+$ts_meta_scheduled = $is_client ? 'Booked with your trainer' : 'Upcoming sessions';
+$remainingOpenLabel = number_format($ts_total_unscheduled) . ' ' . ($ts_total_unscheduled === 1 ? 'open spot' : 'open spots');
+$ts_meta_remaining = $is_client ? $remainingOpenLabel : ($remainingOpenLabel . ' across clients');
 
 /* ---------- Mapping helpers ---------- */
 function find_assignment_mapping(mysqli $conn): array {
@@ -1129,6 +1274,13 @@ $CAT_PALETTE = [
       --slate-1: color-mix(in srgb, var(--muted) 65%, var(--text) 35%); --slate-2: color-mix(in srgb, var(--muted-soft, rgba(148,163,184,0.72)) 75%, var(--text) 25%);
       --warn-1: color-mix(in srgb, var(--warning) 75%, var(--text) 25%); --warn-2: color-mix(in srgb, var(--danger) 70%, var(--text) 30%);
 
+      --ts-completed-1: color-mix(in srgb, var(--success) 88%, var(--theme-swatch-3, var(--primary)) 12%);
+      --ts-completed-2: color-mix(in srgb, var(--success) 70%, var(--theme-swatch-2, var(--brand)) 30%);
+      --ts-scheduled-1: color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 82%, var(--theme-swatch-3, var(--primary)) 18%);
+      --ts-scheduled-2: color-mix(in srgb, var(--theme-swatch-3, var(--primary)) 80%, var(--theme-swatch-2, var(--brand)) 20%);
+      --ts-open-1: color-mix(in srgb, var(--muted-soft, rgba(148,163,184,0.72)) 78%, var(--text) 22%);
+      --ts-open-2: color-mix(in srgb, var(--muted) 68%, var(--text) 32%);
+
       /* Invites palette (4 segments) */
       --inv-accepted-1: color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 80%, var(--theme-swatch-3, var(--primary)) 20%); --inv-accepted-2: color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 92%, var(--theme-swatch-3, var(--primary)) 8%);
       --inv-pending-1: color-mix(in srgb, var(--theme-swatch-3, var(--primary)) 75%, var(--theme-swatch-2, var(--brand)) 25%);  --inv-pending-2: color-mix(in srgb, var(--theme-swatch-3, var(--primary)) 90%, var(--theme-swatch-2, var(--brand)) 10%);
@@ -1456,6 +1608,155 @@ $CAT_PALETTE = [
     }
     @media (max-width: 520px){ .donut-wrap{ grid-template-columns: 1fr; } }
 
+    .training-sessions-card .session-stats{
+      margin:10px 0 6px;
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(120px,1fr));
+      gap:10px;
+    }
+    .training-sessions-card .session-stat{
+      padding:10px 12px;
+      border:1px solid var(--card-border);
+      border-radius:12px;
+      background:color-mix(in srgb, var(--panel-muted) 82%, transparent 18%);
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      min-height:60px;
+    }
+    .training-sessions-card .session-stat .label{
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      color:var(--c-muted);
+    }
+    .training-sessions-card .session-stat .value{
+      font-size:20px;
+      font-weight:700;
+      color:var(--text);
+    }
+    .training-sessions-card .session-stat .meta{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .training-sessions-card .donut .ts-total{
+      font-size:20px;
+      font-weight:700;
+      color:#fff;
+    }
+    .training-sessions-card .donut .ts-label{
+      margin-top:4px;
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      color:var(--c-muted);
+    }
+    .training-sessions-card .sessions-note{
+      font-size:12px;
+      color:var(--c-muted);
+      margin:6px 0 0;
+    }
+    .training-sessions-card .session-highlight{
+      margin-top:12px;
+      padding:12px 14px;
+      border:1px solid var(--card-border);
+      border-radius:12px;
+      background:color-mix(in srgb, var(--panel-muted) 86%, transparent 14%);
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .training-sessions-card .session-highlight__label{
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      color:var(--c-muted);
+    }
+    .training-sessions-card .session-highlight__value{
+      font-size:16px;
+      font-weight:600;
+      color:var(--text);
+    }
+    .training-sessions-card .session-highlight__meta{
+      font-size:12px;
+      color:var(--c-muted);
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+    }
+    .training-sessions-card .session-highlight__meta strong{
+      color:var(--text);
+    }
+    .training-sessions-card .client-list{
+      list-style:none;
+      margin:12px 0 0;
+      padding:0;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .training-sessions-card .client{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      border:1px solid var(--card-border);
+      border-radius:12px;
+      padding:10px 12px;
+      background:color-mix(in srgb, var(--panel) 88%, transparent 12%);
+    }
+    .training-sessions-card .client-main{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      min-width:0;
+    }
+    .training-sessions-card .client-name{
+      font-weight:600;
+      color:var(--text);
+      font-size:14px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .training-sessions-card .client-remaining{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .training-sessions-card .client-meta{
+      text-align:right;
+      font-size:12px;
+      color:var(--muted);
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      align-items:flex-end;
+    }
+    .training-sessions-card .client-meta time{
+      font-weight:600;
+      color:var(--text);
+    }
+    .training-sessions-card .empty{
+      margin:12px 0 0;
+      font-size:13px;
+      color:var(--muted);
+    }
+    .training-sessions-card .more{
+      margin:6px 0 0;
+      font-size:12px;
+      color:var(--muted);
+    }
+    @container (max-width: 340px){
+      .training-sessions-card .client{
+        flex-direction:column;
+        align-items:flex-start;
+        gap:6px;
+      }
+      .training-sessions-card .client-meta{
+        align-items:flex-start;
+        text-align:left;
+      }
+    }
+
     /* Center pack for donut card */
     .center-pack{
       display:grid;
@@ -1580,7 +1881,9 @@ $CAT_PALETTE = [
       </button>
     </header>
 
-    <section class="cards cols-4" aria-label="Overview cards">
+    <div class="section">
+      <h2>Overview</h2>
+      <section class="cards cols-4" aria-label="Overview cards">
       <article class="card security-card" data-card-key="security">
         <h3>Security</h3>
 
@@ -1609,6 +1912,7 @@ $CAT_PALETTE = [
                 <div class="score"><?php echo (int)$security_score_pct; ?>%</div>
                 <div class="grade"><?php echo h($security_grade); ?></div>
               </div>
+
             </div>
           </div>
 
@@ -1778,6 +2082,168 @@ $CAT_PALETTE = [
           </div>
         </article>
 
+        <!-- TRAINING SESSIONS SUMMARY -->
+        <article class="card training-sessions-card" data-card-key="trainer-sessions">
+          <h3><?php echo $is_client ? 'My Training Sessions' : 'Training Sessions'; ?></h3>
+
+          <div class="donut-wrap" aria-label="Training session utilization">
+            <div class="donut">
+              <?php $rTS = $donutTS['r']; $swTS = $donutTS['sw']; ?>
+              <svg viewBox="0 0 120 120" role="img" aria-labelledby="tslbl">
+                <title id="tslbl">Training sessions: <?php echo number_format($ts_total_completed); ?> completed, <?php echo number_format($ts_total_scheduled_raw); ?> scheduled, <?php echo number_format($ts_total_unscheduled); ?> open</title>
+                <circle cx="60" cy="60" r="<?php echo $rTS; ?>" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="<?php echo $swTS; ?>" />
+
+                <defs>
+                  <linearGradient id="gradTSC" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%"  stop-color="var(--ts-completed-1)"/><stop offset="100%" stop-color="var(--ts-completed-2)"/>
+                  </linearGradient>
+                  <linearGradient id="gradTSS" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%"  stop-color="var(--ts-scheduled-1)"/><stop offset="100%" stop-color="var(--ts-scheduled-2)"/>
+                  </linearGradient>
+                  <linearGradient id="gradTSO" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%"  stop-color="var(--ts-open-1)"/><stop offset="100%" stop-color="var(--ts-open-2)"/>
+                  </linearGradient>
+                </defs>
+
+                <?php if ($segTSC > 0): ?>
+                  <circle cx="60" cy="60" r="<?php echo $rTS; ?>" fill="none" stroke="url(#gradTSC)" stroke-width="<?php echo $swTS; ?>" stroke-dasharray="<?php echo $dashTSC . ' ' . $gapTSC; ?>" />
+                <?php endif; ?>
+                <?php if ($segTSS > 0): ?>
+                  <circle cx="60" cy="60" r="<?php echo $rTS; ?>" fill="none" stroke="url(#gradTSS)" stroke-width="<?php echo $swTS; ?>" stroke-dasharray="<?php echo $dashTSS . ' ' . $gapTSS; ?>" stroke-dashoffset="<?php echo $offsetTSS; ?>" />
+                <?php endif; ?>
+                <?php if ($segTSO > 0): ?>
+                  <circle cx="60" cy="60" r="<?php echo $rTS; ?>" fill="none" stroke="url(#gradTSO)" stroke-width="<?php echo $swTS; ?>" stroke-dasharray="<?php echo $dashTSO . ' ' . $gapTSO; ?>" stroke-dashoffset="<?php echo $offsetTSO; ?>" />
+                <?php endif; ?>
+              </svg>
+
+              <div class="center">
+                <div>
+                  <div class="ts-total"><?php echo number_format($ts_total_purchased); ?></div>
+                  <div class="ts-label"><?php echo $ts_total_purchased === 1 ? 'Session Purchased' : 'Sessions Purchased'; ?></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="legend">
+              <div class="row">
+                <span class="swatch" style="background:linear-gradient(90deg,var(--ts-completed-1),var(--ts-completed-2));"></span>
+                <span class="label">Completed</span>
+                <span class="value"><?php echo number_format($ts_total_completed); ?></span>
+              </div>
+              <div class="row">
+                <span class="swatch" style="background:linear-gradient(90deg,var(--ts-scheduled-1),var(--ts-scheduled-2));"></span>
+                <span class="label">Scheduled</span>
+                <span class="value"><?php echo number_format($ts_total_scheduled_raw); ?></span>
+              </div>
+              <div class="row">
+                <span class="swatch" style="background:linear-gradient(90deg,var(--ts-open-1),var(--ts-open-2));"></span>
+                <span class="label">Open</span>
+                <span class="value"><?php echo number_format($ts_total_unscheduled); ?></span>
+              </div>
+              <?php if ($ts_sessions_note !== ''): ?>
+                <p class="sessions-note"><?php echo h($ts_sessions_note); ?></p>
+              <?php endif; ?>
+            </div>
+          </div>
+
+          <div class="session-stats" role="list">
+            <div class="session-stat" role="listitem">
+              <span class="label">Purchased</span>
+              <span class="value"><?php echo number_format($ts_total_purchased); ?></span>
+              <span class="meta"><?php echo h($ts_meta_purchased); ?></span>
+            </div>
+            <div class="session-stat" role="listitem">
+              <span class="label">Completed</span>
+              <span class="value"><?php echo number_format($ts_total_completed); ?></span>
+              <span class="meta"><?php echo h($ts_meta_completed); ?></span>
+            </div>
+            <div class="session-stat" role="listitem">
+              <span class="label">Scheduled</span>
+              <span class="value"><?php echo number_format($ts_total_scheduled_raw); ?></span>
+              <span class="meta"><?php echo h($ts_meta_scheduled); ?></span>
+            </div>
+            <div class="session-stat" role="listitem">
+              <span class="label">Remaining</span>
+              <span class="value"><?php echo number_format($ts_total_remaining); ?></span>
+              <span class="meta"><?php echo h($ts_meta_remaining); ?></span>
+            </div>
+          </div>
+
+          <?php if ($is_client): ?>
+            <?php if ($trainer_session_focus): ?>
+              <div class="session-highlight">
+                <div class="session-highlight__label">Next session</div>
+                <?php if (!empty($trainer_session_focus_time['label'])): ?>
+                  <div class="session-highlight__value">
+                    <time datetime="<?php echo h((string)$trainer_session_focus_time['attr']); ?>"><?php echo h((string)$trainer_session_focus_time['label']); ?></time>
+                  </div>
+                <?php else: ?>
+                  <div class="session-highlight__value">Not scheduled</div>
+                <?php endif; ?>
+                <div class="session-highlight__meta">
+                  <span><strong><?php echo number_format($trainer_session_focus_purchased); ?></strong> purchased</span>
+                  <span><strong><?php echo number_format($trainer_session_focus_completed); ?></strong> completed</span>
+                  <span><strong><?php echo number_format($trainer_session_focus_scheduled); ?></strong> upcoming</span>
+                  <span><strong><?php echo number_format($trainer_session_focus_unscheduled); ?></strong> to schedule</span>
+                </div>
+              </div>
+            <?php else: ?>
+              <p class="empty">No training session packages yet.</p>
+            <?php endif; ?>
+          <?php else: ?>
+            <?php if ($trainer_session_total_clients > 0 && $trainer_session_clients): ?>
+              <ul class="client-list">
+                <?php foreach ($trainer_session_clients as $client):
+                  $purchased = (int)($client['purchased'] ?? 0);
+                  $completed = (int)($client['completed'] ?? 0);
+                  $remaining = (int)($client['remaining'] ?? max(0, $purchased - $completed));
+                  if ($remaining < 0) { $remaining = 0; }
+                  $scheduled = (int)($client['scheduled'] ?? 0);
+                  $parts = [];
+                  if ($purchased > 0) {
+                    $parts[] = number_format($purchased) . ' purchased';
+                  }
+                  $parts[] = number_format($completed) . ' completed';
+                  $parts[] = number_format($remaining) . ' remaining';
+                  if ($scheduled > 0) {
+                    $parts[] = number_format($scheduled) . ' scheduled';
+                  }
+                  $detailLine = implode(' · ', $parts);
+                  $nextInfo = ppf_dashboard_format_session_time($client['next_session_at'] ?? null);
+                ?>
+                  <li class="client">
+                    <div class="client-main">
+                      <span class="client-name"><?php echo h((string)($client['name'] ?? 'Client')); ?></span>
+                      <span class="client-remaining"><?php echo h($detailLine); ?></span>
+                    </div>
+                    <div class="client-meta">
+                      <span>Next session</span>
+                      <?php if (!empty($nextInfo['label'])): ?>
+                        <time datetime="<?php echo h((string)$nextInfo['attr']); ?>"><?php echo h((string)$nextInfo['label']); ?></time>
+                      <?php else: ?>
+                        <span>—</span>
+                      <?php endif; ?>
+                    </div>
+                  </li>
+                <?php endforeach; ?>
+              </ul>
+              <?php if ($trainer_session_more_count > 0): ?>
+                <p class="more">+ <?php echo number_format($trainer_session_more_count); ?> more clients</p>
+              <?php endif; ?>
+            <?php else: ?>
+              <p class="empty">No training session packages yet.</p>
+            <?php endif; ?>
+          <?php endif; ?>
+
+          <?php if ($can_admin): ?>
+            <div class="actions" style="margin-top:12px;">
+              <a class="btn primary" href="trainer_sessions.php">Manage Sessions</a>
+            </div>
+          <?php elseif ($is_client && $trainer_session_focus): ?>
+            <p class="sessions-note" style="margin-top:12px;">Need to make adjustments? Reach out to your trainer directly.</p>
+          <?php endif; ?>
+        </article>
+
         <!-- WORKOUT PLANS — sparkline -->
         <article class="card" data-card-key="overview-workout-plans">
           <h3>Workout Plans</h3>
@@ -1889,7 +2355,8 @@ $CAT_PALETTE = [
         </article>
         <?php endif; ?>
       <?php endif; ?>
-    </section>
+      </section>
+    </div>
 
     <!-- For You (always rendered). Order: News, Exercises donut, My Workout Plans -->
     <div class="section">
