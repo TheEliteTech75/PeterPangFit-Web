@@ -156,6 +156,47 @@ function ss_set(mysqli $conn, string $key, string $value): bool {
     return ppf_ss_set($conn, $key, $value);
 }
 
+function ppf_fetch_user_credentials(mysqli $conn, int $uid): ?array {
+    if ($uid <= 0) return null;
+    $sql = "SELECT id, email, first_name, last_name, role, password_hash, twofa_secret, twofa_app_enabled FROM users WHERE id=? LIMIT 1";
+    if (!$st = $conn->prepare($sql)) {
+        return null;
+    }
+    $st->bind_param('i', $uid);
+    $st->execute();
+    $res = $st->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $st->close();
+    return $row ?: null;
+}
+
+function ppf_collect_admin_recipients(mysqli $conn): array {
+    $recipients = [];
+    if (!table_exists($conn, 'users')) {
+        return $recipients;
+    }
+    $sql = "SELECT DISTINCT email, first_name, last_name FROM users WHERE email <> '' AND LOWER(role) = 'admin'";
+    if ($st = $conn->prepare($sql)) {
+        $st->execute();
+        $res = $st->get_result();
+        while ($row = $res ? $res->fetch_assoc() : null) {
+            $email = trim((string)($row['email'] ?? ''));
+            if ($email === '') continue;
+            $key = strtolower($email);
+            if (isset($recipients[$key])) continue;
+            $first = trim((string)($row['first_name'] ?? ''));
+            $last  = trim((string)($row['last_name'] ?? ''));
+            $name  = trim($first . ' ' . $last);
+            if ($name === '') {
+                $name = $email;
+            }
+            $recipients[$key] = ['email' => $email, 'name' => $name];
+        }
+        $st->close();
+    }
+    return array_values($recipients);
+}
+
 // ---------- POST actions ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
@@ -227,27 +268,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $statusType = 'success';
             $messageParts = [];
 
+            $demoCurrentPassword = (string)($_POST['demo_current_password'] ?? '');
+            $demoTotpCode = preg_replace('/\D/', '', (string)($_POST['demo_totp_code'] ?? ''));
+            $cachedAuthRow = null;
+            $getAuthRow = function () use (&$cachedAuthRow, $conn, $uid) {
+                if ($cachedAuthRow === null) {
+                    $cachedAuthRow = ppf_fetch_user_credentials($conn, $uid);
+                }
+                return $cachedAuthRow;
+            };
+
             $demoToggleSubmitted = isset($_POST['demo_mode_enabled_present']);
             $desiredDemoEnabled = ($_POST['demo_mode_enabled'] ?? '') === '1';
             $demoToggleErrorMsg = '';
             $demoToggleSuccess = true;
             if ($demoToggleSubmitted && $desiredDemoEnabled !== $demoModeEnabled) {
                 $demoToggleSuccess = false;
-                if ($demoPrimaryConn instanceof mysqli) {
-                    try {
-                        if (function_exists('ppf_demo_set_enabled')) {
-                            $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled);
-                            $demoToggleSuccess = ($result !== false);
-                        } else {
-                            ensure_system_settings_table($demoPrimaryConn);
-                            $demoToggleSuccess = ss_set($demoPrimaryConn, 'demo_mode_enabled', $desiredDemoEnabled ? '1' : '0');
-                        }
-                    } catch (Throwable $e) {
-                        $demoToggleErrorMsg = $e->getMessage();
-                        $demoToggleSuccess = false;
-                    }
+                if ($demoCurrentPassword === '') {
+                    $demoToggleErrorMsg = 'Enter your current password to toggle Demo Mode.';
+                } elseif (strlen($demoTotpCode) !== 6) {
+                    $demoToggleErrorMsg = 'Enter the 6-digit authenticator code to toggle Demo Mode.';
                 } else {
-                    $demoToggleErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                    $authRow = $getAuthRow();
+                    if (!$authRow || empty($authRow['password_hash'])) {
+                        $demoToggleErrorMsg = 'Unable to verify your credentials. Please sign in again.';
+                    } elseif (!password_verify($demoCurrentPassword, (string)$authRow['password_hash'])) {
+                        $demoToggleErrorMsg = 'Incorrect current password.';
+                    } else {
+                        $secret = strtoupper(preg_replace('/\s+/', '', (string)($authRow['twofa_secret'] ?? '')));
+                        $appEnabled = (int)($authRow['twofa_app_enabled'] ?? 0) === 1;
+                        if (!$appEnabled || $secret === '') {
+                            $demoToggleErrorMsg = 'Authenticator app must be enabled before toggling Demo Mode.';
+                        } elseif (!ppf_totp_verify($secret, $demoTotpCode, 30, 6, 1)) {
+                            $demoToggleErrorMsg = 'Authenticator code was not recognized.';
+                        } elseif ($demoPrimaryConn instanceof mysqli) {
+                            try {
+                                if (function_exists('ppf_demo_set_enabled')) {
+                                    $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled);
+                                    $demoToggleSuccess = ($result !== false);
+                                } else {
+                                    ensure_system_settings_table($demoPrimaryConn);
+                                    $demoToggleSuccess = ss_set($demoPrimaryConn, 'demo_mode_enabled', $desiredDemoEnabled ? '1' : '0');
+                                }
+                            } catch (Throwable $e) {
+                                $demoToggleErrorMsg = $e->getMessage();
+                                $demoToggleSuccess = false;
+                            }
+                        } else {
+                            $demoToggleErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                        }
+                    }
                 }
 
                 if ($demoToggleSuccess) {
@@ -256,6 +326,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $action = $desiredDemoEnabled ? 'demo_mode_enabled' : 'demo_mode_disabled';
                         $details = $desiredDemoEnabled ? 'Demo Mode toggled on via settings.' : 'Demo Mode toggled off via settings.';
                         ppf_log($conn, $uid, $email ?: null, $role ?: null, $action, 'system', 'demo_mode', $details);
+                    }
+                    $notifyConn = $demoPrimaryConn instanceof mysqli ? $demoPrimaryConn : $conn;
+                    $recipients = $notifyConn instanceof mysqli ? ppf_collect_admin_recipients($notifyConn) : [];
+                    $stateWord = $desiredDemoEnabled ? 'enabled' : 'disabled';
+                    $actorName = '';
+                    $authRow = $getAuthRow();
+                    if ($authRow) {
+                        $first = trim((string)($authRow['first_name'] ?? ''));
+                        $last  = trim((string)($authRow['last_name'] ?? ''));
+                        $actorName = trim($first . ' ' . $last);
+                    }
+                    if ($actorName === '') {
+                        $actorName = $email !== '' ? $email : ('Admin #' . $uid);
+                    }
+                    $timestamp = date('Y-m-d H:i:s T');
+                    $ipAddress = function_exists('ppf_client_ip') ? ppf_client_ip() : ($_SERVER['REMOTE_ADDR'] ?? '');
+                    $subject = 'Demo Mode ' . ucfirst($stateWord);
+                    $bodyLines = [
+                        'Hello Admin,',
+                        '',
+                        'Demo Mode was ' . $stateWord . ' on ' . $timestamp . ' by ' . $actorName . '.',
+                    ];
+                    if ($email !== '') {
+                        $bodyLines[] = 'Account email: ' . $email;
+                    }
+                    if ($ipAddress !== '') {
+                        $bodyLines[] = 'Originating IP: ' . $ipAddress;
+                    }
+                    $bodyLines[] = '';
+                    $bodyLines[] = 'Review the System Logs for additional context if this was unexpected.';
+                    $bodyLines[] = '';
+                    $bodyLines[] = '— Peter Pang Fit';
+                    $emailBody = implode("\n", $bodyLines);
+                    $sentCount = 0;
+                    $failedEmails = [];
+                    if ($recipients) {
+                        foreach ($recipients as $recipient) {
+                            $ok = @send_plain_email($recipient['email'], $recipient['name'], $subject, $emailBody);
+                            if ($ok) {
+                                $sentCount++;
+                            } else {
+                                $failedEmails[] = $recipient['email'];
+                            }
+                        }
+                        if ($sentCount > 0 && function_exists('ppf_log')) {
+                            $details = 'Sent ' . $sentCount . ' Demo Mode ' . $stateWord . ' notification email(s).';
+                            ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_notification_sent', 'system', 'demo_mode', $details);
+                        }
+                        if ($failedEmails) {
+                            $statusType = 'error';
+                            $failureList = implode(', ', $failedEmails);
+                            $messageParts[] = 'Some admin notifications could not be delivered: ' . $failureList . '.';
+                            if (function_exists('ppf_log')) {
+                                $details = 'Failed to email: ' . $failureList;
+                                ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_notification_failed', 'system', 'demo_mode', $details);
+                            }
+                        }
+                    } else {
+                        $messageParts[] = 'No admin notification emails were sent because no admin email addresses were found.';
+                        if (function_exists('ppf_log')) {
+                            ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_notification_skipped', 'system', 'demo_mode', 'No admin recipients available.');
+                        }
                     }
                 } else {
                     $statusType = 'error';
@@ -278,26 +410,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($demoResetRequested) {
                 $demoResetSuccess = false;
                 $demoResetErrorMsg = '';
-                if ($demoPrimaryConn instanceof mysqli) {
-                    try {
-                        if (function_exists('ppf_demo_reset')) {
-                            $result = ppf_demo_reset($demoPrimaryConn);
-                            $demoResetSuccess = ($result !== false);
-                        } else {
-                            $demoResetSuccess = false;
-                            $demoResetErrorMsg = 'Demo reset helper is unavailable.';
-                        }
-                    } catch (Throwable $e) {
-                        $demoResetSuccess = false;
-                        $demoResetErrorMsg = $e->getMessage();
-                    }
+                $demoResetMessages = [];
+                $demoResetLogged = false;
+                if ($demoCurrentPassword === '') {
+                    $demoResetErrorMsg = 'Enter your current password to reset the demo data.';
                 } else {
-                    $demoResetErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                    $authRow = $getAuthRow();
+                    if (!$authRow || empty($authRow['password_hash'])) {
+                        $demoResetErrorMsg = 'Unable to verify your credentials. Please sign in again.';
+                    } elseif (!password_verify($demoCurrentPassword, (string)$authRow['password_hash'])) {
+                        $demoResetErrorMsg = 'Incorrect current password.';
+                    }
+                }
+                if ($demoResetErrorMsg === '') {
+                    if ($demoPrimaryConn instanceof mysqli) {
+                        try {
+                            if (function_exists('ppf_demo_reset')) {
+                                $result = ppf_demo_reset($demoPrimaryConn);
+                                if (is_array($result)) {
+                                    $demoResetSuccess = !empty($result['success']);
+                                    $demoResetMessages = array_map('trim', (array)($result['messages'] ?? []));
+                                    $errors = array_map('trim', (array)($result['errors'] ?? []));
+                                    $errors = array_filter($errors, static function ($val) { return $val !== ''; });
+                                    if ($errors) {
+                                        $demoResetErrorMsg = trim(implode(' ', $errors));
+                                    }
+                                    $demoResetLogged = !empty($result['logged']);
+                                } else {
+                                    $demoResetSuccess = ($result !== false);
+                                }
+                            } else {
+                                $demoResetSuccess = false;
+                                $demoResetErrorMsg = 'Demo reset helper is unavailable.';
+                            }
+                        } catch (Throwable $e) {
+                            $demoResetSuccess = false;
+                            $demoResetErrorMsg = $e->getMessage();
+                        }
+                    } else {
+                        $demoResetErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                    }
                 }
 
                 if ($demoResetSuccess) {
                     $messageParts[] = 'Demo data reset.';
-                    if (function_exists('ppf_log')) {
+                    if ($demoResetMessages) {
+                        $messageParts = array_merge($messageParts, array_filter($demoResetMessages));
+                    }
+                    if (!$demoResetLogged && function_exists('ppf_log')) {
                         ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_reset', 'system', 'demo_mode', 'Demo data reset via settings.');
                     }
                 } else {
@@ -310,7 +470,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $msg .= '.';
                     }
                     $messageParts[] = $msg;
-                    if (function_exists('ppf_log')) {
+                    if (!$demoResetLogged && function_exists('ppf_log')) {
                         $details = $demoResetErrorMsg !== '' ? $demoResetErrorMsg : 'Unknown error resetting Demo Mode data.';
                         ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_reset_failed', 'system', 'demo_mode', $details);
                     }
@@ -1592,10 +1752,14 @@ if ($demoModeControlsAvailable) {
           <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>">Demo Mode: <?php echo h($demoModeStatusLabel); ?></span>
         </div>
 
-        <form method="post" class="two-col" style="margin-top:18px;">
+        <form method="post" class="two-col" style="margin-top:18px;" data-demo-mode-form="1">
           <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
           <input type="hidden" name="action" value="system_settings">
           <input type="hidden" name="demo_mode_enabled_present" value="1">
+          <input type="hidden" name="demo_mode_enabled" id="demoModeEnabledInput" value="<?php echo $demoModeEnabled ? '1' : '0'; ?>">
+          <input type="hidden" name="demo_totp_code" id="demoTotpCodeInput" value="">
+          <input type="hidden" name="demo_current_password" id="demoCurrentPasswordInput" value="">
+          <input type="hidden" name="demo_reset" id="demoResetInput" value="0">
 
           <div>
             <h3>Account Lockout (minutes)</h3>
@@ -1629,15 +1793,21 @@ if ($demoModeControlsAvailable) {
                 <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>"><?php echo h($demoModeStatusLabel); ?></span>
               </div>
               <p class="small-text">Toggle the sanitized training environment for walkthroughs without touching live data.</p>
-              <label class="small-text" style="display:flex;align-items:center;gap:8px;">
-                <input type="checkbox" name="demo_mode_enabled" value="1" <?php echo $demoModeEnabled ? 'checked' : ''; ?> <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>> Enable Demo Mode experience
-              </label>
+              <p class="small-text">You will be prompted for your authenticator app code and current password whenever you enable or disable Demo Mode. Resetting the demo data only requires your current password.</p>
+              <?php if (!$twofaAppEnabled): ?>
+                <p class="demo-mode-warning small-text">Enable your authenticator app before attempting to toggle Demo Mode.</p>
+              <?php endif; ?>
               <?php if ($demoModeStatusMessage): ?>
                 <p class="demo-mode-warning small-text"><?php echo h($demoModeStatusMessage); ?></p>
               <?php endif; ?>
               <div class="demo-mode-actions">
-                <button class="btn danger" type="submit" name="demo_reset" value="1" formnovalidate <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
-                <span class="small-text">Restore demo accounts and seed content to their defaults.</span>
+                <?php if ($demoModeEnabled): ?>
+                <button class="btn secondary" type="button" data-demo-action="disable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Disable Demo Mode</button>
+                <?php else: ?>
+                <button class="btn" type="button" data-demo-action="enable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Enable Demo Mode</button>
+                <?php endif; ?>
+                <button class="btn danger" type="button" data-demo-action="reset" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
+                <span class="small-text">Restore demo accounts and seed content to their defaults. Requires your current password.</span>
               </div>
             </div>
           </div>
@@ -2750,6 +2920,215 @@ if ($demoModeControlsAvailable) {
         }
       });
     }
+
+    (function initDemoModeModals() {
+      const demoForm = document.querySelector('form[data-demo-mode-form="1"]');
+      if (!demoForm) return;
+
+      const enableBtn = demoForm.querySelector('[data-demo-action="enable"]');
+      const disableBtn = demoForm.querySelector('[data-demo-action="disable"]');
+      const resetBtn = demoForm.querySelector('[data-demo-action="reset"]');
+      const hiddenEnabled = document.getElementById('demoModeEnabledInput');
+      const hiddenTotp = document.getElementById('demoTotpCodeInput');
+      const hiddenPassword = document.getElementById('demoCurrentPasswordInput');
+      const hiddenReset = document.getElementById('demoResetInput');
+
+      if (!hiddenEnabled || !hiddenTotp || !hiddenPassword || !hiddenReset) return;
+
+      const currentState = hiddenEnabled.value === '1';
+
+      function sanitizeCode(value) {
+        return (value || '').replace(/\D+/g, '').slice(0, 6);
+      }
+
+      function clearHiddenCreds() {
+        hiddenTotp.value = '';
+        hiddenPassword.value = '';
+        hiddenReset.value = '0';
+      }
+
+      function openToggleModal(targetEnabled) {
+        const isEnable = targetEnabled === true;
+        openModal({
+          title: isEnable ? 'Enable Demo Mode' : 'Disable Demo Mode',
+          render: (body, controls) => {
+            const intro = document.createElement('p');
+            intro.textContent = 'Enter the 6-digit authenticator app code and your current password to continue.';
+            const formEl = document.createElement('form');
+            formEl.className = 'modal-form';
+
+            const codeGroup = document.createElement('div');
+            const codeLabel = document.createElement('label');
+            codeLabel.setAttribute('for', 'demoToggleTotp');
+            codeLabel.textContent = 'Authenticator app code';
+            const codeInput = document.createElement('input');
+            codeInput.id = 'demoToggleTotp';
+            codeInput.className = 'input';
+            codeInput.type = 'text';
+            codeInput.inputMode = 'numeric';
+            codeInput.autocomplete = 'one-time-code';
+            codeInput.required = true;
+            codeInput.pattern = '\\d{6}';
+            codeInput.maxLength = 6;
+            codeInput.placeholder = '6-digit code';
+            codeGroup.append(codeLabel, codeInput);
+
+            const passGroup = document.createElement('div');
+            const passLabel = document.createElement('label');
+            passLabel.setAttribute('for', 'demoTogglePassword');
+            passLabel.textContent = 'Current password';
+            const passInput = document.createElement('input');
+            passInput.id = 'demoTogglePassword';
+            passInput.className = 'input';
+            passInput.type = 'password';
+            passInput.autocomplete = 'current-password';
+            passInput.required = true;
+            passGroup.append(passLabel, passInput);
+
+            const actions = document.createElement('div');
+            actions.className = 'modal-actions';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn small secondary';
+            cancelBtn.textContent = 'Cancel';
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'submit';
+            confirmBtn.className = 'btn small';
+            confirmBtn.textContent = isEnable ? 'Enable Demo Mode' : 'Disable Demo Mode';
+            actions.append(cancelBtn, confirmBtn);
+
+            formEl.append(codeGroup, passGroup, actions);
+            body.append(intro, formEl);
+
+            requestAnimationFrame(() => codeInput.focus());
+
+            cancelBtn.addEventListener('click', () => {
+              clearHiddenCreds();
+              controls.close();
+            });
+
+            formEl.addEventListener('submit', (evt) => {
+              evt.preventDefault();
+              const sanitizedCode = sanitizeCode(codeInput.value);
+              codeInput.value = sanitizedCode;
+              codeInput.setCustomValidity('');
+              passInput.setCustomValidity('');
+              if (!formEl.reportValidity()) {
+                return;
+              }
+              if (sanitizedCode.length !== 6) {
+                codeInput.setCustomValidity('Enter the 6-digit code.');
+                codeInput.reportValidity();
+                codeInput.setCustomValidity('');
+                return;
+              }
+              if (passInput.value === '') {
+                passInput.setCustomValidity('Enter your current password.');
+                passInput.reportValidity();
+                passInput.setCustomValidity('');
+                return;
+              }
+              hiddenTotp.value = sanitizedCode;
+              hiddenPassword.value = passInput.value;
+              hiddenReset.value = '0';
+              hiddenEnabled.value = isEnable ? '1' : '0';
+              controls.close();
+              demoForm.submit();
+            });
+          }
+        });
+      }
+
+      function openResetModal() {
+        openModal({
+          title: 'Reset Demo Data',
+          render: (body, controls) => {
+            const intro = document.createElement('p');
+            intro.textContent = 'Confirm with your current password to restore the demo seed.';
+            const formEl = document.createElement('form');
+            formEl.className = 'modal-form';
+
+            const passGroup = document.createElement('div');
+            const passLabel = document.createElement('label');
+            passLabel.setAttribute('for', 'demoResetPassword');
+            passLabel.textContent = 'Current password';
+            const passInput = document.createElement('input');
+            passInput.id = 'demoResetPassword';
+            passInput.className = 'input';
+            passInput.type = 'password';
+            passInput.autocomplete = 'current-password';
+            passInput.required = true;
+            passGroup.append(passLabel, passInput);
+
+            const actions = document.createElement('div');
+            actions.className = 'modal-actions';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn small secondary';
+            cancelBtn.textContent = 'Cancel';
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'submit';
+            confirmBtn.className = 'btn small danger';
+            confirmBtn.textContent = 'Reset Demo Data';
+            actions.append(cancelBtn, confirmBtn);
+
+            formEl.append(passGroup, actions);
+            body.append(intro, formEl);
+
+            requestAnimationFrame(() => passInput.focus());
+
+            cancelBtn.addEventListener('click', () => {
+              clearHiddenCreds();
+              controls.close();
+            });
+
+            formEl.addEventListener('submit', (evt) => {
+              evt.preventDefault();
+              passInput.setCustomValidity('');
+              if (!formEl.reportValidity()) {
+                return;
+              }
+              if (passInput.value === '') {
+                passInput.setCustomValidity('Enter your current password.');
+                passInput.reportValidity();
+                passInput.setCustomValidity('');
+                return;
+              }
+              hiddenTotp.value = '';
+              hiddenPassword.value = passInput.value;
+              hiddenReset.value = '1';
+              hiddenEnabled.value = currentState ? '1' : '0';
+              controls.close();
+              demoForm.submit();
+            });
+          }
+        });
+      }
+
+      if (enableBtn) {
+        enableBtn.addEventListener('click', () => {
+          if (!enableBtn.disabled) {
+            openToggleModal(true);
+          }
+        });
+      }
+
+      if (disableBtn) {
+        disableBtn.addEventListener('click', () => {
+          if (!disableBtn.disabled) {
+            openToggleModal(false);
+          }
+        });
+      }
+
+      if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+          if (!resetBtn.disabled) {
+            openResetModal();
+          }
+        });
+      }
+    })();
   </script>
 </body>
 </html>
