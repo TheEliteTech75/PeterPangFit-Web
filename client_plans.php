@@ -909,23 +909,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       justify-content: center;
       gap: 6px;
       min-height: clamp(110px, 24vw, 140px);
-    }
-
-    .sessions__payments {
-      margin-top: 12px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px;
-      align-items: stretch;
-    }
-
-    .sessions__payments {
-      margin-top: 12px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px;
-      align-items: start;
-    }
+}
 
     .sessions-total span {
       text-transform: uppercase;
@@ -1165,7 +1149,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       cursor: pointer;
       transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
       box-shadow: 0 12px 24px color-mix(in srgb, var(--brand, #38bdf8) 18%, transparent 82%);
-    }
+  }
 
     .session-action-btn[data-session-start] {
       background: color-mix(in srgb, var(--brand, #38bdf8) 22%, transparent 78%);
@@ -3062,7 +3046,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
   const csrfToken = document.body && document.body.dataset ? (document.body.dataset.csrf || '') : '';
   const sessionTotalsTargets = {};
-  ['purchased', 'used', 'scheduled', 'remaining'].forEach(key => {
+  ['purchased', 'used', 'remaining'].forEach(key => {
     sessionTotalsTargets[key] = Array.from(document.querySelectorAll(`[data-session-total="${key}"]`));
   });
   const packageTotals = new Map();
@@ -3287,9 +3271,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
             if (summary) {
               if (summary.used && pkgTotals && typeof pkgTotals.used !== 'undefined') {
                 summary.used.textContent = pkgTotals.used;
-              }
-              if (summary.scheduled && pkgTotals && typeof pkgTotals.scheduled !== 'undefined') {
-                summary.scheduled.textContent = pkgTotals.scheduled;
               }
               if (summary.remaining && pkgTotals && typeof pkgTotals.remaining !== 'undefined') {
                 summary.remaining.textContent = pkgTotals.remaining;
