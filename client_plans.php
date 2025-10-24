@@ -2906,6 +2906,15 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     });
   }
 
+  document.querySelectorAll('.hero-stat').forEach(stat => {
+    const label = stat.querySelector('.hero-stat__label');
+    if (!label) return;
+    const text = (label.textContent || label.innerText || '').trim().toLowerCase();
+    if (text === 'sessions scheduled') {
+      stat.remove();
+    }
+  });
+
   const sessionRows = new Map();
   document.querySelectorAll('[data-session-row]').forEach(row => {
     const sessionId = row.dataset.sessionRow;
