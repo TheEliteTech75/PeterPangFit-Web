@@ -97,9 +97,14 @@ if (!function_exists('ppf_trainer_sessions_ensure_schema')) {
                 package_id INT UNSIGNED NOT NULL,
                 scheduled_start DATETIME NOT NULL,
                 scheduled_end DATETIME NULL,
-                status ENUM('scheduled','completed','cancelled') NOT NULL DEFAULT 'scheduled',
+                actual_start_at DATETIME NULL,
+                actual_end_at DATETIME NULL,
+                status ENUM('scheduled','in_progress','completed','cancelled') NOT NULL DEFAULT 'scheduled',
                 completed_at DATETIME NULL,
                 completion_marked_by INT NULL,
+                timer_started_by INT NULL,
+                timer_ended_by INT NULL,
+                duration_seconds INT NULL,
                 notes TEXT NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NULL,
@@ -108,6 +113,43 @@ if (!function_exists('ppf_trainer_sessions_ensure_schema')) {
                 INDEX idx_status (status)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+
+        // Ensure new columns exist for deployments that created the table before the
+        // stopwatch functionality was introduced. We rely on column_exists from
+        // helpers.php if available, otherwise fire-and-forget ALTERs.
+        $hasColumnFn = function_exists('column_exists') ? 'column_exists' : null;
+        $alterStatements = [
+            ['actual_start_at', "ALTER TABLE trainer_sessions ADD COLUMN actual_start_at DATETIME NULL AFTER scheduled_end"],
+            ['actual_end_at', "ALTER TABLE trainer_sessions ADD COLUMN actual_end_at DATETIME NULL AFTER actual_start_at"],
+            ['timer_started_by', "ALTER TABLE trainer_sessions ADD COLUMN timer_started_by INT NULL AFTER completion_marked_by"],
+            ['timer_ended_by', "ALTER TABLE trainer_sessions ADD COLUMN timer_ended_by INT NULL AFTER timer_started_by"],
+            ['duration_seconds', "ALTER TABLE trainer_sessions ADD COLUMN duration_seconds INT NULL AFTER timer_ended_by"],
+        ];
+        foreach ($alterStatements as [$column, $sql]) {
+            $shouldAlter = true;
+            if ($hasColumnFn) {
+                try {
+                    $shouldAlter = !column_exists($conn, 'trainer_sessions', $column);
+                } catch (Throwable $e) {
+                    $shouldAlter = true;
+                }
+            }
+            if ($shouldAlter) {
+                @$conn->query($sql);
+            }
+        }
+
+        // Ensure the status ENUM contains the in_progress state used for the
+        // stopwatch flow.
+        if ($res = @$conn->query("SHOW COLUMNS FROM trainer_sessions LIKE 'status'")) {
+            if ($row = $res->fetch_assoc()) {
+                $type = $row['Type'] ?? '';
+                if (stripos($type, "'in_progress'") === false) {
+                    @$conn->query("ALTER TABLE trainer_sessions MODIFY COLUMN status ENUM('scheduled','in_progress','completed','cancelled') NOT NULL DEFAULT 'scheduled'");
+                }
+            }
+            $res->free();
+        }
 
         @$conn->query(
             "CREATE TABLE IF NOT EXISTS trainer_session_transactions (
@@ -188,11 +230,11 @@ if (!function_exists('ppf_trainer_sessions_fetch_package_summary')) {
             LEFT JOIN (
                 SELECT
                     package_id,
-                    SUM(status='scheduled') AS scheduled_open,
+                    SUM(status IN ('scheduled','in_progress')) AS scheduled_open,
                     SUM(status='completed') AS completed_count,
                     SUM(status='cancelled') AS cancelled_count,
-                    MIN(CASE WHEN status='scheduled' THEN scheduled_start END) AS next_session_at,
-                    MAX(CASE WHEN status='completed' THEN completed_at END) AS last_completed_at
+                    MIN(CASE WHEN status IN ('scheduled','in_progress') THEN scheduled_start END) AS next_session_at,
+                    MAX(COALESCE(actual_end_at, completed_at)) AS last_completed_at
                 FROM trainer_sessions
                 GROUP BY package_id
             ) agg ON agg.package_id = p.id
@@ -261,11 +303,11 @@ if (!function_exists('ppf_trainer_sessions_fetch_packages')) {
             LEFT JOIN (
                 SELECT
                     package_id,
-                    SUM(status='scheduled') AS scheduled_open,
+                    SUM(status IN ('scheduled','in_progress')) AS scheduled_open,
                     SUM(status='completed') AS completed_count,
                     SUM(status='cancelled') AS cancelled_count,
-                    MIN(CASE WHEN status='scheduled' THEN scheduled_start END) AS next_session_at,
-                    MAX(CASE WHEN status='completed' THEN completed_at END) AS last_completed_at
+                    MIN(CASE WHEN status IN ('scheduled','in_progress') THEN scheduled_start END) AS next_session_at,
+                    MAX(COALESCE(actual_end_at, completed_at)) AS last_completed_at
                 FROM trainer_sessions
                 GROUP BY package_id
             ) agg ON agg.package_id = p.id
@@ -302,7 +344,7 @@ if (!function_exists('ppf_trainer_sessions_fetch_packages')) {
 
 if (!function_exists('ppf_trainer_sessions_fetch_sessions_for_package')) {
     function ppf_trainer_sessions_fetch_sessions_for_package(mysqli $conn, int $packageId): array {
-        $sql = "SELECT id, package_id, scheduled_start, scheduled_end, status, completed_at, completion_marked_by, notes, created_at, updated_at FROM trainer_sessions WHERE package_id = ? ORDER BY scheduled_start ASC, id ASC";
+        $sql = "SELECT id, package_id, scheduled_start, scheduled_end, actual_start_at, actual_end_at, status, completed_at, completion_marked_by, timer_started_by, timer_ended_by, duration_seconds, notes, created_at, updated_at FROM trainer_sessions WHERE package_id = ? ORDER BY scheduled_start ASC, id ASC";
         if (!$stmt = $conn->prepare($sql)) {
             return [];
         }
@@ -401,9 +443,9 @@ if (!function_exists('ppf_trainer_sessions_dashboard_rollup')) {
                 LEFT JOIN (
                     SELECT
                         package_id,
-                        SUM(status='scheduled') AS scheduled_open,
+                        SUM(status IN ('scheduled','in_progress')) AS scheduled_open,
                         SUM(status='completed') AS completed_count,
-                        MIN(CASE WHEN status='scheduled' THEN scheduled_start END) AS next_session_at
+                        MIN(CASE WHEN status IN ('scheduled','in_progress') THEN scheduled_start END) AS next_session_at
                     FROM trainer_sessions
                     GROUP BY package_id
                 ) ts ON ts.package_id = p.id
@@ -518,18 +560,25 @@ if (!function_exists('ppf_trainer_sessions_within_window')) {
         } catch (Throwable $e) {
             return false;
         }
+
+        $windowStart = $start->sub(new DateInterval('PT30M'));
+        if ($now < $windowStart) {
+            return false;
+        }
+
         $endRaw = $session['scheduled_end'] ?? null;
-        $end = null;
         if ($endRaw) {
             try {
                 $end = new DateTimeImmutable($endRaw);
+                $windowEnd = $end->add(new DateInterval('PT30M'));
+                if ($now > $windowEnd) {
+                    return false;
+                }
             } catch (Throwable $e) {
-                $end = null;
+                // Ignore invalid end dates; treat as open-ended after window start
             }
         }
-        if ($end) {
-            return ($now >= $start && $now <= $end);
-        }
-        return ($now >= $start);
+
+        return true;
     }
 }
