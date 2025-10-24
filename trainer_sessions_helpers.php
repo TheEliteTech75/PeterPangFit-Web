@@ -134,8 +134,19 @@ if (!function_exists('ppf_trainer_sessions_ensure_schema')) {
                     $shouldAlter = true;
                 }
             }
-            if ($shouldAlter) {
+            if (!$shouldAlter) {
+                continue;
+            }
+
+            try {
                 @$conn->query($sql);
+            } catch (Throwable $e) {
+                // Ignore duplicate column errors so repeated deployments remain idempotent
+                // even on environments where column_exists cannot probe INFORMATION_SCHEMA.
+                $code = method_exists($e, 'getCode') ? $e->getCode() : null;
+                if ((int)$code !== 1060) {
+                    throw $e;
+                }
             }
         }
 
