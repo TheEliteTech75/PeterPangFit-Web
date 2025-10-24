@@ -1116,9 +1116,10 @@ if ($demoModeControlsAvailable) {
     }
 
     .system-side-panel {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
       gap: 18px;
+      align-items: start;
     }
 
     .demo-mode-header {
@@ -1609,6 +1610,19 @@ if ($demoModeControlsAvailable) {
           </div>
 
           <div class="system-side-panel">
+            <div>
+              <h3>Registration Test Token</h3>
+              <label class="small-text" style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" name="test_token_enabled" value="1" <?php echo $testTokenEnabled ? 'checked' : ''; ?>> Enable unique test token bypass
+              </label>
+              <label class="small-text" for="test_token_value">Current token</label>
+              <input class="input" id="test_token_value" name="test_token_value" value="<?php echo h($testTokenValue); ?>" placeholder="Leave blank to keep or generate">
+              <label class="small-text" style="display:flex;align-items:center;gap:8px; margin-top:10px;">
+                <input type="checkbox" name="generate_test_token" value="1"> Generate a new token
+              </label>
+              <p class="small-text">Share this value privately with testers who should bypass invites via register.php.</p>
+            </div>
+
             <div class="demo-mode-block">
               <div class="demo-mode-header">
                 <h3>Demo Mode</h3>
@@ -1625,19 +1639,6 @@ if ($demoModeControlsAvailable) {
                 <button class="btn danger" type="submit" name="demo_reset" value="1" formnovalidate <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
                 <span class="small-text">Restore demo accounts and seed content to their defaults.</span>
               </div>
-            </div>
-
-            <div>
-              <h3>Registration Test Token</h3>
-              <label class="small-text" style="display:flex;align-items:center;gap:8px;">
-                <input type="checkbox" name="test_token_enabled" value="1" <?php echo $testTokenEnabled ? 'checked' : ''; ?>> Enable unique test token bypass
-              </label>
-              <label class="small-text" for="test_token_value">Current token</label>
-              <input class="input" id="test_token_value" name="test_token_value" value="<?php echo h($testTokenValue); ?>" placeholder="Leave blank to keep or generate">
-              <label class="small-text" style="display:flex;align-items:center;gap:8px; margin-top:10px;">
-                <input type="checkbox" name="generate_test_token" value="1"> Generate a new token
-              </label>
-              <p class="small-text">Share this value privately with testers who should bypass invites via register.php.</p>
             </div>
           </div>
 
