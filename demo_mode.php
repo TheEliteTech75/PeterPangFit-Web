@@ -361,4 +361,150 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         }
         ppf_demo_push_alert($reason);
     }
+
+    /** Absolute path to the bundled demo seed file. */
+    function ppf_demo_seed_path(): string
+    {
+        return __DIR__ . '/demo_seed.sql';
+    }
+
+    /**
+     * Reset the sandbox database to the bundled demo seed.
+     * Returns an array describing success, messages, and any errors.
+     */
+    function ppf_demo_reset(mysqli $primaryConn)
+    {
+        global $PPF_DEMO_SANDBOX_CFG, $PPF_DEMO_SANDBOX_CONN, $PPF_DEMO_ACTIVE_CONN;
+
+        $result = [
+            'success'  => false,
+            'messages' => [],
+            'errors'   => [],
+            'logged'   => false,
+        ];
+
+        $seedFile = ppf_demo_seed_path();
+        if (!is_file($seedFile) || !is_readable($seedFile)) {
+            $msg = 'Demo seed file is missing or unreadable.';
+            $result['errors'][] = $msg;
+            ppf_demo_push_alert($msg);
+            return $result;
+        }
+
+        if (!is_array($PPF_DEMO_SANDBOX_CFG) || !$PPF_DEMO_SANDBOX_CFG) {
+            $msg = 'Sandbox configuration is unavailable.';
+            $result['errors'][] = $msg;
+            ppf_demo_push_alert($msg);
+            return $result;
+        }
+
+        $seedSql = @file_get_contents($seedFile);
+        if ($seedSql === false || trim($seedSql) === '') {
+            $msg = 'Unable to read demo seed contents.';
+            $result['errors'][] = $msg;
+            ppf_demo_push_alert($msg);
+            return $result;
+        }
+
+        $sandbox = $PPF_DEMO_SANDBOX_CONN;
+        if (!($sandbox instanceof mysqli) || $sandbox->connect_errno) {
+            $sandbox = ppf_demo_connect($PPF_DEMO_SANDBOX_CFG);
+        }
+
+        if (!($sandbox instanceof mysqli) || $sandbox->connect_errno) {
+            $msg = 'Unable to connect to the sandbox database.';
+            if ($sandbox instanceof mysqli && $sandbox->connect_error) {
+                $msg .= ' (' . $sandbox->connect_error . ')';
+            }
+            $result['errors'][] = $msg;
+            ppf_demo_push_alert($msg);
+            return $result;
+        }
+
+        $start = microtime(true);
+        $sandbox->begin_transaction();
+        $sandbox->query('SET FOREIGN_KEY_CHECKS=0');
+
+        if (!$sandbox->multi_query($seedSql)) {
+            $sandbox->rollback();
+            $sandbox->query('SET FOREIGN_KEY_CHECKS=1');
+            $sandbox->autocommit(true);
+            $err = $sandbox->error ?: 'Unknown error while seeding demo data.';
+            $result['errors'][] = $err;
+            ppf_demo_push_alert('Demo reset failed: ' . $err);
+            if (function_exists('ppf_log')) {
+                try {
+                    ppf_log($primaryConn, null, null, null, 'demo_mode_reset_failed', 'system', 'demo', $err);
+                    $result['logged'] = true;
+                } catch (Throwable $e) {
+                    // ignore logging failure
+                }
+            }
+            return $result;
+        }
+
+        do {
+            if ($rs = $sandbox->store_result()) {
+                $rs->free();
+            }
+        } while ($sandbox->more_results() && $sandbox->next_result());
+
+        $sandbox->query('SET FOREIGN_KEY_CHECKS=1');
+
+        if (!$sandbox->commit()) {
+            $err = $sandbox->error ?: 'Failed to commit sandbox reset.';
+            $result['errors'][] = $err;
+            ppf_demo_push_alert('Demo reset failed: ' . $err);
+            if (function_exists('ppf_log')) {
+                try {
+                    ppf_log($primaryConn, null, null, null, 'demo_mode_reset_failed', 'system', 'demo', $err);
+                    $result['logged'] = true;
+                } catch (Throwable $e) {
+                    // ignore logging failure
+                }
+            }
+            $sandbox->rollback();
+            $sandbox->autocommit(true);
+            return $result;
+        }
+
+        $sandbox->autocommit(true);
+
+        // Ensure sandbox flag mirrors the primary flag after the reset.
+        $demoEnabled = null;
+        try {
+            $demoEnabled = ppf_demo_read_flag($primaryConn);
+        } catch (Throwable $e) {
+            $demoEnabled = null;
+        }
+        if ($demoEnabled !== null) {
+            try {
+                ppf_demo_write_flag($sandbox, (bool)$demoEnabled);
+            } catch (Throwable $e) {
+                // non-fatal
+            }
+        }
+
+        // Refresh cached handles so future calls use the reset sandbox connection/data.
+        $PPF_DEMO_SANDBOX_CONN = $sandbox;
+        $PPF_DEMO_ACTIVE_CONN  = $sandbox;
+        ppf_demo_refresh_state($primaryConn);
+
+        $durationMs = (int)round((microtime(true) - $start) * 1000);
+        $message = 'Demo sandbox reset completed in ' . $durationMs . ' ms.';
+        $result['success'] = true;
+        $result['messages'][] = $message;
+
+        if (function_exists('ppf_log')) {
+            try {
+                $details = $message . ' Seed=' . basename($seedFile);
+                ppf_log($primaryConn, null, null, null, 'demo_mode_reset', 'system', 'demo', $details);
+                $result['logged'] = true;
+            } catch (Throwable $e) {
+                // ignore logging failure
+            }
+        }
+
+        return $result;
+    }
 }

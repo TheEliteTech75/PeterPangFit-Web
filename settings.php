@@ -278,11 +278,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($demoResetRequested) {
                 $demoResetSuccess = false;
                 $demoResetErrorMsg = '';
+                $demoResetMessages = [];
+                $demoResetLogged = false;
                 if ($demoPrimaryConn instanceof mysqli) {
                     try {
                         if (function_exists('ppf_demo_reset')) {
                             $result = ppf_demo_reset($demoPrimaryConn);
-                            $demoResetSuccess = ($result !== false);
+                            if (is_array($result)) {
+                                $demoResetSuccess = !empty($result['success']);
+                                $demoResetMessages = array_map('trim', (array)($result['messages'] ?? []));
+                                $errors = array_map('trim', (array)($result['errors'] ?? []));
+                                $errors = array_filter($errors, static function ($val) { return $val !== ''; });
+                                if ($errors) {
+                                    $demoResetErrorMsg = trim(implode(' ', $errors));
+                                }
+                                $demoResetLogged = !empty($result['logged']);
+                            } else {
+                                $demoResetSuccess = ($result !== false);
+                            }
                         } else {
                             $demoResetSuccess = false;
                             $demoResetErrorMsg = 'Demo reset helper is unavailable.';
@@ -297,7 +310,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($demoResetSuccess) {
                     $messageParts[] = 'Demo data reset.';
-                    if (function_exists('ppf_log')) {
+                    if ($demoResetMessages) {
+                        $messageParts = array_merge($messageParts, array_filter($demoResetMessages));
+                    }
+                    if (!$demoResetLogged && function_exists('ppf_log')) {
                         ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_reset', 'system', 'demo_mode', 'Demo data reset via settings.');
                     }
                 } else {
@@ -310,7 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $msg .= '.';
                     }
                     $messageParts[] = $msg;
-                    if (function_exists('ppf_log')) {
+                    if (!$demoResetLogged && function_exists('ppf_log')) {
                         $details = $demoResetErrorMsg !== '' ? $demoResetErrorMsg : 'Unknown error resetting Demo Mode data.';
                         ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_reset_failed', 'system', 'demo_mode', $details);
                     }
