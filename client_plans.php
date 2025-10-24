@@ -729,6 +729,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       gap: clamp(16px, 4vw, 28px);
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-content: start;
+      align-items: start;
     }
 
     .hero-highlight {
@@ -787,6 +788,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       display: grid;
       gap: 16px;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      align-items: start;
     }
 
     .hero-stat {
@@ -890,6 +892,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       gap: 12px;
       flex: 1;
       min-width: 260px;
+      align-items: start;
     }
 
     .sessions-total {
@@ -907,6 +910,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 12px;
+      align-items: start;
     }
 
     .sessions-total span {
@@ -995,6 +999,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px;
+      align-items: start;
     }
 
     .session-payments__metric {
