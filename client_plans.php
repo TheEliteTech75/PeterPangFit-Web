@@ -919,6 +919,14 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       align-items: stretch;
     }
 
+    .sessions__payments {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+
     .sessions-total span {
       text-transform: uppercase;
       letter-spacing: 0.08em;
