@@ -10,6 +10,18 @@ require_once __DIR__ . '/ppf_trusted.php';
 require_once __DIR__ . '/ppf_lockout.php';
 require_once __DIR__ . '/ppf_theme.php';
 
+$demoHelperPaths = [
+    __DIR__ . '/ppf_demo_bootstrap.php',
+    __DIR__ . '/ppf_demo.php',
+    __DIR__ . '/demo_mode.php',
+];
+foreach ($demoHelperPaths as $demoHelperPath) {
+    if (is_file($demoHelperPath)) {
+        require_once $demoHelperPath;
+        break;
+    }
+}
+
 if (session_status() === PHP_SESSION_NONE) session_start();
 
 if (!function_exists('h')) {
@@ -29,6 +41,44 @@ ppf_ensure_twofa_columns($conn);
 ppf_td_ensure_table($conn);
 ppf_seed_lockout_defaults($conn);
 ppf_theme_ensure_column($conn);
+
+$demoPrimaryConn = null;
+$demoModeEnabled = false;
+$demoModeControlsAvailable = false;
+$demoModeStatusError = null;
+
+if (function_exists('ppf_demo_primary_conn')) {
+    try {
+        $maybePrimary = ppf_demo_primary_conn();
+        if ($maybePrimary instanceof mysqli) {
+            $demoPrimaryConn = $maybePrimary;
+        } else {
+            $demoModeStatusError = 'Unable to connect to the primary database for Demo Mode.';
+        }
+    } catch (Throwable $e) {
+        $demoModeStatusError = $e->getMessage();
+    }
+} else {
+    $demoModeStatusError = 'Demo Mode helpers are unavailable.';
+}
+
+if ($demoPrimaryConn instanceof mysqli) {
+    try {
+        ensure_system_settings_table($demoPrimaryConn);
+        if (function_exists('ppf_demo_get_enabled')) {
+            $demoModeEnabled = (bool)ppf_demo_get_enabled($demoPrimaryConn);
+        } elseif (function_exists('ppf_demo_is_enabled')) {
+            $demoModeEnabled = (bool)ppf_demo_is_enabled($demoPrimaryConn);
+        } else {
+            $demoModeEnabled = ss_get($demoPrimaryConn, 'demo_mode_enabled', '0') === '1';
+        }
+        $demoModeControlsAvailable = true;
+        $demoModeStatusError = null;
+    } catch (Throwable $e) {
+        $demoModeControlsAvailable = false;
+        $demoModeStatusError = $e->getMessage();
+    }
+}
 
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -174,10 +224,111 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ss_set($conn, 'test_register_token_enabled', $testEnabled);
             ss_set($conn, 'test_register_token_value', $testValue);
 
+            $statusType = 'success';
+            $messageParts = [];
+
+            $demoToggleSubmitted = isset($_POST['demo_mode_enabled_present']);
+            $desiredDemoEnabled = ($_POST['demo_mode_enabled'] ?? '') === '1';
+            $demoToggleErrorMsg = '';
+            $demoToggleSuccess = true;
+            if ($demoToggleSubmitted && $desiredDemoEnabled !== $demoModeEnabled) {
+                $demoToggleSuccess = false;
+                if ($demoPrimaryConn instanceof mysqli) {
+                    try {
+                        if (function_exists('ppf_demo_set_enabled')) {
+                            $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled);
+                            $demoToggleSuccess = ($result !== false);
+                        } else {
+                            ensure_system_settings_table($demoPrimaryConn);
+                            $demoToggleSuccess = ss_set($demoPrimaryConn, 'demo_mode_enabled', $desiredDemoEnabled ? '1' : '0');
+                        }
+                    } catch (Throwable $e) {
+                        $demoToggleErrorMsg = $e->getMessage();
+                        $demoToggleSuccess = false;
+                    }
+                } else {
+                    $demoToggleErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                }
+
+                if ($demoToggleSuccess) {
+                    $messageParts[] = $desiredDemoEnabled ? 'Demo Mode enabled.' : 'Demo Mode disabled.';
+                    if (function_exists('ppf_log')) {
+                        $action = $desiredDemoEnabled ? 'demo_mode_enabled' : 'demo_mode_disabled';
+                        $details = $desiredDemoEnabled ? 'Demo Mode toggled on via settings.' : 'Demo Mode toggled off via settings.';
+                        ppf_log($conn, $uid, $email ?: null, $role ?: null, $action, 'system', 'demo_mode', $details);
+                    }
+                } else {
+                    $statusType = 'error';
+                    $msg = 'Failed to ' . ($desiredDemoEnabled ? 'enable' : 'disable') . ' Demo Mode';
+                    if ($demoToggleErrorMsg !== '') {
+                        $msg .= ': ' . $demoToggleErrorMsg;
+                    }
+                    if (!preg_match('/[.!?]$/', $msg)) {
+                        $msg .= '.';
+                    }
+                    $messageParts[] = $msg;
+                    if (function_exists('ppf_log')) {
+                        $details = $demoToggleErrorMsg !== '' ? $demoToggleErrorMsg : 'Unknown error toggling Demo Mode.';
+                        ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_toggle_failed', 'system', 'demo_mode', $details);
+                    }
+                }
+            }
+
+            $demoResetRequested = isset($_POST['demo_reset']) && $_POST['demo_reset'] === '1';
+            if ($demoResetRequested) {
+                $demoResetSuccess = false;
+                $demoResetErrorMsg = '';
+                if ($demoPrimaryConn instanceof mysqli) {
+                    try {
+                        if (function_exists('ppf_demo_reset')) {
+                            $result = ppf_demo_reset($demoPrimaryConn);
+                            $demoResetSuccess = ($result !== false);
+                        } else {
+                            $demoResetSuccess = false;
+                            $demoResetErrorMsg = 'Demo reset helper is unavailable.';
+                        }
+                    } catch (Throwable $e) {
+                        $demoResetSuccess = false;
+                        $demoResetErrorMsg = $e->getMessage();
+                    }
+                } else {
+                    $demoResetErrorMsg = $demoModeStatusError ?: 'Demo Mode connection unavailable.';
+                }
+
+                if ($demoResetSuccess) {
+                    $messageParts[] = 'Demo data reset.';
+                    if (function_exists('ppf_log')) {
+                        ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_reset', 'system', 'demo_mode', 'Demo data reset via settings.');
+                    }
+                } else {
+                    $statusType = 'error';
+                    $msg = 'Demo data reset failed';
+                    if ($demoResetErrorMsg !== '') {
+                        $msg .= ': ' . $demoResetErrorMsg;
+                    }
+                    if (!preg_match('/[.!?]$/', $msg)) {
+                        $msg .= '.';
+                    }
+                    $messageParts[] = $msg;
+                    if (function_exists('ppf_log')) {
+                        $details = $demoResetErrorMsg !== '' ? $demoResetErrorMsg : 'Unknown error resetting Demo Mode data.';
+                        ppf_log($conn, $uid, $email ?: null, $role ?: null, 'demo_mode_reset_failed', 'system', 'demo_mode', $details);
+                    }
+                }
+            }
+
             if (function_exists('ppf_log')) {
                 ppf_log($conn, $uid, $email ?: null, $role ?: null, 'system_settings_updated', 'admin', (string)$uid, null);
             }
-            redirect_with_flash('success', 'System settings saved.', 'system');
+            $baseMessage = $statusType === 'success'
+                ? 'System settings saved.'
+                : 'System settings saved, but some actions failed.';
+            array_unshift($messageParts, $baseMessage);
+            $message = trim(implode(' ', array_filter($messageParts)));
+            if ($message === '') {
+                $message = $baseMessage;
+            }
+            redirect_with_flash($statusType, $message, 'system');
         }
     }
 
@@ -335,6 +486,18 @@ $lockoutTrainer = (int)(ss_get($conn, 'lockout_minutes_trainer', (string)$lockou
 $lockoutAdmin   = (int)(ss_get($conn, 'lockout_minutes_admin', (string)$lockoutDefault) ?? $lockoutDefault);
 $testTokenEnabled = ss_get($conn, 'test_register_token_enabled', '0') === '1';
 $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
+
+$demoModeStatusClass = 'is-error';
+$demoModeStatusLabel = 'Unavailable';
+$demoModeStatusMessage = '';
+if ($demoModeControlsAvailable) {
+    $demoModeStatusClass = $demoModeEnabled ? 'is-on' : 'is-off';
+    $demoModeStatusLabel = $demoModeEnabled ? 'Enabled' : 'Disabled';
+} else {
+    if ($demoModeStatusError) {
+        $demoModeStatusMessage = $demoModeStatusError;
+    }
+}
 
 ?>
 <!doctype html>
@@ -942,6 +1105,69 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
       gap: 24px;
     }
 
+    .demo-mode-block {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px 18px;
+      background: rgba(15, 23, 42, 0.35);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .system-side-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .demo-mode-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .demo-mode-status {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: .75rem;
+      font-weight: 600;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+      background: rgba(148, 163, 184, 0.18);
+      color: #e2e8f0;
+    }
+
+    .demo-mode-status.is-on {
+      background: rgba(52, 211, 153, 0.2);
+      color: #bbf7d0;
+    }
+
+    .demo-mode-status.is-off {
+      background: rgba(148, 163, 184, 0.2);
+      color: #e2e8f0;
+    }
+
+    .demo-mode-status.is-error {
+      background: rgba(248, 113, 113, 0.18);
+      color: #fecaca;
+    }
+
+    .demo-mode-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .demo-mode-warning {
+      color: #fca5a5;
+    }
+
     .section-title {
       display: flex;
       align-items: center;
@@ -1358,43 +1584,69 @@ $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
 <?php if ($isAdmin): ?>
     <div class="tab-panel" data-panel="system" id="settings-system" role="tabpanel" aria-labelledby="tab-system">
       <section class="card" id="system">
-              <h2>System Settings</h2>
-              <p class="muted">Customize lockout durations for each role and manage the registration test token.</p>
+        <div class="section-title">
+          <div>
+            <h2>System Settings</h2>
+            <p class="muted">Customize lockout durations, manage Demo Mode availability, and maintain the registration test token.</p>
+          </div>
+          <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>">Demo Mode: <?php echo h($demoModeStatusLabel); ?></span>
+        </div>
 
-              <form method="post" class="two-col" style="margin-top:18px;">
-                <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                <input type="hidden" name="action" value="system_settings">
+        <form method="post" class="two-col" style="margin-top:18px;">
+          <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+          <input type="hidden" name="action" value="system_settings">
+          <input type="hidden" name="demo_mode_enabled_present" value="1">
 
-                <div>
-                  <h3>Account Lockout (minutes)</h3>
-                  <label class="small-text" for="lockout_default">Default</label>
-                  <input class="input" id="lockout_default" name="lockout_default" type="number" min="1" max="1440" value="<?php echo h($lockoutDefault); ?>">
-                  <label class="small-text" for="lockout_client">Clients</label>
-                  <input class="input" id="lockout_client" name="lockout_client" type="number" min="1" max="1440" value="<?php echo h($lockoutClient); ?>">
-                  <label class="small-text" for="lockout_trainer">Trainers</label>
-                  <input class="input" id="lockout_trainer" name="lockout_trainer" type="number" min="1" max="1440" value="<?php echo h($lockoutTrainer); ?>">
-                  <label class="small-text" for="lockout_admin">Admins</label>
-                  <input class="input" id="lockout_admin" name="lockout_admin" type="number" min="1" max="1440" value="<?php echo h($lockoutAdmin); ?>">
-                </div>
+          <div>
+            <h3>Account Lockout (minutes)</h3>
+            <label class="small-text" for="lockout_default">Default</label>
+            <input class="input" id="lockout_default" name="lockout_default" type="number" min="1" max="1440" value="<?php echo h($lockoutDefault); ?>">
+            <label class="small-text" for="lockout_client">Clients</label>
+            <input class="input" id="lockout_client" name="lockout_client" type="number" min="1" max="1440" value="<?php echo h($lockoutClient); ?>">
+            <label class="small-text" for="lockout_trainer">Trainers</label>
+            <input class="input" id="lockout_trainer" name="lockout_trainer" type="number" min="1" max="1440" value="<?php echo h($lockoutTrainer); ?>">
+            <label class="small-text" for="lockout_admin">Admins</label>
+            <input class="input" id="lockout_admin" name="lockout_admin" type="number" min="1" max="1440" value="<?php echo h($lockoutAdmin); ?>">
+          </div>
 
-                <div>
-                  <h3>Registration Test Token</h3>
-                  <label class="small-text" style="display:flex;align-items:center;gap:8px;">
-                    <input type="checkbox" name="test_token_enabled" value="1" <?php echo $testTokenEnabled ? 'checked' : ''; ?>> Enable unique test token bypass
-                  </label>
-                  <label class="small-text" for="test_token_value">Current token</label>
-                  <input class="input" id="test_token_value" name="test_token_value" value="<?php echo h($testTokenValue); ?>" placeholder="Leave blank to keep or generate">
-                  <label class="small-text" style="display:flex;align-items:center;gap:8px; margin-top:10px;">
-                    <input type="checkbox" name="generate_test_token" value="1"> Generate a new token
-                  </label>
-                  <p class="small-text">Share this value privately with testers who should bypass invites via register.php.</p>
-                </div>
+          <div class="system-side-panel">
+            <div>
+              <h3>Registration Test Token</h3>
+              <label class="small-text" style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" name="test_token_enabled" value="1" <?php echo $testTokenEnabled ? 'checked' : ''; ?>> Enable unique test token bypass
+              </label>
+              <label class="small-text" for="test_token_value">Current token</label>
+              <input class="input" id="test_token_value" name="test_token_value" value="<?php echo h($testTokenValue); ?>" placeholder="Leave blank to keep or generate">
+              <label class="small-text" style="display:flex;align-items:center;gap:8px; margin-top:10px;">
+                <input type="checkbox" name="generate_test_token" value="1"> Generate a new token
+              </label>
+              <p class="small-text">Share this value privately with testers who should bypass invites via register.php.</p>
+            </div>
 
-                <div style="grid-column:1 / -1;">
-                  <button class="btn" type="submit">Save system settings</button>
-                </div>
-              </form>
-            </section>
+            <div class="demo-mode-block">
+              <div class="demo-mode-header">
+                <h3>Demo Mode</h3>
+                <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>"><?php echo h($demoModeStatusLabel); ?></span>
+              </div>
+              <p class="small-text">Toggle the sanitized training environment for walkthroughs without touching live data.</p>
+              <label class="small-text" style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" name="demo_mode_enabled" value="1" <?php echo $demoModeEnabled ? 'checked' : ''; ?> <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>> Enable Demo Mode experience
+              </label>
+              <?php if ($demoModeStatusMessage): ?>
+                <p class="demo-mode-warning small-text"><?php echo h($demoModeStatusMessage); ?></p>
+              <?php endif; ?>
+              <div class="demo-mode-actions">
+                <button class="btn danger" type="submit" name="demo_reset" value="1" formnovalidate <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
+                <span class="small-text">Restore demo accounts and seed content to their defaults.</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="grid-column:1 / -1; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+            <button class="btn" type="submit">Save system settings</button>
+          </div>
+        </form>
+      </section>
     </div>
 <?php endif; ?>
   </main>
