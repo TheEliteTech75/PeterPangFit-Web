@@ -273,13 +273,16 @@ if ($clientId > 0) {
     $packages = ppf_trainer_sessions_fetch_packages($conn, null, $clientId);
     $totalPurchased = 0;
     $totalUsed = 0;
+    $totalScheduled = 0;
     foreach ($packages as $pkg) {
         $totalPurchased += (int)($pkg['purchased_sessions'] ?? 0);
         $totalUsed += (int)($pkg['completed_count'] ?? 0);
+        $totalScheduled += (int)($pkg['scheduled_open'] ?? 0);
     }
     $overallTotals = [
         'purchased' => $totalPurchased,
         'used' => $totalUsed,
+        'scheduled' => $totalScheduled,
         'remaining' => max(0, $totalPurchased - $totalUsed),
     ];
 }
