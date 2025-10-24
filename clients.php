@@ -9,7 +9,10 @@ require_once __DIR__ . '/ppf_lockout.php'; // unlock action
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function is_trainer_admin($role){ return in_array($role ?? 'guest', ['trainer','admin'], true); }
-if (!is_trainer_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
+if (!is_trainer_admin($USER_ROLE ?? null)) {
+  require_once __DIR__ . '/access_denied.php';
+  exit;
+}
 
 if (!function_exists('ppf_clients_log_encode')) {
   function ppf_clients_log_encode(array $details): ?string {

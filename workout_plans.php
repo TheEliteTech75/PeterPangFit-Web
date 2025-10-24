@@ -175,7 +175,10 @@ function summarize_set_entries(array $entries): array {
   ];
 }
 
-if (!is_trainer_admin($USER_ROLE ?? null)) { http_response_code(403); echo 'Forbidden'; exit; }
+if (!is_trainer_admin($USER_ROLE ?? null)) {
+  require_once __DIR__ . '/access_denied.php';
+  exit;
+}
 
 if (empty($_SESSION['csrf_token'])) { $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); }
 $csrf = $_SESSION['csrf_token'];

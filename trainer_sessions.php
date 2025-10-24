@@ -9,8 +9,7 @@ require_once __DIR__ . '/ppf_nav.php';
 
 $role = strtolower((string)($USER_ROLE ?? ($_SESSION['role'] ?? 'guest')));
 if (!in_array($role, ['trainer', 'admin'], true)) {
-    http_response_code(403);
-    echo 'Forbidden';
+    require_once __DIR__ . '/access_denied.php';
     exit;
 }
 

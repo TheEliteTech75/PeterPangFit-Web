@@ -20,8 +20,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 // Role gate (trainers & admins only)
 if (!in_array($USER_ROLE ?? 'guest', ['trainer','admin'], true)) {
-    http_response_code(403);
-    echo 'Forbidden';
+    require_once __DIR__ . '/access_denied.php';
     exit;
 }
 
