@@ -2150,10 +2150,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
             <strong data-package-used="<?php echo $pkgId; ?>"><?php echo $completedCount; ?></strong>
           </div>
           <div class="session-card__count">
-            <span>Scheduled</span>
-            <strong data-package-scheduled="<?php echo $pkgId; ?>"><?php echo $scheduledCount; ?></strong>
-          </div>
-          <div class="session-card__count">
             <span>Remaining</span>
             <strong data-package-remaining="<?php echo $pkgId; ?>"><?php echo $remainingCount; ?></strong>
           </div>
@@ -3148,9 +3144,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
             if (summary) {
               if (summary.used && pkgTotals && typeof pkgTotals.used !== 'undefined') {
                 summary.used.textContent = pkgTotals.used;
-              }
-              if (summary.scheduled && pkgTotals && typeof pkgTotals.scheduled !== 'undefined') {
-                summary.scheduled.textContent = pkgTotals.scheduled;
               }
               if (summary.remaining && pkgTotals && typeof pkgTotals.remaining !== 'undefined') {
                 summary.remaining.textContent = pkgTotals.remaining;
