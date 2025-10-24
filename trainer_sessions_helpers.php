@@ -410,7 +410,7 @@ if (!function_exists('ppf_trainer_sessions_dashboard_rollup')) {
                 {$where}
             ) pkg
             GROUP BY pkg.client_id, pkg.first_name, pkg.last_name, pkg.email
-            ORDER BY (next_session_at IS NULL), next_session_at, pkg.last_name, pkg.first_name
+            ORDER BY (MIN(pkg.next_session_at) IS NULL), MIN(pkg.next_session_at), pkg.last_name, pkg.first_name
         ";
 
         if (!$stmt = $conn->prepare($sql)) {
