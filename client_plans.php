@@ -788,7 +788,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       display: grid;
       gap: 16px;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      align-items: start;
+      align-items: stretch;
     }
 
     .hero-stat {
@@ -797,8 +797,11 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       border: 1px solid var(--card-border-subtle, rgba(255, 255, 255, 0.08));
       background: rgba(10, 10, 10, 0.8);
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-      display: grid;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
       gap: 8px;
+      min-height: clamp(120px, 26vw, 150px);
     }
 
     .hero-stat strong {
@@ -892,7 +895,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       gap: 12px;
       flex: 1;
       min-width: 260px;
-      align-items: start;
+      align-items: stretch;
     }
 
     .sessions-total {
@@ -901,8 +904,19 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
       background: var(--panel, rgba(10, 10, 10, 0.82));
       box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card-border, rgba(255, 255, 255, 0.08)) 35%, transparent 65%);
-      display: grid;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
       gap: 6px;
+      min-height: clamp(110px, 24vw, 140px);
+    }
+
+    .sessions__payments {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      align-items: stretch;
     }
 
     .sessions__payments {
@@ -999,12 +1013,15 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px;
-      align-items: start;
+      align-items: stretch;
     }
 
     .session-payments__metric {
-      display: grid;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
       gap: 4px;
+      min-height: clamp(100px, 22vw, 128px);
     }
 
     .session-payments__metric span {
