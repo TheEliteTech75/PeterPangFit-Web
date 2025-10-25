@@ -1449,20 +1449,29 @@ $CAT_PALETTE = [
     .dashboard-head__clock{
       display:flex;
       flex-direction:column;
-      gap:2px;
       align-items:flex-start;
       text-align:left;
       min-width:0;
-      line-height:1.1;
+    }
+    .dashboard-head__clock-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:12px;
+      padding:10px 18px;
+      border-radius:999px;
+      border:1px solid var(--card-border);
+      background:color-mix(in srgb, var(--panel-muted) 88%, transparent 12%);
+      box-shadow:0 6px 18px rgba(15,23,42,0.3);
+      backdrop-filter:blur(6px);
     }
     .dashboard-head__clock-date{
-      font-size:1.6rem;
+      font-size:1.35rem;
       font-weight:700;
       letter-spacing:0.015em;
       color:var(--c-text);
     }
     .dashboard-head__clock-time{
-      font-size:1.15rem;
+      font-size:1.05rem;
       font-weight:600;
       color:var(--c-muted);
     }
@@ -1643,37 +1652,6 @@ $CAT_PALETTE = [
     }
     @media (max-width: 520px){ .donut-wrap{ grid-template-columns: 1fr; } }
 
-    .training-sessions-card .session-stats{
-      margin:10px 0 6px;
-      display:grid;
-      grid-template-columns:repeat(auto-fit, minmax(120px,1fr));
-      gap:10px;
-    }
-    .training-sessions-card .session-stat{
-      padding:10px 12px;
-      border:1px solid var(--card-border);
-      border-radius:12px;
-      background:color-mix(in srgb, var(--panel-muted) 82%, transparent 18%);
-      display:flex;
-      flex-direction:column;
-      gap:4px;
-      min-height:60px;
-    }
-    .training-sessions-card .session-stat .label{
-      font-size:11px;
-      text-transform:uppercase;
-      letter-spacing:.05em;
-      color:var(--c-muted);
-    }
-    .training-sessions-card .session-stat .value{
-      font-size:20px;
-      font-weight:700;
-      color:var(--text);
-    }
-    .training-sessions-card .session-stat .meta{
-      font-size:12px;
-      color:var(--muted);
-    }
     .training-sessions-card .donut .ts-total{
       font-size:20px;
       font-weight:700;
@@ -1910,8 +1888,10 @@ $CAT_PALETTE = [
           <div class="muted">Welcome back<?php echo isset($USER_NAME) ? ', '.h($USER_NAME) : ''; ?>.</div>
         </div>
         <div class="dashboard-head__clock">
-          <div class="dashboard-head__clock-date" data-live-clock="date-long"><?php echo h($dashboardDateLong); ?></div>
-          <div class="dashboard-head__clock-time" data-live-clock="time"><?php echo h($dashboardTimeNow); ?></div>
+          <div class="dashboard-head__clock-pill">
+            <div class="dashboard-head__clock-date" data-live-clock="date-long"><?php echo h($dashboardDateLong); ?></div>
+            <div class="dashboard-head__clock-time" data-live-clock="time"><?php echo h($dashboardTimeNow); ?></div>
+          </div>
         </div>
       </div>
       <button type="button" class="dash-settings-toggle" aria-expanded="false" aria-controls="dashboard-settings">
@@ -2184,29 +2164,6 @@ $CAT_PALETTE = [
               <?php if ($ts_sessions_note !== ''): ?>
                 <p class="sessions-note"><?php echo h($ts_sessions_note); ?></p>
               <?php endif; ?>
-            </div>
-          </div>
-
-          <div class="session-stats" role="list">
-            <div class="session-stat" role="listitem">
-              <span class="label">Purchased</span>
-              <span class="value"><?php echo number_format($ts_total_purchased); ?></span>
-              <span class="meta"><?php echo h($ts_meta_purchased); ?></span>
-            </div>
-            <div class="session-stat" role="listitem">
-              <span class="label">Completed</span>
-              <span class="value"><?php echo number_format($ts_total_completed); ?></span>
-              <span class="meta"><?php echo h($ts_meta_completed); ?></span>
-            </div>
-            <div class="session-stat" role="listitem">
-              <span class="label">Scheduled</span>
-              <span class="value"><?php echo number_format($ts_total_scheduled_raw); ?></span>
-              <span class="meta"><?php echo h($ts_meta_scheduled); ?></span>
-            </div>
-            <div class="session-stat" role="listitem">
-              <span class="label">Remaining</span>
-              <span class="value"><?php echo number_format($ts_total_remaining); ?></span>
-              <span class="meta"><?php echo h($ts_meta_remaining); ?></span>
             </div>
           </div>
 
