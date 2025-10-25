@@ -181,8 +181,8 @@ VALUES
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS trainer_session_packages (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  client_id INT NOT NULL,
-  trainer_id INT NOT NULL,
+  client_id INT UNSIGNED NOT NULL,
+  trainer_id INT UNSIGNED NOT NULL,
   package_name VARCHAR(191) NOT NULL,
   purchased_sessions INT NOT NULL DEFAULT 0,
   price_per_session DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -415,7 +415,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 
 CREATE TABLE IF NOT EXISTS trusted_devices (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id INT NOT NULL,
+  user_id INT UNSIGNED NOT NULL,
   selector VARBINARY(24) NOT NULL,
   validator_hash VARBINARY(64) NOT NULL,
   device_name VARCHAR(100) NOT NULL,
