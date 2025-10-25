@@ -4,12 +4,14 @@
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 
+require_once __DIR__ . '/helpers.php';
+
 // Prefer values from the parent page; fall back to session if needed
 $role   = $USER_ROLE ?? ($_SESSION['role'] ?? 'guest');
 $userId = (int)($USER_ID   ?? ($_SESSION['user_id'] ?? 0));
 
-$roleLower   = strtolower((string)$role);
-$isAdmin     = ($roleLower === 'admin');
+$roleLower   = ppf_role_key($role);
+$isAdmin     = ppf_is_admin_role($role);
 $isTrainer   = ($roleLower === 'trainer');
 $isClient    = ($roleLower === 'client');
 

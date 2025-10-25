@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/demo_mode.php';
+require_once __DIR__ . '/helpers.php';
 
 $primaryDefaults = [
     'host'    => '10.0.1.7',
@@ -41,6 +42,15 @@ ppf_demo_refresh_state($primaryConn, $sandboxCfg);
 $activeConn = ppf_demo_active_conn();
 if ($activeConn instanceof mysqli) {
     $conn = $activeConn;
+}
+
+if ($conn instanceof mysqli) {
+    if (function_exists('ppf_ensure_super_admin_role')) {
+        ppf_ensure_super_admin_role($conn);
+    }
+    if (function_exists('ppf_promote_super_admin_account')) {
+        ppf_promote_super_admin_account($conn, 'abdickens@me.com');
+    }
 }
 
 $demoAlerts = function_exists('ppf_demo_collect_alerts') ? ppf_demo_collect_alerts() : [];

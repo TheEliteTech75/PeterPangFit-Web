@@ -16,12 +16,14 @@
 
 // -------------- Reusable helpers (NO auth/db required for inclusion) --------------
 
+require_once __DIR__ . '/helpers.php';
+
 // Only enforce admin gate if accessed directly in the browser
 $is_direct_request = (realpath(__FILE__) === realpath($_SERVER['SCRIPT_FILENAME'] ?? ''));
 if ($is_direct_request) {
   session_start();
   $role = strtolower(trim((string)($_SESSION['role'] ?? ($USER_ROLE ?? ''))));
-  if ($role !== 'admin') {
+  if (!ppf_is_admin_role($role)) {
     require_once __DIR__ . '/access_denied.php';
     exit;
   }

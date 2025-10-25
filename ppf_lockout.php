@@ -69,10 +69,11 @@ if (!function_exists('ppf_get_lockout_minutes_for_role')) {
   function ppf_get_lockout_minutes_for_role(mysqli $conn, ?string $role): int {
     $role = strtolower((string)($role ?? ''));
     $key = match ($role) {
-      'client'  => 'lockout_minutes_client',
-      'trainer' => 'lockout_minutes_trainer',
-      'admin'   => 'lockout_minutes_admin',
-      default   => 'lockout_default_minutes',
+      'client'       => 'lockout_minutes_client',
+      'trainer'      => 'lockout_minutes_trainer',
+      'admin'        => 'lockout_minutes_admin',
+      'super_admin'  => 'lockout_minutes_admin',
+      default        => 'lockout_default_minutes',
     };
     $val = ppf_ss_get($conn, $key, null);
     if ($val === null) $val = ppf_ss_get($conn, 'lockout_default_minutes', '30');

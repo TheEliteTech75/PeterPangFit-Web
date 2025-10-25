@@ -20,6 +20,7 @@ require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/send_email.php';
 require_once __DIR__ . '/totp.php';
 require_once __DIR__ . '/geo.php';
+require_once __DIR__ . '/helpers.php';
 
 $uid   = (int)($_SESSION['user_id'] ?? 0);
 $role  = (string)($_SESSION['role'] ?? '');
@@ -38,7 +39,7 @@ function jok($arr=[]){
 }
 
 if ($uid <= 0) jerr('Not signed in', 401);
-if (strtolower($role) !== 'admin') jerr('Forbidden', 403);
+if (!ppf_is_admin_role($role)) jerr('Forbidden', 403);
 
 // ---------- Schema helper: check if a table.column exists (cached) ----------
 function table_has_column(mysqli $conn, string $table, string $column): bool {
@@ -195,7 +196,7 @@ switch ($action) {
 
     // Email all admins
     $admins = [];
-    if ($rs = $conn->query("SELECT email, first_name, last_name FROM users WHERE role='admin' AND email IS NOT NULL AND email<>''")) {
+    if ($rs = $conn->query("SELECT email, first_name, last_name FROM users WHERE role IN ('admin','super_admin') AND email IS NOT NULL AND email<>''")) {
       while ($r = $rs->fetch_assoc()) { $admins[] = $r; }
       $rs->close();
     }

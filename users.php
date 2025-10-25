@@ -11,7 +11,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/logs.php';
 
-function is_admin($role){ return ($role ?? 'guest') === 'admin'; }
+function is_admin($role){ return ppf_is_admin_role($role); }
 if (!is_admin($USER_ROLE ?? null)) {
   require_once __DIR__ . '/access_denied.php';
   exit;
@@ -88,6 +88,9 @@ function calc_age($dob){
 if (empty($_SESSION['csrf_token'])) { $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); }
 $csrf = $_SESSION['csrf_token'];
 
+$currentUserRole = $USER_ROLE ?? null;
+$currentUserIsSuper = ppf_is_super_admin($currentUserRole);
+
 $edit_id = isset($_GET['edit']) ? (int)$_GET['edit'] : 0;
 
 $flash = null; $flash_type = 'ok'; $flash_extra = null;
@@ -116,6 +119,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password2  = (string)($_POST['password2'] ?? '');
 
         $allowed_roles = ['admin','trainer','client'];
+        if ($currentUserIsSuper) {
+          array_unshift($allowed_roles, 'super_admin');
+        }
         if (!in_array($role, $allowed_roles, true)) throw new Exception('Please select a valid role.');
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new Exception('A valid email is required.');
         if ($password !== '' && $password !== $password2) throw new Exception('Passwords do not match.');
@@ -219,8 +225,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($action === 'change_role') {
         $new_role = trim($_POST['new_role'] ?? '');
         $allowed  = ['admin','trainer','client'];
+        if ($currentUserIsSuper) {
+          array_unshift($allowed, 'super_admin');
+        }
         if ($user_id <= 0 || !in_array($new_role, $allowed, true)) throw new Exception('Invalid role change request.');
-        if ($user_id === (int)($USER_ID ?? 0) && $new_role !== 'admin') throw new Exception('You cannot change your own role from Admin here.');
+
+        $targetRole = null;
+        if ($roleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1")) {
+          $roleStmt->bind_param("i", $user_id);
+          $roleStmt->execute();
+          if ($res = $roleStmt->get_result()) {
+            $row = $res->fetch_assoc();
+            $targetRole = $row['role'] ?? null;
+          }
+          $roleStmt->close();
+        }
+
+        if (!$currentUserIsSuper && ppf_is_super_admin($new_role)) {
+          throw new Exception('Only a Super Admin can assign the Super Admin role.');
+        }
+        if (!$currentUserIsSuper && ppf_is_super_admin($targetRole)) {
+          throw new Exception('Only a Super Admin can modify another Super Admin.');
+        }
+
+        if ($user_id === (int)($USER_ID ?? 0) && !ppf_is_admin_role($new_role)) {
+          throw new Exception('You cannot remove your own administrative access here.');
+        }
 
         $stmt = $conn->prepare("UPDATE users SET role = ? WHERE id = ?");
         $stmt->bind_param("si", $new_role, $user_id);
@@ -390,9 +420,20 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
       <div style="grid-column:span 4">
         <label class="muted" for="role">Role</label>
         <select id="role" name="role" class="inline-input" required>
-          <option value="trainer">Trainer</option>
-          <option value="client">Client</option>
-          <option value="admin">Admin</option>
+          <?php
+            $createRoleOptions = [
+              'trainer' => 'Trainer',
+              'client'  => 'Client',
+              'admin'   => 'Admin',
+            ];
+            if ($currentUserIsSuper) {
+              $createRoleOptions = ['super_admin' => 'Super Admin'] + $createRoleOptions;
+            }
+            foreach ($createRoleOptions as $value => $label):
+              $isDefault = ($value === 'trainer');
+          ?>
+          <option value="<?php echo h($value); ?>" <?php echo $isDefault ? 'selected' : ''; ?>><?php echo h($label); ?></option>
+          <?php endforeach; ?>
         </select>
         <label style="display:flex;gap:8px;align-items:center;margin-top:10px">
           <input type="checkbox" name="is_client" value="1" style="accent-color:#38bdf8">
@@ -492,16 +533,33 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
               <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
               <input type="hidden" name="action" value="change_role">
               <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
-              <?php $roles = ['admin'=>'Admin','trainer'=>'Trainer','client'=>'Client']; ?>
+              <?php
+                $roleOptions = [
+                  'super_admin' => 'Super Admin',
+                  'admin'       => 'Admin',
+                  'trainer'     => 'Trainer',
+                  'client'      => 'Client',
+                ];
+                $targetIsSuper = ppf_is_super_admin($u['role']);
+                if (!$currentUserIsSuper && !$targetIsSuper) {
+                  unset($roleOptions['super_admin']);
+                }
+                $lockSuperRole = !$currentUserIsSuper && $targetIsSuper;
+              ?>
               <select name="new_role" class="inline-input role-select" required
-                      data-current="<?php echo h($u['role']); ?>">
-                <?php foreach ($roles as $val => $label): ?>
-                  <option value="<?php echo $val; ?>" <?php echo ($u['role']===$val ? 'selected' : ''); ?>>
-                    <?php echo $label; ?>
+                      data-current="<?php echo h($u['role']); ?>"
+                      <?php echo $lockSuperRole ? 'disabled' : ''; ?>>
+                <?php foreach ($roleOptions as $val => $label): ?>
+                  <?php
+                    $selected = ($u['role'] === $val) ? 'selected' : '';
+                    $optionDisabled = ($lockSuperRole && $val === 'super_admin') ? ' disabled' : '';
+                  ?>
+                  <option value="<?php echo h($val); ?>" <?php echo $selected, $optionDisabled; ?>>
+                    <?php echo h($label); ?>
                   </option>
                 <?php endforeach; ?>
               </select>
-              <button class="btn small brand role-update" type="submit" title="Update role">Update</button>
+              <button class="btn small brand role-update" type="submit" title="Update role" <?php echo $lockSuperRole ? 'disabled' : ''; ?>>Update</button>
             </form>
           </td>
 

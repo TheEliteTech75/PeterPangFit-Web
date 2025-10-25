@@ -9,6 +9,7 @@ require_once __DIR__ . '/ppf_passkeys.php';
 require_once __DIR__ . '/ppf_trusted.php';
 require_once __DIR__ . '/ppf_lockout.php';
 require_once __DIR__ . '/ppf_theme.php';
+require_once __DIR__ . '/helpers.php';
 
 $demoHelperPaths = [
     __DIR__ . '/ppf_demo_bootstrap.php',
@@ -34,8 +35,8 @@ $role  = (string)($_SESSION['role'] ?? 'client');
 
 if ($uid <= 0) { header('Location: login.php'); exit; }
 
-$roleLower = strtolower($role);
-$isAdmin   = ($roleLower === 'admin');
+$roleLower = ppf_role_key($role);
+$isAdmin   = ppf_is_admin_role($role);
 
 ppf_ensure_twofa_columns($conn);
 ppf_td_ensure_table($conn);
@@ -175,7 +176,7 @@ function ppf_collect_admin_recipients(mysqli $conn): array {
     if (!table_exists($conn, 'users')) {
         return $recipients;
     }
-    $sql = "SELECT DISTINCT email, first_name, last_name FROM users WHERE email <> '' AND LOWER(role) = 'admin'";
+    $sql = "SELECT DISTINCT email, first_name, last_name FROM users WHERE email <> '' AND LOWER(role) IN ('admin','super_admin')";
     if ($st = $conn->prepare($sql)) {
         $st->execute();
         $res = $st->get_result();
@@ -1265,7 +1266,7 @@ if ($demoModeControlsAvailable) {
       gap: 24px;
     }
 
-    .demo-mode-block {
+    .demo-mode-content {
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 16px 18px;
@@ -1280,13 +1281,6 @@ if ($demoModeControlsAvailable) {
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
       gap: 18px;
       align-items: start;
-    }
-
-    .demo-mode-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
     }
 
     .demo-mode-status {
@@ -1754,9 +1748,8 @@ if ($demoModeControlsAvailable) {
         <div class="section-title">
           <div>
             <h2>System Settings</h2>
-            <p class="muted">Customize lockout durations, manage Demo Mode availability, and maintain the registration test token.</p>
+            <p class="muted">Customize lockout durations and maintain the registration test token.</p>
           </div>
-          <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>">Demo Mode: <?php echo h($demoModeStatusLabel); ?></span>
         </div>
 
         <form method="post" class="two-col" style="margin-top:18px;" data-demo-mode-form="1">
@@ -1791,34 +1784,40 @@ if ($demoModeControlsAvailable) {
               <p class="small-text">Share this value privately with testers who should bypass invites via register.php.</p>
             </div>
 
-            <div class="demo-mode-block">
-              <div class="demo-mode-header">
-                <h3>Demo Mode</h3>
-                <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>"><?php echo h($demoModeStatusLabel); ?></span>
-              </div>
-              <p class="small-text">Toggle the sanitized training environment for walkthroughs without touching live data.</p>
-              <?php if (!$twofaAppEnabled): ?>
-                <p class="demo-mode-warning small-text">Enable your authenticator app before attempting to toggle Demo Mode.</p>
-              <?php endif; ?>
-              <?php if ($demoModeStatusMessage): ?>
-                <p class="demo-mode-warning small-text"><?php echo h($demoModeStatusMessage); ?></p>
-              <?php endif; ?>
-              <div class="demo-mode-actions">
-                <?php if ($demoModeEnabled): ?>
-                <button class="btn secondary" type="button" data-demo-action="disable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Disable Demo Mode</button>
-                <?php else: ?>
-                <button class="btn" type="button" data-demo-action="enable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Enable Demo Mode</button>
-                <?php endif; ?>
-                <button class="btn danger" type="button" data-demo-action="reset" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
-                <span class="small-text">Restore demo accounts and seed content to their defaults.</span>
-              </div>
-            </div>
           </div>
 
           <div style="grid-column:1 / -1; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
             <button class="btn" type="submit">Save system settings</button>
           </div>
         </form>
+      </section>
+
+      <section class="card" id="demo-mode" data-demo-mode-card="1">
+        <div class="section-title">
+          <div>
+            <h2>Demo Mode</h2>
+            <p class="muted">Toggle the sanitized training environment for walkthroughs without touching live data.</p>
+          </div>
+          <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>">Demo Mode: <?php echo h($demoModeStatusLabel); ?></span>
+        </div>
+
+        <div class="demo-mode-content">
+          <?php if (!$twofaAppEnabled): ?>
+            <p class="demo-mode-warning small-text">Enable your authenticator app before attempting to toggle Demo Mode.</p>
+          <?php endif; ?>
+          <?php if ($demoModeStatusMessage): ?>
+            <p class="demo-mode-warning small-text"><?php echo h($demoModeStatusMessage); ?></p>
+          <?php endif; ?>
+          <div class="demo-mode-actions">
+            <?php if ($demoModeEnabled): ?>
+            <button class="btn secondary" type="button" data-demo-action="disable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Disable Demo Mode</button>
+            <?php else: ?>
+            <button class="btn" type="button" data-demo-action="enable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Enable Demo Mode</button>
+            <?php endif; ?>
+            <button class="btn danger" type="button" data-demo-action="reset" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
+            <span class="small-text">Restore demo accounts and seed content to their defaults.</span>
+          </div>
+        </div>
       </section>
     </div>
 <?php endif; ?>
@@ -2926,11 +2925,12 @@ if ($demoModeControlsAvailable) {
 
     (function initDemoModeModals() {
       const demoForm = document.querySelector('form[data-demo-mode-form="1"]');
-      if (!demoForm) return;
+      const demoCard = document.querySelector('[data-demo-mode-card="1"]');
+      if (!demoForm || !demoCard) return;
 
-      const enableBtn = demoForm.querySelector('[data-demo-action="enable"]');
-      const disableBtn = demoForm.querySelector('[data-demo-action="disable"]');
-      const resetBtn = demoForm.querySelector('[data-demo-action="reset"]');
+      const enableBtn = demoCard.querySelector('[data-demo-action="enable"]');
+      const disableBtn = demoCard.querySelector('[data-demo-action="disable"]');
+      const resetBtn = demoCard.querySelector('[data-demo-action="reset"]');
       const hiddenEnabled = document.getElementById('demoModeEnabledInput');
 
       if (!hiddenEnabled) return;
