@@ -1803,14 +1803,6 @@ if ($demoModeControlsAvailable) {
               <?php if ($demoModeStatusMessage): ?>
                 <p class="demo-mode-warning small-text"><?php echo h($demoModeStatusMessage); ?></p>
               <?php endif; ?>
-              <div class="demo-mode-credentials">
-                <label class="small-text" for="demo_totp_code">Authenticator app code</label>
-                <input class="input" id="demo_totp_code" name="demo_totp_code" inputmode="numeric" pattern="\d*" autocomplete="one-time-code" placeholder="6-digit code required to change Demo Mode."
-                  <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>
-                <label class="small-text" for="demo_current_password">Current password</label>
-                <input class="input" id="demo_current_password" name="demo_current_password" type="password" autocomplete="current-password" placeholder="Required for Demo Mode changes"
-                  <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>
-              </div>
               <div class="demo-mode-actions">
                 <?php if ($demoModeEnabled): ?>
                 <button class="btn secondary" type="button" data-demo-action="disable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Disable Demo Mode</button>
