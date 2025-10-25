@@ -451,7 +451,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           }
           $idList = implode(',', array_map('intval', $ids));
 
-          $sql = "UPDATE users SET is_active=0 WHERE id IN ($idList) AND (role='client' OR is_client=1)";
+          $superSql = "SELECT id FROM users WHERE id IN ($idList) AND role='super_admin'";
+          if ($superRes = $conn->query($superSql)) {
+            if ($superRes->num_rows > 0) {
+              $superRes->free();
+              throw new Exception('Super Admin accounts cannot be deactivated.');
+            }
+            $superRes->free();
+          }
+
+          $sql = "UPDATE users SET is_active=0 WHERE id IN ($idList) AND (role='client' OR is_client=1) AND role<>'super_admin'";
           if (!$conn->query($sql)) {
             throw new Exception('Failed to deactivate selected clients.');
           }
@@ -674,6 +683,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Deactivate
       if ($action === 'deactivate_client') {
         if ($uid <= 0) throw new Exception('Invalid client.');
+        $roleStmt = $conn->prepare("SELECT role FROM users WHERE id=? LIMIT 1");
+        if (!$roleStmt) throw new Exception('Failed to load user.');
+        $roleStmt->bind_param("i", $uid);
+        $roleStmt->execute();
+        $roleRes = $roleStmt->get_result();
+        $roleRow = $roleRes ? $roleRes->fetch_assoc() : null;
+        $roleStmt->close();
+        if (!$roleRow) throw new Exception('Client not found.');
+        if (ppf_is_super_admin($roleRow['role'] ?? null)) {
+          throw new Exception('Super Admin accounts cannot be deactivated.');
+        }
+
         $stmt = $conn->prepare("UPDATE users SET is_active=0 WHERE id=? AND role='client'");
         $stmt->bind_param("i", $uid);
         if (!$stmt->execute()) { $stmt->close(); throw new Exception('Failed to deactivate client.'); }
