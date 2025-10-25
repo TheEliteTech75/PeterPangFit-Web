@@ -2944,48 +2944,55 @@ if ($demoModeControlsAvailable) {
 
       if (!hiddenEnabled) return;
 
-      function findHiddenField(name) {
-        return demoForm.querySelector(`input[name="${name}"]`);
-      }
-
-      function ensureHiddenField(name) {
-        let input = findHiddenField(name);
-        if (!input) {
-          input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = name;
-          input.value = '';
-          demoForm.appendChild(input);
-        }
-        return input;
-      }
-
-      function setHiddenValue(name, value) {
-        const input = ensureHiddenField(name);
-        input.value = value;
-        return input;
-      }
-
       function sanitizeCode(value) {
         return (value || '').replace(/\D+/g, '').slice(0, 6);
-      }
-
-      function clearHiddenCreds() {
-        const totpField = findHiddenField('demo_totp_code');
-        if (totpField) totpField.value = '';
-        const passwordField = findHiddenField('demo_current_password');
-        if (passwordField) passwordField.value = '';
-        const resetField = findHiddenField('demo_reset');
-        if (resetField) resetField.value = '0';
       }
 
       function getCurrentState() {
         return hiddenEnabled.value === '1';
       }
 
+      async function submitDemoAction(extraFields = {}, options = {}) {
+        const { submitButton = null, cancelButton = null, loadingText = 'Submitting...' } = options;
+        let restoreLoading = () => {};
+        if (submitButton) {
+          restoreLoading = setButtonLoading(submitButton, loadingText);
+        }
+        if (cancelButton) {
+          cancelButton.disabled = true;
+        }
+
+        const actionUrl = demoForm.getAttribute('action') || window.location.pathname || 'settings.php';
+        const formData = new FormData(demoForm);
+        Object.entries(extraFields).forEach(([key, value]) => {
+          if (value === undefined || value === null) {
+            formData.delete(key);
+          } else {
+            formData.set(key, value);
+          }
+        });
+        formData.set('demo_mode_enabled_present', '1');
+
+        try {
+          const response = await fetch(actionUrl, {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+          });
+          if (!response.ok) {
+            throw new Error('Request failed. Please try again.');
+          }
+        } catch (err) {
+          restoreLoading(false);
+          if (cancelButton) {
+            cancelButton.disabled = false;
+          }
+          throw err;
+        }
+      }
+
       function openToggleModal(targetEnabled) {
         const isEnable = targetEnabled === true;
-        clearHiddenCreds();
         openModal({
           title: isEnable ? 'Enable Demo Mode' : 'Disable Demo Mode',
           render: (body, controls) => {
@@ -3022,6 +3029,10 @@ if ($demoModeControlsAvailable) {
             passInput.required = true;
             passGroup.append(passLabel, passInput);
 
+            const errorEl = document.createElement('p');
+            errorEl.className = 'modal-error';
+            errorEl.setAttribute('role', 'alert');
+
             const actions = document.createElement('div');
             actions.className = 'modal-actions';
             const cancelBtn = document.createElement('button');
@@ -3034,18 +3045,18 @@ if ($demoModeControlsAvailable) {
             confirmBtn.textContent = isEnable ? 'Enable Demo Mode' : 'Disable Demo Mode';
             actions.append(cancelBtn, confirmBtn);
 
-            formEl.append(codeGroup, passGroup, actions);
+            formEl.append(codeGroup, passGroup, errorEl, actions);
             body.append(intro, formEl);
 
             requestAnimationFrame(() => codeInput.focus());
 
             cancelBtn.addEventListener('click', () => {
-              clearHiddenCreds();
               controls.close();
             });
 
             formEl.addEventListener('submit', (evt) => {
               evt.preventDefault();
+              errorEl.textContent = '';
               const sanitizedCode = sanitizeCode(codeInput.value);
               codeInput.value = sanitizedCode;
               codeInput.setCustomValidity('');
@@ -3065,19 +3076,30 @@ if ($demoModeControlsAvailable) {
                 passInput.setCustomValidity('');
                 return;
               }
-              setHiddenValue('demo_totp_code', sanitizedCode);
-              setHiddenValue('demo_current_password', passInput.value);
-              setHiddenValue('demo_reset', '0');
+              const previousValue = getCurrentState() ? '1' : '0';
               hiddenEnabled.value = isEnable ? '1' : '0';
-              controls.close();
-              demoForm.submit();
+              submitDemoAction({
+                demo_mode_enabled: hiddenEnabled.value,
+                demo_totp_code: sanitizedCode,
+                demo_current_password: passInput.value,
+                demo_reset: '0'
+              }, {
+                submitButton: confirmBtn,
+                cancelButton: cancelBtn,
+                loadingText: isEnable ? 'Enabling...' : 'Disabling...'
+              }).then(() => {
+                controls.close();
+                window.location.href = 'settings.php#system';
+              }).catch((err) => {
+                hiddenEnabled.value = previousValue;
+                errorEl.textContent = (err && err.message) ? err.message : 'Unable to complete the request.';
+              });
             });
           }
         });
       }
 
       function openResetModal() {
-        clearHiddenCreds();
         openModal({
           title: 'Reset Demo Data',
           render: (body, controls) => {
@@ -3098,6 +3120,10 @@ if ($demoModeControlsAvailable) {
             passInput.required = true;
             passGroup.append(passLabel, passInput);
 
+            const errorEl = document.createElement('p');
+            errorEl.className = 'modal-error';
+            errorEl.setAttribute('role', 'alert');
+
             const actions = document.createElement('div');
             actions.className = 'modal-actions';
             const cancelBtn = document.createElement('button');
@@ -3110,18 +3136,18 @@ if ($demoModeControlsAvailable) {
             confirmBtn.textContent = 'Reset Demo Data';
             actions.append(cancelBtn, confirmBtn);
 
-            formEl.append(passGroup, actions);
+            formEl.append(passGroup, errorEl, actions);
             body.append(intro, formEl);
 
             requestAnimationFrame(() => passInput.focus());
 
             cancelBtn.addEventListener('click', () => {
-              clearHiddenCreds();
               controls.close();
             });
 
             formEl.addEventListener('submit', (evt) => {
               evt.preventDefault();
+              errorEl.textContent = '';
               passInput.setCustomValidity('');
               if (!formEl.reportValidity()) {
                 return;
@@ -3132,12 +3158,24 @@ if ($demoModeControlsAvailable) {
                 passInput.setCustomValidity('');
                 return;
               }
-              setHiddenValue('demo_totp_code', '');
-              setHiddenValue('demo_current_password', passInput.value);
-              setHiddenValue('demo_reset', '1');
-              hiddenEnabled.value = getCurrentState() ? '1' : '0';
-              controls.close();
-              demoForm.submit();
+              const currentValue = getCurrentState() ? '1' : '0';
+              hiddenEnabled.value = currentValue;
+              submitDemoAction({
+                demo_mode_enabled: hiddenEnabled.value,
+                demo_totp_code: '',
+                demo_current_password: passInput.value,
+                demo_reset: '1'
+              }, {
+                submitButton: confirmBtn,
+                cancelButton: cancelBtn,
+                loadingText: 'Resetting...'
+              }).then(() => {
+                controls.close();
+                window.location.href = 'settings.php#system';
+              }).catch((err) => {
+                hiddenEnabled.value = currentValue;
+                errorEl.textContent = (err && err.message) ? err.message : 'Unable to complete the request.';
+              });
             });
           }
         });
