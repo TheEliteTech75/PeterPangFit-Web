@@ -294,7 +294,7 @@ if (!function_exists('ppf_format_user_datetime')) {
           $format = $use24 ? ($withSeconds ? 'H:i:s' : 'H:i') : ($withSeconds ? 'g:i:s A' : 'g:i A');
           break;
         case 'date_long':
-          $format = 'F j, Y';
+          $format = 'l, F j, Y';
           break;
         case 'date':
           $format = 'M j, Y';
@@ -352,7 +352,7 @@ if (!function_exists('ppf_time_render_clock_bootstrap')) {
     var optsTime = { timeZone: cfg.timeZone, hour: 'numeric', minute: '2-digit', hourCycle: cfg.hourCycle, hour12: cfg.hour12 };
     var formatters = {
       'time': new Intl.DateTimeFormat(locale, optsTime),
-      'date-long': new Intl.DateTimeFormat(locale, { timeZone: cfg.timeZone, month: 'long', day: 'numeric', year: 'numeric' }),
+      'date-long': new Intl.DateTimeFormat(locale, { timeZone: cfg.timeZone, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
       'date-short': new Intl.DateTimeFormat(locale, { timeZone: cfg.timeZone, month: 'short', day: 'numeric', year: 'numeric' }),
       'datetime': new Intl.DateTimeFormat(locale, { timeZone: cfg.timeZone, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: cfg.hourCycle, hour12: cfg.hour12 })
     };
