@@ -95,6 +95,19 @@ $edit_id = isset($_GET['edit']) ? (int)$_GET['edit'] : 0;
 
 $flash = null; $flash_type = 'ok'; $flash_extra = null;
 
+$shouldOpenCreateModal = (isset($_GET['open']) && $_GET['open'] === 'create');
+$createDefaults = [
+  'role'        => 'trainer',
+  'is_client'   => false,
+  'email'       => '',
+  'phone'       => '',
+  'birthdate'   => '',
+  'gender'      => '',
+  'first_name'  => '',
+  'middle_name' => '',
+  'last_name'   => '',
+];
+
 // ---------- POST actions ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
@@ -117,6 +130,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $last_name  = trim($_POST['last_name'] ?? '');
         $password   = (string)($_POST['password'] ?? '');
         $password2  = (string)($_POST['password2'] ?? '');
+
+        $createDefaults = [
+          'role'        => $role ?: 'trainer',
+          'is_client'   => (bool)$is_client,
+          'email'       => $email,
+          'phone'       => $phone,
+          'birthdate'   => $birthdate,
+          'gender'      => $gender,
+          'first_name'  => $first_name,
+          'middle_name' => $middle_name,
+          'last_name'   => $last_name,
+        ];
 
         $allowed_roles = ['admin','trainer','client'];
         if ($currentUserIsSuper) {
@@ -153,6 +178,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $flash = 'User created successfully.'; $flash_type = 'ok';
         if ($temp_generated) { $flash_extra = 'Temporary password: ' . $password; }
+        $createDefaults = [
+          'role'        => 'trainer',
+          'is_client'   => false,
+          'email'       => '',
+          'phone'       => '',
+          'birthdate'   => '',
+          'gender'      => '',
+          'first_name'  => '',
+          'middle_name' => '',
+          'last_name'   => '',
+        ];
+        $shouldOpenCreateModal = false;
       }
 
       // Inline Save (when Edit mode is active)
@@ -262,12 +299,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Toggle "also acts as client"
       if ($action === 'toggle_is_client') {
         if ($user_id <= 0) throw new Exception('Invalid user.');
+        $roleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
+        if (!$roleStmt) throw new Exception('Failed to load user role.');
+        $roleStmt->bind_param("i", $user_id);
+        $roleStmt->execute();
+        $roleRes = $roleStmt->get_result();
+        $roleRow = $roleRes ? $roleRes->fetch_assoc() : null;
+        $roleStmt->close();
+        if (!$roleRow) throw new Exception('User not found.');
+        $roleKey = ppf_role_key($roleRow['role'] ?? '');
+        if ($roleKey === 'client') {
+          throw new Exception('Client role users already appear in client lists.');
+        }
         $to = (int)($_POST['to'] ?? 0);
         $stmt = $conn->prepare("UPDATE users SET is_client = ? WHERE id = ?");
         $stmt->bind_param("ii", $to, $user_id);
         if (!$stmt->execute()) throw new Exception('Failed to update client flag.');
         $stmt->close();
-        $flash = $to ? 'User will now appear in client lists.' : 'User removed from client lists.'; 
+        $flash = $to ? 'User will now appear in client lists.' : 'User removed from client lists.';
         $flash_type = 'ok';
       }
 
@@ -294,6 +343,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($action === 'delete_user') {
         if ($user_id <= 0) throw new Exception('Invalid user to delete.');
         if ($user_id === (int)($USER_ID ?? 0)) throw new Exception('You cannot delete your own account.');
+        $targetRole = null;
+        $stmt = $conn->prepare("SELECT role FROM users WHERE id = ?");
+        if (!$stmt) throw new Exception('Failed to load user.');
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+        if (!$row) throw new Exception('User not found.');
+        $targetRole = $row['role'] ?? null;
+        if (ppf_is_super_admin($targetRole)) {
+          throw new Exception('The Super Admin account cannot be deleted.');
+        }
         $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
         $stmt->bind_param("i", $user_id);
         if (!$stmt->execute()) throw new Exception('Failed to delete user.');
@@ -303,6 +365,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } catch (Throwable $e) {
       $flash = $e->getMessage(); $flash_type = 'err';
+      if ($action === 'create_user') {
+        $shouldOpenCreateModal = true;
+      }
     }
   }
 }
@@ -330,12 +395,12 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
     a{color:var(--brand);text-decoration:none}
     a:hover{text-decoration:underline}
 
-    .btn{display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);
-      color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none;white-space:nowrap}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:#2a3446;border:1px solid var(--line);
+      color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none;white-space:nowrap;min-height:34px;line-height:1.1}
     .btn:hover{filter:brightness(1.06)}
     .btn.brand{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35)}
     .btn.warn{background:#2a1617;border-color:rgba(248,113,113,0.45);color:#f87171}
-    .btn.small{padding:6px 10px;font-size:13px}
+    .btn.small{padding:6px 10px;font-size:13px;min-height:30px}
 
     .wrap{
       width:100%;
@@ -345,8 +410,19 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
       box-sizing:border-box;
     }
 
-    .card{background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
-    .card h2{margin:0 0 10px 0;font-size:16px}
+    .subheader{
+      position:sticky;top:0;z-index:40;background:rgba(9,14,28,0.72);
+      border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+      margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+      backdrop-filter:blur(8px);
+    }
+    .subheader .left{display:flex;align-items:center;gap:10px}
+    .brand{font-weight:700;font-size:20px;letter-spacing:.2px}
+    .btnset{display:flex;gap:8px;flex-wrap:wrap}
+    @media (max-width:700px){
+      .subheader{flex-direction:column;align-items:flex-start;}
+      .btnset{width:100%;justify-content:flex-start;}
+    }
 
     table{
       width:100%;
@@ -367,7 +443,9 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
     .inline-input{width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;
       padding:6px 8px;border-radius:8px;outline:none;box-sizing:border-box;font-size:13px}
 
-    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .actions form{margin:0;display:flex}
+    .actions button.btn,.actions a.btn{display:inline-flex;align-items:center;justify-content:center}
 
     /* Role cell layout */
     .role-form{display:flex;gap:10px;align-items:center;min-width:100px}
@@ -384,9 +462,23 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
       background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:16px;
       box-shadow:0 20px 60px rgba(0,0,0,.6);
     }
+    .modal.modal-wide{width:min(720px, calc(100vw - 32px));}
     .modal h3{margin:0 0 10px 0;font-size:16px}
     .modal .row{display:grid;grid-template-columns:1fr;gap:10px}
     .modal .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+
+    .modal-form{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
+    .modal-form .field{display:flex;flex-direction:column;gap:6px}
+    .modal-form .span-12{grid-column:span 12}
+    .modal-form .span-6{grid-column:span 6}
+    .modal-form .span-4{grid-column:span 4}
+    .modal-form .span-3{grid-column:span 3}
+    @media (max-width:720px){
+      .modal-form{grid-template-columns:repeat(6,1fr)}
+      .modal-form .span-6{grid-column:span 6}
+      .modal-form .span-4{grid-column:span 6}
+      .modal-form .span-3{grid-column:span 6}
+    }
 
     /* Keep long values on one line; wrap on small */
     td span, td{white-space:nowrap}
@@ -400,8 +492,19 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
 <body>
 
 <main class="wrap">
-  <h1 style="margin:0 0 10px 0;">All Users</h1>
-  <p class="muted" style="margin:0 0 18px 0;">Admins can add, edit, change roles, toggle “also acts as client,” delete users, or change passwords.</p>
+  <div class="subheader">
+    <div class="left">
+      <div class="brand">All Users</div>
+      <span class="muted">Admins can add, edit, change roles, toggle “also acts as client,” delete users, or change passwords.</span>
+    </div>
+    <div class="btnset">
+      <button type="button" class="btn brand" onclick="openCreateModal(true)">Create User</button>
+      <a class="btn" href="dashboard.php">Back to Dashboard</a>
+      <a class="btn" href="clients.php">View Clients</a>
+      <a class="btn" href="invites.php">Manage Invites</a>
+      <a class="btn" href="workout_plans.php">Workout Plans</a>
+    </div>
+  </div>
 
   <?php if ($flash): ?>
     <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>">
@@ -409,89 +512,6 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
       <?php if ($flash_extra): ?><div style="margin-top:6px"><?php echo h($flash_extra); ?></div><?php endif; ?>
     </div>
   <?php endif; ?>
-
-  <!-- Create User (no invite) -->
-  <section class="card">
-    <h2>Create User (Direct)</h2>
-    <form method="post" class="row" autocomplete="off" style="display:grid;grid-template-columns:repeat(12,1fr);gap:10px">
-      <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-      <input type="hidden" name="action" value="create_user">
-
-      <div style="grid-column:span 4">
-        <label class="muted" for="role">Role</label>
-        <select id="role" name="role" class="inline-input" required>
-          <?php
-            $createRoleOptions = [
-              'trainer' => 'Trainer',
-              'client'  => 'Client',
-              'admin'   => 'Admin',
-            ];
-            if ($currentUserIsSuper) {
-              $createRoleOptions = ['super_admin' => 'Super Admin'] + $createRoleOptions;
-            }
-            foreach ($createRoleOptions as $value => $label):
-              $isDefault = ($value === 'trainer');
-          ?>
-          <option value="<?php echo h($value); ?>" <?php echo $isDefault ? 'selected' : ''; ?>><?php echo h($label); ?></option>
-          <?php endforeach; ?>
-        </select>
-        <label style="display:flex;gap:8px;align-items:center;margin-top:10px">
-          <input type="checkbox" name="is_client" value="1" style="accent-color:#38bdf8">
-          <span class="muted">Also acts as client (appears in client lists)</span>
-        </label>
-      </div>
-
-      <div style="grid-column:span 4">
-        <label class="muted" for="email">Email</label>
-        <input class="inline-input" id="email" name="email" type="email" placeholder="user@example.com" required>
-      </div>
-
-      <div style="grid-column:span 4">
-        <label class="muted" for="phone">Phone</label>
-        <input class="inline-input" id="phone" name="phone" type="text" placeholder="+1 (555) 555-5555">
-      </div>
-
-      <div style="grid-column:span 4">
-        <label class="muted" for="birthdate">Birthdate</label>
-        <input class="inline-input" id="birthdate" name="birthdate" type="date" placeholder="YYYY-MM-DD">
-      </div>
-
-      <div style="grid-column:span 4">
-        <label class="muted" for="gender">Gender</label>
-        <input class="inline-input" id="gender" name="gender" type="text" placeholder="Gender">
-      </div>
-      <div style="grid-column:span 4"></div>
-
-      <div style="grid-column:span 4">
-        <label class="muted" for="first_name">First Name</label>
-        <input class="inline-input" id="first_name" name="first_name" type="text">
-      </div>
-
-      <div style="grid-column:span 4">
-        <label class="muted" for="middle_name">Middle Name</label>
-        <input class="inline-input" id="middle_name" name="middle_name" type="text">
-      </div>
-
-      <div style="grid-column:span 4">
-        <label class="muted" for="last_name">Last Name</label>
-        <input class="inline-input" id="last_name" name="last_name" type="text">
-      </div>
-
-      <div style="grid-column:span 6">
-        <label class="muted" for="password">Password</label>
-        <input class="inline-input" id="password" name="password" type="password" placeholder="Leave blank to auto-generate">
-      </div>
-
-      <div style="grid-column:span 6">
-        <label class="muted" for="password2">Confirm Password</label>
-        <input class="inline-input" id="password2" name="password2" type="password" placeholder="Retype password">
-      </div>
-
-      <div style="grid-column:span 12;display:flex;gap:10px;align-items:center;margin-top:4px">
-        <button class="btn brand" type="submit">Create User</button>
-      </div>
-    </form>
-  </section>
 
   <!-- Users table -->
   <div style="overflow:auto">
@@ -540,11 +560,14 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
                   'trainer'     => 'Trainer',
                   'client'      => 'Client',
                 ];
-                $targetIsSuper = ppf_is_super_admin($u['role']);
+                $roleKey = ppf_role_key($u['role'] ?? '');
+                $targetIsSuper = ($roleKey === 'super_admin');
+                $targetIsClientRole = ($roleKey === 'client');
                 if (!$currentUserIsSuper && !$targetIsSuper) {
                   unset($roleOptions['super_admin']);
                 }
                 $lockSuperRole = !$currentUserIsSuper && $targetIsSuper;
+                $canToggleClientFlag = !$targetIsClientRole;
               ?>
               <select name="new_role" class="inline-input role-select" required
                       data-current="<?php echo h($u['role']); ?>"
@@ -626,21 +649,23 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
               <?php if ($editing): ?>
                 <button class="btn small brand" type="submit" form="form-<?php echo $uid; ?>">Save</button>
                 </form>
-                <a class="btn small" href="users.php">Cancel</a>
+                <button class="btn small" type="button" onclick="window.location.href='users.php'">Cancel</button>
               <?php else: ?>
-                <a class="btn small" href="users.php?edit=<?php echo $uid; ?>">Edit</a>
+                <button class="btn small" type="button" onclick="window.location.href='users.php?edit=<?php echo $uid; ?>'">Edit</button>
               <?php endif; ?>
 
               <!-- Toggle "acts as client" -->
-              <form method="post" style="display:inline">
-                <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                <input type="hidden" name="action" value="toggle_is_client">
-                <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
-                <input type="hidden" name="to" value="<?php echo $flag ? 0 : 1; ?>">
-                <button class="btn small" type="submit">
-                  <?php echo $flag ? 'Remove from Clients' : 'Add to Clients'; ?>
-                </button>
-              </form>
+              <?php if ($canToggleClientFlag): ?>
+                <form method="post">
+                  <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                  <input type="hidden" name="action" value="toggle_is_client">
+                  <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
+                  <input type="hidden" name="to" value="<?php echo $flag ? 0 : 1; ?>">
+                  <button class="btn small" type="submit">
+                    <?php echo $flag ? 'Remove from Clients' : 'Add to Clients'; ?>
+                  </button>
+                </form>
+              <?php endif; ?>
 
               <!-- NEW: Change Password (opens modal) -->
               <button class="btn small" type="button"
@@ -648,13 +673,15 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
                 Change Password
               </button>
 
-              <!-- Delete -->
-              <form method="post" style="display:inline" onsubmit="return confirm('Are you sure you want to delete <?php echo h($full ?: ($u['email'] ?? 'this user')); ?>?');">
-                <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                <input type="hidden" name="action" value="delete_user">
-                <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
-                <button class="btn small warn" type="submit">Delete</button>
-              </form>
+              <?php if (!$targetIsSuper): ?>
+                <!-- Delete -->
+                <form method="post" onsubmit="return confirm('Are you sure you want to delete <?php echo h($full ?: ($u['email'] ?? 'this user')); ?>?');">
+                  <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                  <input type="hidden" name="action" value="delete_user">
+                  <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
+                  <button class="btn small warn" type="submit">Delete</button>
+                </form>
+              <?php endif; ?>
             </div>
           </td>
         </tr>
@@ -663,13 +690,102 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
     </table>
   </div>
 
-  <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
-    <a class="btn" href="dashboard.php">Back to Dashboard</a>
-    <a class="btn" href="clients.php">View Clients</a>
-    <a class="btn" href="invites.php">Manage Invites</a>
-    <a class="btn" href="workout_plans.php">Workout Plans</a>
-  </div>
 </main>
+
+<!-- Create User Modal -->
+<div id="createModal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="createModalTitle">
+    <h3 id="createModalTitle">Create User</h3>
+    <form method="post" id="createForm" class="modal-form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+      <input type="hidden" name="action" value="create_user">
+
+      <div class="field span-4">
+        <label class="muted" for="create_role">Role</label>
+        <select id="create_role" name="role" class="inline-input" required>
+          <?php
+            $createRoleOptions = [
+              'trainer' => 'Trainer',
+              'client'  => 'Client',
+              'admin'   => 'Admin',
+            ];
+            if ($currentUserIsSuper) {
+              $createRoleOptions = ['super_admin' => 'Super Admin'] + $createRoleOptions;
+            }
+            foreach ($createRoleOptions as $value => $label):
+              $selected = ($createDefaults['role'] ?? 'trainer') === $value ? 'selected' : '';
+          ?>
+          <option value="<?php echo h($value); ?>" <?php echo $selected; ?>><?php echo h($label); ?></option>
+          <?php endforeach; ?>
+        </select>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:10px">
+          <input type="checkbox" id="create_is_client" name="is_client" value="1" style="accent-color:#38bdf8"
+                 <?php echo !empty($createDefaults['is_client']) ? 'checked' : ''; ?>>
+          <span class="muted">Also acts as client (appears in client lists)</span>
+        </label>
+      </div>
+
+      <div class="field span-4">
+        <label class="muted" for="create_email">Email</label>
+        <input class="inline-input" id="create_email" name="email" type="email" placeholder="user@example.com" required
+               value="<?php echo h($createDefaults['email'] ?? ''); ?>">
+      </div>
+
+      <div class="field span-4">
+        <label class="muted" for="create_phone">Phone</label>
+        <input class="inline-input" id="create_phone" name="phone" type="text" placeholder="+1 (555) 555-5555"
+               value="<?php echo h($createDefaults['phone'] ?? ''); ?>">
+      </div>
+
+      <div class="field span-4">
+        <label class="muted" for="create_birthdate">Birthdate</label>
+        <input class="inline-input" id="create_birthdate" name="birthdate" type="date" placeholder="YYYY-MM-DD"
+               value="<?php echo h($createDefaults['birthdate'] ?? ''); ?>">
+      </div>
+
+      <div class="field span-4">
+        <label class="muted" for="create_gender">Gender</label>
+        <input class="inline-input" id="create_gender" name="gender" type="text" placeholder="Gender"
+               value="<?php echo h($createDefaults['gender'] ?? ''); ?>">
+      </div>
+
+      <div class="field span-4">
+        <label class="muted" for="create_first_name">First Name</label>
+        <input class="inline-input" id="create_first_name" name="first_name" type="text"
+               value="<?php echo h($createDefaults['first_name'] ?? ''); ?>">
+      </div>
+
+      <div class="field span-4">
+        <label class="muted" for="create_middle_name">Middle Name</label>
+        <input class="inline-input" id="create_middle_name" name="middle_name" type="text"
+               value="<?php echo h($createDefaults['middle_name'] ?? ''); ?>">
+      </div>
+
+      <div class="field span-4">
+        <label class="muted" for="create_last_name">Last Name</label>
+        <input class="inline-input" id="create_last_name" name="last_name" type="text"
+               value="<?php echo h($createDefaults['last_name'] ?? ''); ?>">
+      </div>
+
+      <div class="field span-6">
+        <label class="muted" for="create_password">Password</label>
+        <input class="inline-input" id="create_password" name="password" type="password" placeholder="Leave blank to auto-generate">
+      </div>
+
+      <div class="field span-6">
+        <label class="muted" for="create_password2">Confirm Password</label>
+        <input class="inline-input" id="create_password2" name="password2" type="password" placeholder="Retype password">
+      </div>
+
+      <div class="span-12">
+        <div class="btns">
+          <button type="button" class="btn" onclick="closeCreateModal()">Cancel</button>
+          <button type="submit" class="btn brand">Create User</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- NEW: Change Password Modal (single reusable instance) -->
 <div id="pwModal" class="modal-backdrop" aria-hidden="true">
@@ -708,6 +824,51 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
   });
 })();
 
+// ------- Create User modal logic -------
+const createModal = document.getElementById('createModal');
+const createForm = document.getElementById('createForm');
+const createEmail = document.getElementById('create_email');
+const shouldOpenCreate = <?php echo $shouldOpenCreateModal ? 'true' : 'false'; ?>;
+const hasCreateParam = new URL(window.location.href).searchParams.get('open') === 'create';
+
+function clearCreateParam(){
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('open') === 'create') {
+    url.searchParams.delete('open');
+    if (typeof history.replaceState === 'function') {
+      history.replaceState({}, '', url.toString());
+    }
+  }
+}
+
+function openCreateModal(shouldReset){
+  if (typeof shouldReset === 'undefined') shouldReset = true;
+  if (shouldReset && createForm) {
+    createForm.reset();
+  }
+  if (createModal) {
+    createModal.style.display = 'flex';
+    setTimeout(()=>{ if (createEmail) createEmail.focus(); }, 0);
+  }
+  clearCreateParam();
+}
+function closeCreateModal(){
+  if (createModal) {
+    createModal.style.display = 'none';
+  }
+  clearCreateParam();
+}
+
+if (createModal) {
+  createModal.addEventListener('click', (e)=>{ if (e.target === createModal) closeCreateModal(); });
+}
+
+if (shouldOpenCreate) {
+  openCreateModal(false);
+} else if (hasCreateParam) {
+  clearCreateParam();
+}
+
 // ------- Change Password modal logic -------
 const modal = document.getElementById('pwModal');
 const userSpan = document.getElementById('pwModalUser');
@@ -736,7 +897,12 @@ function validatePwForm(){
 }
 // Close on Esc or clicking backdrop
 modal.addEventListener('click', (e)=>{ if (e.target === modal) closePwModal(); });
-document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape' && modal.style.display === 'flex') closePwModal(); });
+document.addEventListener('keydown', (e)=>{
+  if (e.key === 'Escape') {
+    if (modal.style.display === 'flex') closePwModal();
+    if (createModal && createModal.style.display === 'flex') closeCreateModal();
+  }
+});
 </script>
 
 </body>

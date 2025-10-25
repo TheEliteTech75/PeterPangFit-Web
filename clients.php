@@ -451,7 +451,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           }
           $idList = implode(',', array_map('intval', $ids));
 
-          $sql = "UPDATE users SET is_active=0 WHERE id IN ($idList) AND (role='client' OR is_client=1)";
+          $superSql = "SELECT COUNT(*) AS total FROM users WHERE id IN ($idList) AND role='super_admin'";
+          if ($superRes = $conn->query($superSql)) {
+            $superRow = $superRes->fetch_assoc();
+            $superRes->free();
+            if ((int)($superRow['total'] ?? 0) > 0) {
+              throw new Exception('Super Admin accounts cannot be deactivated.');
+            }
+          }
+
+          $sql = "UPDATE users SET is_active=0 WHERE id IN ($idList) AND (role='client' OR is_client=1) AND role<>'super_admin'";
           if (!$conn->query($sql)) {
             throw new Exception('Failed to deactivate selected clients.');
           }
@@ -674,6 +683,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Deactivate
       if ($action === 'deactivate_client') {
         if ($uid <= 0) throw new Exception('Invalid client.');
+        $roleStmt = $conn->prepare("SELECT role FROM users WHERE id=? LIMIT 1");
+        if (!$roleStmt) throw new Exception('Failed to load user.');
+        $roleStmt->bind_param("i", $uid);
+        $roleStmt->execute();
+        $roleRes = $roleStmt->get_result();
+        $roleRow = $roleRes ? $roleRes->fetch_assoc() : null;
+        $roleStmt->close();
+        if (!$roleRow) throw new Exception('Client not found.');
+        if (ppf_is_super_admin($roleRow['role'] ?? null)) {
+          throw new Exception('Super Admin accounts cannot be deactivated.');
+        }
+
         $stmt = $conn->prepare("UPDATE users SET is_active=0 WHERE id=? AND role='client'");
         $stmt->bind_param("i", $uid);
         if (!$stmt->execute()) { $stmt->close(); throw new Exception('Failed to deactivate client.'); }
@@ -1562,7 +1583,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
           $pw   = (string)($c['password_hash'] ?? '');
           $has_password = ($pw !== null && $pw !== '');
           $editing = isset($_GET['edit']) && (int)$_GET['edit'] === $id;
-          $is_real_client = ($c['role'] === 'client');
+          $roleKey = ppf_role_key($c['role'] ?? '');
+          $is_real_client = ($roleKey === 'client');
+          $targetIsSuper = ($roleKey === 'super_admin');
           $ageYears = calc_age_years($c['birthdate'] ?? null);
           $lockedUntil = $c['locked_until'] ?? null;
           $isLocked = !empty($lockedUntil) && (strtotime($lockedUntil) > time());
@@ -1589,7 +1612,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
         ?>
           <tr class="client-row" data-uid="<?php echo $id; ?>" data-order="<?php echo $orderIndex; ?>" data-sort-id="<?php echo $id; ?>" data-sort-first="<?php echo h($firstSort); ?>" data-sort-middle="<?php echo h($middleSort); ?>" data-sort-last="<?php echo h($lastSort); ?>" data-sort-email="<?php echo h($emailSort); ?>" data-sort-phone="<?php echo h($phoneDigits); ?>" data-sort-birthdate="<?php echo h($birthAttr); ?>" data-sort-age="<?php echo $ageYears === null ? '' : (int)$ageYears; ?>" data-sort-gender="<?php echo h($genderSort); ?>" data-sort-height="<?php echo h($heightSortAttr); ?>" data-sort-weight="<?php echo h($weightSortAttr); ?>" data-sort-plans="<?php echo $plansCount; ?>">
             <td>
-              <input type="checkbox" class="client-select" value="<?php echo $id; ?>" data-client-checkbox aria-label="Select <?php echo h($labelName !== '' ? $labelName : ('Client #' . $id)); ?>">
+              <input type="checkbox" class="client-select" value="<?php echo $id; ?>" data-client-checkbox aria-label="Select <?php echo h($labelName !== '' ? $labelName : ('Client #' . $id)); ?>"<?php echo $targetIsSuper ? ' disabled aria-disabled="true" title="Super Admin accounts cannot be selected"' : ''; ?>>
             </td>
 
             <td><?php echo $id; ?></td>
@@ -1695,7 +1718,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
             <td>
               <div class="actions">
                 <?php if (is_trainer_admin($USER_ROLE ?? null) && $isLocked): ?>
-                  <form method="post" action="clients.php" style="display:inline" onsubmit="return confirm('Unlock this account? This will clear failed attempts and remove the lockout.');">
+                  <form method="post" action="clients.php" onsubmit="return confirm('Unlock this account? This will clear failed attempts and remove the lockout.');">
                     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                     <input type="hidden" name="action" value="unlock_user">
                     <input type="hidden" name="user_id" value="<?php echo $id; ?>">
@@ -1712,13 +1735,13 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
                 <?php endif; ?>
 
                 <?php if (!$has_password): ?>
-                  <form method="post" style="display:inline">
+                  <form method="post">
                     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                     <input type="hidden" name="action" value="invite_client">
                     <input type="hidden" name="user_id" value="<?php echo $id; ?>">
                     <button class="btn small brand" type="submit">Invite</button>
                   </form>
-                  <form method="post" style="display:inline">
+                  <form method="post">
                     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                     <input type="hidden" name="action" value="resend_invite">
                     <input type="hidden" name="user_id" value="<?php echo $id; ?>">
@@ -1726,16 +1749,16 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
                   </form>
                 <?php endif; ?>
 
-                <?php if ($is_real_client): ?>
+                <?php if ($is_real_client && !$targetIsSuper): ?>
                   <?php if ($whichTab === 'active'): ?>
-                    <form method="post" style="display:inline" onsubmit="return confirm('Deactivate this client? They will be moved to Inactive Clients and will be unable to log in.');">
+                    <form method="post" onsubmit="return confirm('Deactivate this client? They will be moved to Inactive Clients and will be unable to log in.');">
                       <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                       <input type="hidden" name="action" value="deactivate_client">
                       <input type="hidden" name="user_id" value="<?php echo $id; ?>">
                       <button class="btn small" type="submit" style="border-color:#ef4444;color:#ef4444">Deactivate</button>
                     </form>
                   <?php else: ?>
-                    <form method="post" style="display:inline">
+                    <form method="post">
                       <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                       <input type="hidden" name="action" value="reactivate_client">
                       <input type="hidden" name="user_id" value="<?php echo $id; ?>">
@@ -1781,8 +1804,23 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .wrap{width:100%;max-width:100%;margin:24px auto;padding:0 var(--page-pad);box-sizing:border-box}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}
   .row{display:flex;gap:16px;align-items:center}
-  .btn{ background:rgba(30,41,59,0.65); border:1px solid var(--line); padding:8px 12px; border-radius:10px; color: var(--text); }
-  .btn.small{padding:6px 10px;font-size:12px}
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    background:rgba(30,41,59,0.65);
+    border:1px solid var(--line);
+    padding:8px 12px;
+    border-radius:10px;
+    color:var(--text);
+    cursor:pointer;
+    text-decoration:none;
+    white-space:nowrap;
+    min-height:34px;
+    line-height:1.1;
+  }
+  .btn.small{padding:6px 10px;font-size:12px;min-height:30px}
   .btn.brand{background:var(--brand);border-color:var(--brand);color:white}
   .tabs{display:flex;gap:8px;margin-bottom:14px}
   .tab{padding:8px 12px;border-radius:9999px;border:1px solid var(--line);background:rgba(15,23,42,0.68);color:#cbd5f5}
@@ -1801,6 +1839,8 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .brand{font-weight:800;font-size:20px;letter-spacing:.2px}
   .btnset{display:flex;gap:8px;flex-wrap:wrap}
   .clients-table-container{display:flex;flex-direction:column;gap:12px}
+  .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .actions form{margin:0;display:flex}
   .table-tools{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between}
   .table-tools__search{flex:1 1 260px;max-width:420px}
   .table-tools__bulk{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -2210,18 +2250,22 @@ const CLIENT_SORT_TYPES = {
   function updateSelectAll(){
     if (!selectAll) return;
     const visible = rows.filter(row => row.style.display !== 'none');
-    if (!visible.length) {
+    const actionable = visible.filter(row => {
+      const cb = row.querySelector('[data-client-checkbox]');
+      return cb && !cb.disabled;
+    });
+    if (!actionable.length) {
       selectAll.checked = false;
       selectAll.indeterminate = false;
       return;
     }
     let checkedCount = 0;
-    visible.forEach(row => {
+    actionable.forEach(row => {
       const cb = row.querySelector('[data-client-checkbox]');
       if (cb && cb.checked) checkedCount++;
     });
-    selectAll.checked = checkedCount > 0 && checkedCount === visible.length;
-    selectAll.indeterminate = checkedCount > 0 && checkedCount < visible.length;
+    selectAll.checked = checkedCount > 0 && checkedCount === actionable.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < actionable.length;
   }
 
   function applySearch(query){
@@ -2261,7 +2305,7 @@ const CLIENT_SORT_TYPES = {
       const visible = rows.filter(row => row.style.display !== 'none');
       visible.forEach(row => {
         const cb = row.querySelector('[data-client-checkbox]');
-        if (cb) cb.checked = selectAll.checked;
+        if (cb && !cb.disabled) cb.checked = selectAll.checked;
       });
       updateSelectAll();
     });
@@ -2654,7 +2698,7 @@ function renderClientExpansion(uid, body){
           <td class="muted" style="padding:8px 10px">${escapeHtml(updatedBy)}</td>
           <td style="padding:8px 10px">${exCount}</td>
           <td style="padding:8px 10px">
-            <form method="post" style="display:inline"
+            <form method="post"
                   onsubmit="return confirm('Unassign this plan from this client? This will remove the plan and any per-exercise settings for this client.');">
               <input type="hidden" name="csrf_token" value="${window.__CSRF}">
               <input type="hidden" name="action" value="unassign_plan">
