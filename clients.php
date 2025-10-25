@@ -451,7 +451,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           }
           $idList = implode(',', array_map('intval', $ids));
 
-          $sql = "UPDATE users SET is_active=0 WHERE id IN ($idList) AND (role='client' OR is_client=1)";
+          $superSql = "SELECT id FROM users WHERE id IN ($idList) AND role='super_admin'";
+          if ($superRes = $conn->query($superSql)) {
+            if ($superRes->num_rows > 0) {
+              $superRes->free();
+              throw new Exception('Super Admin accounts cannot be deactivated.');
+            }
+            $superRes->free();
+          }
+
+          $sql = "UPDATE users SET is_active=0 WHERE id IN ($idList) AND (role='client' OR is_client=1) AND role<>'super_admin'";
           if (!$conn->query($sql)) {
             throw new Exception('Failed to deactivate selected clients.');
           }
@@ -674,6 +683,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Deactivate
       if ($action === 'deactivate_client') {
         if ($uid <= 0) throw new Exception('Invalid client.');
+        $roleStmt = $conn->prepare("SELECT role FROM users WHERE id=? LIMIT 1");
+        if (!$roleStmt) throw new Exception('Failed to load user.');
+        $roleStmt->bind_param("i", $uid);
+        $roleStmt->execute();
+        $roleRes = $roleStmt->get_result();
+        $roleRow = $roleRes ? $roleRes->fetch_assoc() : null;
+        $roleStmt->close();
+        if (!$roleRow) throw new Exception('Client not found.');
+        if (ppf_is_super_admin($roleRow['role'] ?? null)) {
+          throw new Exception('Super Admin accounts cannot be deactivated.');
+        }
+
         $stmt = $conn->prepare("UPDATE users SET is_active=0 WHERE id=? AND role='client'");
         $stmt->bind_param("i", $uid);
         if (!$stmt->execute()) { $stmt->close(); throw new Exception('Failed to deactivate client.'); }
@@ -1563,6 +1584,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
           $has_password = ($pw !== null && $pw !== '');
           $editing = isset($_GET['edit']) && (int)$_GET['edit'] === $id;
           $is_real_client = ($c['role'] === 'client');
+          $targetIsSuper = ppf_is_super_admin($c['role'] ?? '');
           $ageYears = calc_age_years($c['birthdate'] ?? null);
           $lockedUntil = $c['locked_until'] ?? null;
           $isLocked = !empty($lockedUntil) && (strtotime($lockedUntil) > time());
@@ -1726,7 +1748,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
                   </form>
                 <?php endif; ?>
 
-                <?php if ($is_real_client): ?>
+                <?php if ($is_real_client && !$targetIsSuper): ?>
                   <?php if ($whichTab === 'active'): ?>
                     <form method="post" style="display:inline" onsubmit="return confirm('Deactivate this client? They will be moved to Inactive Clients and will be unable to log in.');">
                       <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
