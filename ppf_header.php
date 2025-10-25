@@ -79,6 +79,12 @@ if (ppf_is_admin_role($role)) {
 :root {
   color-scheme: dark;
 }
+.ppf-top-stack {
+  position: sticky;
+  top: 0;
+  z-index: 4000;
+  display: block;
+}
 .ppf-topbar {
   display:flex;align-items:center;justify-content:space-between;
   padding:16px 24px;
@@ -86,9 +92,8 @@ if (ppf_is_admin_role($role)) {
   backdrop-filter:blur(18px);
   border-bottom:1px solid var(--card-border);
   box-shadow:var(--card-shadow);
-  position: sticky;
-  top: 0;
-  z-index: 3000;
+  position: relative;
+  z-index: 3100;
 }
 .ppf-demo-alerts {
   display:flex;
@@ -114,7 +119,7 @@ if (ppf_is_admin_role($role)) {
   letter-spacing:0.04em;
   text-transform:uppercase;
   position:relative;
-  z-index:2950;
+  z-index:3200;
 }
 .ppf-demo-banner svg {
   width:22px;
@@ -282,6 +287,18 @@ body.ppf-themed .dash-settings-toggle {
 </div>
 <?php endif; ?>
 
+<div class="ppf-top-stack<?php echo $showDemoBanner ? ' has-demo-banner' : ''; ?>">
+<?php if ($showDemoBanner): ?>
+  <div class="ppf-demo-banner" role="alert" aria-live="assertive">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <span>Demo Mode is Enabled</span>
+  </div>
+<?php endif; ?>
+
 <header class="ppf-topbar">
   <?php if (ppf_is_admin_role($roleKey) || in_array($roleKey, ['trainer','client'], true)): ?>
     <button id="ppfHamburger" type="button" aria-label="Open navigation" title="Open navigation"
@@ -322,17 +339,7 @@ body.ppf-themed .dash-settings-toggle {
     </nav>
   </div>
 </header>
-
-<?php if ($showDemoBanner): ?>
-<div class="ppf-demo-banner" role="alert" aria-live="assertive">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="10"></circle>
-    <line x1="12" y1="8" x2="12" y2="12"></line>
-    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-  </svg>
-  <span>Demo Mode is Enabled</span>
 </div>
-<?php endif; ?>
 
 <script>
 (function(){

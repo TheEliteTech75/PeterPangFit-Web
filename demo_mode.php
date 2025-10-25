@@ -902,6 +902,64 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
     }
 
     /**
+     * Toggle the Demo Mode flag and refresh runtime state.
+     * Optionally accepts a sandbox configuration override so the helper can
+     * reconnect after the flag changes (used by settings.php).
+     */
+    function ppf_demo_set_enabled(mysqli $primaryConn, bool $enabled, ?array $sandboxCfg = null): bool
+    {
+        global $PPF_DEMO_PRIMARY_CONN, $PPF_DEMO_SANDBOX_CFG, $PPF_DEMO_SANDBOX_CONN;
+        global $PPF_DEMO_LAST_ERROR;
+
+        $PPF_DEMO_PRIMARY_CONN = $primaryConn;
+
+        if ($sandboxCfg !== null && is_array($sandboxCfg)) {
+            $PPF_DEMO_SANDBOX_CFG = $sandboxCfg;
+        } elseif (!is_array($PPF_DEMO_SANDBOX_CFG)) {
+            $PPF_DEMO_SANDBOX_CFG = [];
+        }
+
+        if ($enabled) {
+            $cfg = $PPF_DEMO_SANDBOX_CFG ?? [];
+            $sandbox = $PPF_DEMO_SANDBOX_CONN;
+            if (!($sandbox instanceof mysqli) || $sandbox->connect_errno) {
+                $sandbox = ppf_demo_connect($cfg);
+            }
+            if (!($sandbox instanceof mysqli) || $sandbox->connect_errno) {
+                $PPF_DEMO_LAST_ERROR = $sandbox instanceof mysqli
+                    ? ($sandbox->connect_error ?: 'Unable to connect to the sandbox database.')
+                    : 'Sandbox connection unavailable.';
+                return false;
+            }
+            $PPF_DEMO_SANDBOX_CONN = $sandbox;
+        }
+
+        if (!ppf_demo_write_flag($primaryConn, $enabled)) {
+            $PPF_DEMO_LAST_ERROR = $PPF_DEMO_LAST_ERROR ?: 'Failed to update Demo Mode flag.';
+            return false;
+        }
+
+        ppf_demo_refresh_state($primaryConn, $PPF_DEMO_SANDBOX_CFG);
+
+        $active = ppf_demo_active_conn();
+        if ($active instanceof mysqli && $active !== $primaryConn) {
+            ppf_demo_write_flag($active, $enabled);
+        } elseif ($PPF_DEMO_SANDBOX_CONN instanceof mysqli && !$PPF_DEMO_SANDBOX_CONN->connect_errno) {
+            ppf_demo_write_flag($PPF_DEMO_SANDBOX_CONN, $enabled);
+        }
+
+        if (ppf_demo_is_enabled() === $enabled) {
+            $PPF_DEMO_LAST_ERROR = null;
+            return true;
+        }
+
+        if ($enabled && !$PPF_DEMO_LAST_ERROR) {
+            $PPF_DEMO_LAST_ERROR = 'Sandbox connection failed while enabling Demo Mode.';
+        }
+        return false;
+    }
+
+    /**
      * Establish the primary connection and store handles globally.
      */
     function ppf_demo_bootstrap_primary(array $cfg): ?mysqli
