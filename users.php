@@ -355,12 +355,12 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
     a{color:var(--brand);text-decoration:none}
     a:hover{text-decoration:underline}
 
-    .btn{display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);
-      color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none;white-space:nowrap}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:#2a3446;border:1px solid var(--line);
+      color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none;white-space:nowrap;min-height:34px;line-height:1.1}
     .btn:hover{filter:brightness(1.06)}
     .btn.brand{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35)}
     .btn.warn{background:#2a1617;border-color:rgba(248,113,113,0.45);color:#f87171}
-    .btn.small{padding:6px 10px;font-size:13px}
+    .btn.small{padding:6px 10px;font-size:13px;min-height:30px}
 
     .wrap{
       width:100%;
@@ -392,7 +392,8 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
     .inline-input{width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;
       padding:6px 8px;border-radius:8px;outline:none;box-sizing:border-box;font-size:13px}
 
-    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .actions form{margin:0;display:flex}
 
     /* Role cell layout */
     .role-form{display:flex;gap:10px;align-items:center;min-width:100px}
@@ -661,7 +662,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
 
               <!-- Toggle "acts as client" -->
               <?php if ($canToggleClientFlag): ?>
-                <form method="post" style="display:inline">
+                <form method="post">
                   <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                   <input type="hidden" name="action" value="toggle_is_client">
                   <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
@@ -680,7 +681,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
 
               <?php if (!$targetIsSuper): ?>
                 <!-- Delete -->
-                <form method="post" style="display:inline" onsubmit="return confirm('Are you sure you want to delete <?php echo h($full ?: ($u['email'] ?? 'this user')); ?>?');">
+                <form method="post" onsubmit="return confirm('Are you sure you want to delete <?php echo h($full ?: ($u['email'] ?? 'this user')); ?>?');">
                   <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                   <input type="hidden" name="action" value="delete_user">
                   <input type="hidden" name="user_id" value="<?php echo $uid; ?>">

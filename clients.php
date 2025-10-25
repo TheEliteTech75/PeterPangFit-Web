@@ -1718,7 +1718,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
             <td>
               <div class="actions">
                 <?php if (is_trainer_admin($USER_ROLE ?? null) && $isLocked): ?>
-                  <form method="post" action="clients.php" style="display:inline" onsubmit="return confirm('Unlock this account? This will clear failed attempts and remove the lockout.');">
+                  <form method="post" action="clients.php" onsubmit="return confirm('Unlock this account? This will clear failed attempts and remove the lockout.');">
                     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                     <input type="hidden" name="action" value="unlock_user">
                     <input type="hidden" name="user_id" value="<?php echo $id; ?>">
@@ -1735,13 +1735,13 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
                 <?php endif; ?>
 
                 <?php if (!$has_password): ?>
-                  <form method="post" style="display:inline">
+                  <form method="post">
                     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                     <input type="hidden" name="action" value="invite_client">
                     <input type="hidden" name="user_id" value="<?php echo $id; ?>">
                     <button class="btn small brand" type="submit">Invite</button>
                   </form>
-                  <form method="post" style="display:inline">
+                  <form method="post">
                     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                     <input type="hidden" name="action" value="resend_invite">
                     <input type="hidden" name="user_id" value="<?php echo $id; ?>">
@@ -1751,14 +1751,14 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 
                 <?php if ($is_real_client && !$targetIsSuper): ?>
                   <?php if ($whichTab === 'active'): ?>
-                    <form method="post" style="display:inline" onsubmit="return confirm('Deactivate this client? They will be moved to Inactive Clients and will be unable to log in.');">
+                    <form method="post" onsubmit="return confirm('Deactivate this client? They will be moved to Inactive Clients and will be unable to log in.');">
                       <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                       <input type="hidden" name="action" value="deactivate_client">
                       <input type="hidden" name="user_id" value="<?php echo $id; ?>">
                       <button class="btn small" type="submit" style="border-color:#ef4444;color:#ef4444">Deactivate</button>
                     </form>
                   <?php else: ?>
-                    <form method="post" style="display:inline">
+                    <form method="post">
                       <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                       <input type="hidden" name="action" value="reactivate_client">
                       <input type="hidden" name="user_id" value="<?php echo $id; ?>">
@@ -1804,8 +1804,23 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .wrap{width:100%;max-width:100%;margin:24px auto;padding:0 var(--page-pad);box-sizing:border-box}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}
   .row{display:flex;gap:16px;align-items:center}
-  .btn{ background:rgba(30,41,59,0.65); border:1px solid var(--line); padding:8px 12px; border-radius:10px; color: var(--text); }
-  .btn.small{padding:6px 10px;font-size:12px}
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    background:rgba(30,41,59,0.65);
+    border:1px solid var(--line);
+    padding:8px 12px;
+    border-radius:10px;
+    color:var(--text);
+    cursor:pointer;
+    text-decoration:none;
+    white-space:nowrap;
+    min-height:34px;
+    line-height:1.1;
+  }
+  .btn.small{padding:6px 10px;font-size:12px;min-height:30px}
   .btn.brand{background:var(--brand);border-color:var(--brand);color:white}
   .tabs{display:flex;gap:8px;margin-bottom:14px}
   .tab{padding:8px 12px;border-radius:9999px;border:1px solid var(--line);background:rgba(15,23,42,0.68);color:#cbd5f5}
@@ -1824,6 +1839,8 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .brand{font-weight:800;font-size:20px;letter-spacing:.2px}
   .btnset{display:flex;gap:8px;flex-wrap:wrap}
   .clients-table-container{display:flex;flex-direction:column;gap:12px}
+  .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .actions form{margin:0;display:flex}
   .table-tools{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between}
   .table-tools__search{flex:1 1 260px;max-width:420px}
   .table-tools__bulk{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -2681,7 +2698,7 @@ function renderClientExpansion(uid, body){
           <td class="muted" style="padding:8px 10px">${escapeHtml(updatedBy)}</td>
           <td style="padding:8px 10px">${exCount}</td>
           <td style="padding:8px 10px">
-            <form method="post" style="display:inline"
+            <form method="post"
                   onsubmit="return confirm('Unassign this plan from this client? This will remove the plan and any per-exercise settings for this client.');">
               <input type="hidden" name="csrf_token" value="${window.__CSRF}">
               <input type="hidden" name="action" value="unassign_plan">
