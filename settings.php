@@ -1797,7 +1797,6 @@ if ($demoModeControlsAvailable) {
                 <span class="demo-mode-status <?php echo h($demoModeStatusClass); ?>"><?php echo h($demoModeStatusLabel); ?></span>
               </div>
               <p class="small-text">Toggle the sanitized training environment for walkthroughs without touching live data.</p>
-              <p class="small-text">You will be prompted for your authenticator app code and current password whenever you enable or disable Demo Mode. Resetting the demo data only requires your current password.</p>
               <?php if (!$twofaAppEnabled): ?>
                 <p class="demo-mode-warning small-text">Enable your authenticator app before attempting to toggle Demo Mode.</p>
               <?php endif; ?>
@@ -1819,7 +1818,7 @@ if ($demoModeControlsAvailable) {
                 <button class="btn" type="button" data-demo-action="enable" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Enable Demo Mode</button>
                 <?php endif; ?>
                 <button class="btn danger" type="button" data-demo-action="reset" <?php echo !$demoModeControlsAvailable ? 'disabled' : ''; ?>>Reset Demo Data</button>
-                <span class="small-text">Restore demo accounts and seed content to their defaults. Requires your current password.</span>
+                <span class="small-text">Restore demo accounts and seed content to their defaults.</span>
               </div>
             </div>
           </div>
