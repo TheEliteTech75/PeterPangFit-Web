@@ -5,7 +5,8 @@ require_once __DIR__ . '/send_email.php';
 require_once __DIR__ . '/helpers.php';
 
 // Role gate (trainers & admins only)
-if (!in_array($USER_ROLE ?? 'guest', ['trainer','admin'], true)) {
+$roleKey = ppf_role_key($USER_ROLE ?? 'guest');
+if ($roleKey !== 'trainer' && !ppf_is_admin_role($USER_ROLE ?? null)) {
     http_response_code(403);
     exit('Forbidden');
 }

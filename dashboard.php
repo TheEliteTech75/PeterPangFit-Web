@@ -442,7 +442,7 @@ try {
 } catch (Throwable $e) { /* non-fatal */ }
 
 $can_admin = in_array(strtolower($role), ['admin','trainer'], true);
-$is_admin  = (strtolower($role) === 'admin');
+$is_admin  = ppf_is_admin_role($role);
 
 /* ---------- Topline metrics (admin/trainer) ---------- */
 $total_clients   = safe_count_sql($conn, "SELECT COUNT(*) FROM users WHERE (role = 'client' OR is_client = 1)");

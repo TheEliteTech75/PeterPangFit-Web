@@ -7,7 +7,10 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/logs.php';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
-function is_trainer_admin($role){ return in_array($role ?? 'guest', ['trainer','admin'], true); }
+function is_trainer_admin($role){
+  $key = ppf_role_key($role);
+  return $key === 'trainer' || ppf_is_admin_role($role);
+}
 
 if (!function_exists('ppf_workout_log_encode')) {
   function ppf_workout_log_encode(array $details): ?string {

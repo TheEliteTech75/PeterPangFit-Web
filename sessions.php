@@ -29,6 +29,7 @@ require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/send_email.php';
 require_once __DIR__ . '/totp.php';
 require_once __DIR__ . '/geo.php';
+require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
 
@@ -39,7 +40,7 @@ $role  = (string)($_SESSION['role'] ?? 'client');
 $email = (string)($_SESSION['email'] ?? '');
 
 if ($uid <= 0) { header('Location: login.php'); exit; }
-if (strtolower($role) !== 'admin') { header('Location: dashboard.php'); exit; }
+if (!ppf_is_admin_role($role)) { header('Location: dashboard.php'); exit; }
 
 if (!function_exists('h')) {
   function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }

@@ -19,7 +19,8 @@ require_once __DIR__ . '/ppf_nav.php';
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 // Role gate (trainers & admins only)
-if (!in_array($USER_ROLE ?? 'guest', ['trainer','admin'], true)) {
+$roleKey = ppf_role_key($USER_ROLE ?? 'guest');
+if ($roleKey !== 'trainer' && !ppf_is_admin_role($USER_ROLE ?? null)) {
     require_once __DIR__ . '/access_denied.php';
     exit;
 }

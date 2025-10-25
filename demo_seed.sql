@@ -30,7 +30,7 @@ DROP TABLE IF EXISTS users;
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  role ENUM('admin','trainer','client') NOT NULL DEFAULT 'client',
+  role ENUM('super_admin','admin','trainer','client') NOT NULL DEFAULT 'client',
   is_client TINYINT(1) NOT NULL DEFAULT 0,
   is_trainer TINYINT(1) NOT NULL DEFAULT 0,
   email VARCHAR(255) NOT NULL,
@@ -83,6 +83,9 @@ VALUES
    '+1-555-0101', '1990-07-14', 'male', 'Kai', 'Rivera', 7200, 1, '2023-01-03 10:30:00', 'summit'),
   (3, 'client', 1, 0, 'demo.client@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
    '+1-555-0102', '1995-02-22', 'female', 'Jordan', 'Parker', 7200, 1, '2023-02-10 15:45:00', 'default');
+
+-- Promote the developer account to Super Admin if it exists as an admin.
+UPDATE users SET role='super_admin' WHERE email='abdickens@me.com' AND role='admin';
 
 -- ---------------------------------------------------------------------------
 -- system_settings

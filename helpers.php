@@ -91,6 +91,118 @@ if (!function_exists('column_exists')) {
   }
 }
 
+/* -------------------- Role helpers -------------------- */
+
+if (!function_exists('ppf_role_values')) {
+  function ppf_role_values(): array {
+    return ['super_admin', 'admin', 'trainer', 'client'];
+  }
+}
+
+if (!function_exists('ppf_role_key')) {
+  function ppf_role_key($role): string {
+    return strtolower(trim((string)($role ?? '')));
+  }
+}
+
+if (!function_exists('ppf_is_super_admin')) {
+  function ppf_is_super_admin($role): bool {
+    return ppf_role_key($role) === 'super_admin';
+  }
+}
+
+if (!function_exists('ppf_is_admin_role')) {
+  function ppf_is_admin_role($role): bool {
+    $key = ppf_role_key($role);
+    return $key === 'admin' || $key === 'super_admin';
+  }
+}
+
+if (!function_exists('ppf_role_display')) {
+  function ppf_role_display($role): string {
+    $key = ppf_role_key($role);
+    $map = [
+      'super_admin' => 'Super Admin',
+      'admin'       => 'Admin',
+      'trainer'     => 'Trainer',
+      'client'      => 'Client',
+    ];
+    if (isset($map[$key])) {
+      return $map[$key];
+    }
+    return ucfirst($key);
+  }
+}
+
+if (!function_exists('ppf_ensure_super_admin_role')) {
+  function ppf_ensure_super_admin_role(mysqli $conn): void {
+    try {
+      $res = $conn->query("SHOW COLUMNS FROM users LIKE 'role'");
+      if (!$res) {
+        return;
+      }
+      $column = $res->fetch_assoc();
+      $res->free();
+      if (!$column) {
+        return;
+      }
+
+      $type = (string)($column['Type'] ?? '');
+      if (stripos($type, 'enum(') !== 0) {
+        return;
+      }
+
+      preg_match_all("/'([^']*)'/", $type, $matches);
+      $current = $matches[1] ?? [];
+      $current = array_values(array_map('strval', $current));
+
+      $desiredOrder = ppf_role_values();
+      $enumValues = $desiredOrder;
+
+      foreach ($current as $val) {
+        if (!in_array($val, $enumValues, true)) {
+          $enumValues[] = $val;
+        }
+      }
+
+      $needsAlter = false;
+      foreach ($desiredOrder as $val) {
+        if (!in_array($val, $current, true)) {
+          $needsAlter = true;
+          break;
+        }
+      }
+      if (!$needsAlter) {
+        return;
+      }
+
+      $enumSqlParts = [];
+      foreach ($enumValues as $val) {
+        $enumSqlParts[] = "'" . $conn->real_escape_string($val) . "'";
+      }
+      $enumSql = implode(',', $enumSqlParts);
+      $default = in_array('client', $enumValues, true) ? "'client'" : $enumSqlParts[0];
+      @$conn->query("ALTER TABLE users MODIFY role ENUM({$enumSql}) NOT NULL DEFAULT {$default}");
+    } catch (Throwable $e) {
+      // Non-fatal; schema may be managed separately.
+    }
+  }
+}
+
+if (!function_exists('ppf_promote_super_admin_account')) {
+  function ppf_promote_super_admin_account(mysqli $conn, string $email): void {
+    try {
+      if ($stmt = $conn->prepare("UPDATE users SET role='super_admin' WHERE email=? AND role='admin'")) {
+        $stmt->bind_param('s', $email);
+        $stmt->execute();
+        $stmt->close();
+      }
+    } catch (Throwable $e) {
+      // Ignore failures; account may not exist yet.
+    }
+  }
+}
+
 /* -------------------- Convenience: invites schema guard -------------------- */
 /**
  * Adds columns used by the dashboard’s invites donut if missing.

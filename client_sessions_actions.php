@@ -82,7 +82,7 @@ if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csr
 }
 
 $actorId = (int)($_SESSION['user_id'] ?? 0);
-$role = strtolower((string)($_SESSION['role'] ?? 'guest'));
+$role = ppf_role_key($_SESSION['role'] ?? 'guest');
 if ($actorId <= 0) {
     client_sessions_respond(false, 'Please sign in to continue.');
 }
@@ -125,7 +125,7 @@ if (!$session) {
 $clientId = (int)($session['client_id'] ?? 0);
 $trainerId = (int)($session['trainer_id'] ?? 0);
 $allowed = false;
-if ($role === 'admin') {
+if (ppf_is_admin_role($role)) {
     $allowed = true;
 } elseif (in_array($role, ['trainer', 'coach'], true) && $trainerId === $actorId) {
     $allowed = true;

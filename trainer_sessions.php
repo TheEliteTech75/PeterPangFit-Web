@@ -7,8 +7,8 @@ require_once __DIR__ . '/trainer_sessions_helpers.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
 
-$role = strtolower((string)($USER_ROLE ?? ($_SESSION['role'] ?? 'guest')));
-if (!in_array($role, ['trainer', 'admin'], true)) {
+$role = ppf_role_key($USER_ROLE ?? ($_SESSION['role'] ?? 'guest'));
+if (!in_array($role, ['trainer', 'coach'], true) && !ppf_is_admin_role($role)) {
     require_once __DIR__ . '/access_denied.php';
     exit;
 }
@@ -18,7 +18,7 @@ if (empty($_SESSION['csrf_token'])) {
 }
 $csrf = $_SESSION['csrf_token'];
 
-$isAdmin   = ($role === 'admin');
+$isAdmin   = ppf_is_admin_role($role);
 $trainerId = (int)($USER_ID ?? ($_SESSION['user_id'] ?? 0));
 
 $clientFilter = isset($_GET['client_id']) ? max(0, (int)$_GET['client_id']) : null;

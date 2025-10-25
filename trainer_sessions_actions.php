@@ -9,8 +9,8 @@ require_once __DIR__ . '/send_email.php';
 
 header('Content-Type: application/json');
 
-$role = strtolower((string)($USER_ROLE ?? ($_SESSION['role'] ?? 'guest')));
-if (!in_array($role, ['trainer', 'admin'], true)) {
+$role = ppf_role_key($USER_ROLE ?? ($_SESSION['role'] ?? 'guest'));
+if (!in_array($role, ['trainer', 'coach'], true) && !ppf_is_admin_role($role)) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'message' => 'Forbidden']);
     exit;
@@ -69,7 +69,7 @@ function ensure_package_access(mysqli $conn, int $packageId, string $role, int $
     if (!$pkg) {
         respond(false, 'Package not found.');
     }
-    if ($role !== 'admin' && (int)($pkg['trainer_id'] ?? 0) !== $actorId) {
+    if (!ppf_is_admin_role($role) && (int)($pkg['trainer_id'] ?? 0) !== $actorId) {
         respond(false, 'You do not have access to this package.');
     }
     return $pkg;
@@ -77,7 +77,7 @@ function ensure_package_access(mysqli $conn, int $packageId, string $role, int $
 
 if ($action === 'create_package') {
     $clientId = max(0, (int)($_POST['client_id'] ?? 0));
-    $trainerId = $role === 'admin' ? max(0, (int)($_POST['trainer_id'] ?? 0)) : $actorId;
+    $trainerId = ppf_is_admin_role($role) ? max(0, (int)($_POST['trainer_id'] ?? 0)) : $actorId;
     $name = trim((string)($_POST['package_name'] ?? ''));
     $purchased = max(1, (int)($_POST['purchased_sessions'] ?? 0));
     $pricePer = (float)($_POST['price_per_session'] ?? 0);
@@ -281,7 +281,7 @@ if ($action === 'reschedule_session') {
     $session = $res ? $res->fetch_assoc() : null;
     $stmt->close();
     if (!$session) respond(false, 'Session not found.');
-    if ($role !== 'admin' && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
+    if (!ppf_is_admin_role($role) && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
 
     $startRaw = trim((string)($_POST['scheduled_start'] ?? ''));
     $endRaw = trim((string)($_POST['scheduled_end'] ?? ''));
@@ -340,7 +340,7 @@ if ($action === 'delete_session') {
     $session = $res ? $res->fetch_assoc() : null;
     $stmt->close();
     if (!$session) respond(false, 'Session not found.');
-    if ($role !== 'admin' && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
+    if (!ppf_is_admin_role($role) && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
 
     if ($stmt = $conn->prepare("UPDATE trainer_sessions SET status = 'cancelled', updated_at = NOW() WHERE id = ?")) {
         $stmt->bind_param('i', $sessionId);
@@ -381,7 +381,7 @@ if ($action === 'start_session' || $action === 'end_session') {
     $session = $res ? $res->fetch_assoc() : null;
     $stmt->close();
     if (!$session) respond(false, 'Session not found.');
-    if ($role !== 'admin' && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
+    if (!ppf_is_admin_role($role) && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
 
     $status = strtolower((string)($session['status'] ?? 'scheduled'));
     $nowString = date('Y-m-d H:i:s');
@@ -531,7 +531,7 @@ if ($action === 'toggle_completion') {
     $session = $res ? $res->fetch_assoc() : null;
     $stmt->close();
     if (!$session) respond(false, 'Session not found.');
-    if ($role !== 'admin' && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
+    if (!ppf_is_admin_role($role) && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
 
     $status = strtolower((string)($session['status'] ?? 'scheduled'));
     if ($complete) {

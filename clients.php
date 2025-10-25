@@ -8,7 +8,10 @@ require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/ppf_lockout.php'; // unlock action
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
-function is_trainer_admin($role){ return in_array($role ?? 'guest', ['trainer','admin'], true); }
+function is_trainer_admin($role){
+  $key = ppf_role_key($role);
+  return $key === 'trainer' || ppf_is_admin_role($role);
+}
 if (!is_trainer_admin($USER_ROLE ?? null)) {
   require_once __DIR__ . '/access_denied.php';
   exit;
