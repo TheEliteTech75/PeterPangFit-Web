@@ -2954,6 +2954,20 @@ if ($demoModeControlsAvailable) {
         return hiddenEnabled.value === '1';
       }
 
+      function redirectToSettingsAnchor() {
+        const targetUrl = 'settings.php#system';
+        const currentPath = window.location.pathname.replace(/\/+/g, '/');
+        const normalizedPath = currentPath.endsWith('/') ? currentPath.slice(0, -1) : currentPath;
+        if (normalizedPath !== '/settings.php') {
+          window.location.assign(targetUrl);
+          return;
+        }
+        if (window.location.hash !== '#system') {
+          window.location.hash = 'system';
+        }
+        window.location.reload();
+      }
+
       async function submitDemoAction(extraFields = {}, options = {}) {
         const { submitButton = null, cancelButton = null, loadingText = 'Submitting...' } = options;
         let restoreLoading = () => {};
@@ -3091,7 +3105,7 @@ if ($demoModeControlsAvailable) {
                 loadingText: isEnable ? 'Enabling...' : 'Disabling...'
               }).then(() => {
                 controls.close();
-                window.location.href = 'settings.php#system';
+                redirectToSettingsAnchor();
               }).catch((err) => {
                 hiddenEnabled.value = previousValue;
                 errorEl.textContent = (err && err.message) ? err.message : 'Unable to complete the request.';
@@ -3173,7 +3187,7 @@ if ($demoModeControlsAvailable) {
                 loadingText: 'Resetting...'
               }).then(() => {
                 controls.close();
-                window.location.href = 'settings.php#system';
+                redirectToSettingsAnchor();
               }).catch((err) => {
                 hiddenEnabled.value = currentValue;
                 errorEl.textContent = (err && err.message) ? err.message : 'Unable to complete the request.';
