@@ -6,6 +6,7 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Drop in dependency order so we can recreate fresh tables each reset
+DROP TABLE IF EXISTS plan_exercises;
 DROP TABLE IF EXISTS user_plan_exercises;
 DROP TABLE IF EXISTS user_plans;
 DROP TABLE IF EXISTS workout_plans;
@@ -23,6 +24,7 @@ DROP TABLE IF EXISTS ip_cache;
 DROP TABLE IF EXISTS system_logs;
 DROP TABLE IF EXISTS passkeys;
 DROP TABLE IF EXISTS system_settings;
+DROP TABLE IF EXISTS password_resets;
 DROP TABLE IF EXISTS users;
 
 -- ---------------------------------------------------------------------------
@@ -152,6 +154,27 @@ INSERT INTO invites (user_id, email, token, created_at, expires_at, accepted_at,
 VALUES
   (NULL, 'new.client@example.com', 'INVITE-ALPHA-2023', '2023-08-01 10:00:00', '2023-09-01 10:00:00', NULL, NULL, 0, 2),
   (NULL, 'vip.client@example.com', 'INVITE-BRAVO-2023', '2023-08-15 11:00:00', '2023-09-15 11:00:00', '2023-08-20 14:00:00', '2023-08-22 09:30:00', 1, 2);
+
+-- ---------------------------------------------------------------------------
+-- password reset tokens
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id INT UNSIGNED NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_password_resets_token (token_hash),
+  KEY idx_password_resets_user (user_id),
+  CONSTRAINT fk_password_resets_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO password_resets (user_id, token_hash, expires_at, used_at, created_at)
+VALUES
+  (3, '54d9f6b8c7cbb5d2d5d4a32d7f5cdd8aab4ec2f76bd2f43f7090d6ef0a4c9b11', '2023-09-12 12:00:00', NULL, '2023-09-12 11:00:00'),
+  (1, 'd1e8c4a0b5c9f32e4a7d88c5f0b6d3a1902f54e776ca2d71a8e34bb7129dff45', '2023-08-01 18:30:00', '2023-08-01 18:45:00', '2023-08-01 17:40:00');
 
 -- ---------------------------------------------------------------------------
 -- trainer session tables
@@ -298,6 +321,21 @@ CREATE TABLE IF NOT EXISTS workout_plans (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS plan_exercises (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  plan_id INT UNSIGNED NOT NULL,
+  exercise_id INT UNSIGNED NOT NULL,
+  position INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_plan_exercise (plan_id, exercise_id),
+  KEY idx_plan_pos (plan_id, position),
+  KEY idx_plan_exercise (exercise_id),
+  CONSTRAINT fk_plan_exercises_plan FOREIGN KEY (plan_id) REFERENCES workout_plans(id) ON DELETE CASCADE,
+  CONSTRAINT fk_plan_exercises_ex FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS user_plans (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id INT UNSIGNED NOT NULL,
@@ -335,6 +373,12 @@ INSERT INTO workout_plans (id, name, description, created_at, created_by)
 VALUES
   (1, 'Total Strength Builder', 'Three-day strength emphasis with conditioning support.', '2023-06-10 08:00:00', 2),
   (2, 'Metcon Express', 'Quick interval sessions for busy professionals.', '2023-06-15 07:30:00', 2);
+
+INSERT INTO plan_exercises (plan_id, exercise_id, position, created_at)
+VALUES
+  (1, 1, 1, '2023-06-10 08:05:00'),
+  (1, 3, 2, '2023-06-10 08:06:00'),
+  (2, 2, 1, '2023-06-15 07:35:00');
 
 INSERT INTO user_plans (id, user_id, plan_id, assigned_at, assigned_by)
 VALUES
@@ -390,25 +434,30 @@ CREATE TABLE IF NOT EXISTS trusted_devices (
 CREATE TABLE IF NOT EXISTS user_recognized_ips (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id INT UNSIGNED NOT NULL,
-  ip_address VARCHAR(45) NOT NULL,
+  ip_bin VARBINARY(16) NOT NULL,
+  ip_address VARCHAR(45) NULL,
   label VARCHAR(120) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  last_seen_at DATETIME NULL,
+  last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_recognized_user_ip (user_id, ip_address),
+  UNIQUE KEY uq_recognized_user_ip (user_id, ip_bin),
   KEY idx_recognized_user (user_id),
   CONSTRAINT fk_recognized_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ip_cache (
-  ip VARCHAR(45) NOT NULL,
-  city VARCHAR(80) NULL,
-  region VARCHAR(80) NULL,
+  ip_bin VARBINARY(16) NOT NULL,
+  city VARCHAR(80) NOT NULL DEFAULT '',
+  region VARCHAR(80) NOT NULL DEFAULT '',
   country VARCHAR(80) NULL,
   latitude DECIMAL(9,6) NULL,
   longitude DECIMAL(9,6) NULL,
   looked_up_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (ip)
+  is_vpn TINYINT(1) NOT NULL DEFAULT 0,
+  vpn_checked_at DATETIME NULL,
+  is_icloud TINYINT(1) NOT NULL DEFAULT 0,
+  icloud_checked_at DATETIME NULL,
+  PRIMARY KEY (ip_bin)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO user_sessions (user_id, session_id, created_at, last_seen_at, revoked, ip, city, region, platform, browser)
@@ -421,15 +470,15 @@ VALUES
    'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15', '203.0.113.10',
    '2023-09-01 07:30:00', '2023-09-10 09:15:00', '2023-10-01 07:30:00');
 
-INSERT INTO user_recognized_ips (user_id, ip_address, label, created_at, last_seen_at)
+INSERT INTO user_recognized_ips (user_id, ip_bin, ip_address, label, created_at, last_seen_at)
 VALUES
-  (1, '203.0.113.10', 'Admin HQ Office', '2023-08-01 09:00:00', '2023-09-10 09:15:00'),
-  (3, '198.51.100.25', 'Client Home', '2023-08-12 07:45:00', '2023-09-03 18:20:00');
+  (1, INET6_ATON('203.0.113.10'), '203.0.113.10', 'Admin HQ Office', '2023-08-01 09:00:00', '2023-09-10 09:15:00'),
+  (3, INET6_ATON('198.51.100.25'), '198.51.100.25', 'Client Home', '2023-08-12 07:45:00', '2023-09-03 18:20:00');
 
-INSERT INTO ip_cache (ip, city, region, country, latitude, longitude, looked_up_at)
+INSERT INTO ip_cache (ip_bin, city, region, country, latitude, longitude, looked_up_at, is_vpn, vpn_checked_at, is_icloud, icloud_checked_at)
 VALUES
-  ('203.0.113.10', 'Seattle', 'Washington', 'United States', 47.6062, -122.3321, '2023-09-01 07:31:00'),
-  ('198.51.100.25', 'Denver', 'Colorado', 'United States', 39.7392, -104.9903, '2023-09-02 12:05:00');
+  (INET6_ATON('203.0.113.10'), 'Seattle', 'Washington', 'United States', 47.6062, -122.3321, '2023-09-01 07:31:00', 0, '2023-09-01 07:31:00', 0, NULL),
+  (INET6_ATON('198.51.100.25'), 'Denver', 'Colorado', 'United States', 39.7392, -104.9903, '2023-09-02 12:05:00', 1, '2023-09-02 12:05:00', 0, NULL);
 
 -- ---------------------------------------------------------------------------
 -- system logs (auditing)
