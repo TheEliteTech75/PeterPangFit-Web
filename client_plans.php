@@ -570,7 +570,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       padding-bottom: 48px;
     }
 
-    .ppf-topbar {
+    .ppf-top-stack {
       position: fixed !important;
       top: 0;
       left: 0;
@@ -579,6 +579,11 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       z-index: 4600;
       -webkit-transform: translateZ(0);
       transform: translateZ(0);
+    }
+
+    .ppf-topbar {
+      position: relative !important;
+      z-index: 3100;
     }
 
     a {
@@ -2034,6 +2039,23 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       }
     }
   </style>
+  <script>
+    (function () {
+      function updatePlanNavOffset() {
+        var topStack = document.querySelector('.ppf-top-stack');
+        if (!topStack) return;
+        var height = Math.ceil(topStack.getBoundingClientRect().height);
+        if (!height || !isFinite(height)) return;
+        document.documentElement.style.setProperty('--plan-nav-offset', height + 'px');
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', updatePlanNavOffset);
+      } else {
+        updatePlanNavOffset();
+      }
+      window.addEventListener('resize', updatePlanNavOffset);
+    })();
+  </script>
 </head>
 <body class="client-plans-page" data-csrf="<?php echo h($csrf_token); ?>">
 

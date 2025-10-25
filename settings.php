@@ -48,6 +48,7 @@ $demoPrimaryConn = null;
 $demoModeEnabled = false;
 $demoModeControlsAvailable = false;
 $demoModeStatusError = null;
+$demoSandboxCfg = $GLOBALS['demoSandboxCfg'] ?? null;
 
 if (function_exists('ppf_demo_primary_conn')) {
     try {
@@ -70,7 +71,7 @@ if ($demoPrimaryConn instanceof mysqli) {
         if (function_exists('ppf_demo_get_enabled')) {
             $demoModeEnabled = (bool)ppf_demo_get_enabled($demoPrimaryConn);
         } elseif (function_exists('ppf_demo_is_enabled')) {
-            $demoModeEnabled = (bool)ppf_demo_is_enabled($demoPrimaryConn);
+            $demoModeEnabled = (bool)ppf_demo_is_enabled();
         } else {
             $demoModeEnabled = ss_get($demoPrimaryConn, 'demo_mode_enabled', '0') === '1';
         }
@@ -306,8 +307,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } elseif ($demoPrimaryConn instanceof mysqli) {
                             try {
                                 if (function_exists('ppf_demo_set_enabled')) {
-                                    $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled);
+                                    $cfgOverride = is_array($demoSandboxCfg) ? $demoSandboxCfg : null;
+                                    $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled, $cfgOverride);
                                     $demoToggleSuccess = ($result !== false);
+                                    if (!$demoToggleSuccess && $demoToggleErrorMsg === '' && function_exists('ppf_demo_last_error')) {
+                                        $err = (string)(ppf_demo_last_error() ?? '');
+                                        if ($err !== '') {
+                                            $demoToggleErrorMsg = $err;
+                                        }
+                                    }
                                 } else {
                                     ensure_system_settings_table($demoPrimaryConn);
                                     $demoToggleSuccess = ss_set($demoPrimaryConn, 'demo_mode_enabled', $desiredDemoEnabled ? '1' : '0');
@@ -2946,6 +2954,20 @@ if ($demoModeControlsAvailable) {
         return hiddenEnabled.value === '1';
       }
 
+      function redirectToSettingsAnchor() {
+        const targetUrl = 'settings.php#system';
+        const currentPath = window.location.pathname.replace(/\/+/g, '/');
+        const normalizedPath = currentPath.endsWith('/') ? currentPath.slice(0, -1) : currentPath;
+        if (normalizedPath !== '/settings.php') {
+          window.location.assign(targetUrl);
+          return;
+        }
+        if (window.location.hash !== '#system') {
+          window.location.hash = 'system';
+        }
+        window.location.reload();
+      }
+
       async function submitDemoAction(extraFields = {}, options = {}) {
         const { submitButton = null, cancelButton = null, loadingText = 'Submitting...' } = options;
         let restoreLoading = () => {};
@@ -3083,7 +3105,7 @@ if ($demoModeControlsAvailable) {
                 loadingText: isEnable ? 'Enabling...' : 'Disabling...'
               }).then(() => {
                 controls.close();
-                window.location.href = 'settings.php#system';
+                redirectToSettingsAnchor();
               }).catch((err) => {
                 hiddenEnabled.value = previousValue;
                 errorEl.textContent = (err && err.message) ? err.message : 'Unable to complete the request.';
@@ -3165,7 +3187,7 @@ if ($demoModeControlsAvailable) {
                 loadingText: 'Resetting...'
               }).then(() => {
                 controls.close();
-                window.location.href = 'settings.php#system';
+                redirectToSettingsAnchor();
               }).catch((err) => {
                 hiddenEnabled.value = currentValue;
                 errorEl.textContent = (err && err.message) ? err.message : 'Unable to complete the request.';

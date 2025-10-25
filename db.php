@@ -37,6 +37,9 @@ $sandboxDefaults = [
 ];
 
 $sandboxCfg = array_merge($sandboxDefaults, ppf_demo_build_config('PPF_DEMO_DB_'));
+global $demoSandboxCfg;
+$demoSandboxCfg = $sandboxCfg;
+$GLOBALS['demoSandboxCfg'] = $sandboxCfg;
 ppf_demo_refresh_state($primaryConn, $sandboxCfg);
 
 $activeConn = ppf_demo_active_conn();
