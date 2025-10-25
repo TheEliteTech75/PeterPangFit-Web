@@ -1456,13 +1456,13 @@ $CAT_PALETTE = [
       line-height:1.1;
     }
     .dashboard-head__clock-date{
-      font-size:1.2rem;
+      font-size:1.6rem;
       font-weight:700;
       letter-spacing:0.015em;
       color:var(--c-text);
     }
     .dashboard-head__clock-time{
-      font-size:0.95rem;
+      font-size:1.15rem;
       font-weight:600;
       color:var(--c-muted);
     }
