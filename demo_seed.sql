@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS users (
   bio TEXT NULL,
   notes TEXT NULL,
   timezone VARCHAR(64) NULL,
+  time_format_24h TINYINT(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
