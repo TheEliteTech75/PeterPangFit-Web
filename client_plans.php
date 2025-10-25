@@ -712,16 +712,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         0 18px 38px rgba(0, 0, 0, 0.35);
     }
 
-    .hero-highlight--date {
-      align-content: start;
-      justify-items: start;
-      background:
-        linear-gradient(150deg, rgba(0, 191, 255, 0.28), rgba(0, 0, 0, 0.55));
-      box-shadow:
-        inset 0 0 0 1px rgba(255, 255, 255, 0.06),
-        0 18px 38px rgba(0, 0, 0, 0.35);
-    }
-
     .hero-highlight--action {
       position: relative;
       cursor: default;

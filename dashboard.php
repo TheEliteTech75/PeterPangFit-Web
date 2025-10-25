@@ -1439,7 +1439,7 @@ $CAT_PALETTE = [
     .dashboard-head__title{
       display:flex;
       flex:1 1 auto;
-      gap:16px;
+      gap:18px;
       align-items:flex-start;
       flex-wrap:wrap;
       min-width:0;
@@ -1447,30 +1447,24 @@ $CAT_PALETTE = [
     .dashboard-head__primary{ display:flex; flex-direction:column; gap:4px; min-width:0; }
     .dashboard-head__title h1{ margin:0; }
     .dashboard-head__clock{
-      margin-left:auto;
       display:flex;
       flex-direction:column;
-      gap:4px;
-      align-items:flex-end;
-      text-align:right;
-      padding:10px 14px;
-      border-radius:14px;
-      border:1px solid var(--border);
-      background:rgba(16,24,39,0.55);
-      box-shadow:0 12px 28px rgba(8,13,23,0.35);
-      min-width:180px;
+      gap:2px;
+      align-items:flex-start;
+      text-align:left;
+      min-width:0;
+      line-height:1.1;
     }
     .dashboard-head__clock-date{
-      font-size:.82rem;
-      font-weight:600;
-      letter-spacing:.08em;
-      text-transform:uppercase;
-      color:var(--c-muted);
+      font-size:1.2rem;
+      font-weight:700;
+      letter-spacing:0.015em;
+      color:var(--c-text);
     }
     .dashboard-head__clock-time{
-      font-size:1.2rem;
+      font-size:0.95rem;
       font-weight:600;
-      color:var(--c-text);
+      color:var(--c-muted);
     }
 
     .dash-settings-toggle{
