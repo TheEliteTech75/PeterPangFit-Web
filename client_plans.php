@@ -687,7 +687,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       gap: clamp(16px, 4vw, 28px);
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-content: start;
-      align-items: start;
+      align-items: stretch;
     }
 
     .hero-highlight {
@@ -699,6 +699,17 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
       display: grid;
       gap: 12px;
+      height: 100%;
+    }
+
+    .hero-highlight--date {
+      align-content: start;
+      justify-items: start;
+      background:
+        linear-gradient(150deg, rgba(0, 191, 255, 0.28), rgba(0, 0, 0, 0.55));
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 18px 38px rgba(0, 0, 0, 0.35);
     }
 
     .hero-highlight--date {
