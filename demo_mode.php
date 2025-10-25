@@ -348,6 +348,170 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         return $cache;
     }
 
+    /** Calculate a deterministic signature for the current demo seed SQL. */
+    function ppf_demo_seed_signature_from_sql(string $sql): ?string
+    {
+        $sql = trim($sql);
+        if ($sql === '') {
+            return null;
+        }
+        return hash('sha256', $sql);
+    }
+
+    /** Fetch the last applied seed signature from the sandbox system_settings table. */
+    function ppf_demo_read_seed_signature(mysqli $conn): ?string
+    {
+        if (!ppf_demo_table_exists($conn, 'system_settings')) {
+            return null;
+        }
+
+        $key = 'demo_seed_signature';
+        try {
+            if ($stmt = $conn->prepare('SELECT `value` FROM system_settings WHERE `key`=? LIMIT 1')) {
+                $stmt->bind_param('s', $key);
+                if ($stmt->execute()) {
+                    $stmt->bind_result($val);
+                    if ($stmt->fetch()) {
+                        $stmt->close();
+                        return trim((string)$val) ?: null;
+                    }
+                }
+                $stmt->close();
+            }
+        } catch (Throwable $e) {
+            return null;
+        }
+
+        return null;
+    }
+
+    /** Persist the latest seed signature into the sandbox system_settings table. */
+    function ppf_demo_write_seed_signature(mysqli $conn, string $signature): void
+    {
+        $signature = trim($signature);
+        if ($signature === '' || !ppf_demo_table_exists($conn, 'system_settings')) {
+            return;
+        }
+
+        $key = 'demo_seed_signature';
+        try {
+            $sql = 'INSERT INTO system_settings (`key`,`value`,updated_at,updated_by) VALUES (?,?,NOW(),NULL)
+                    ON DUPLICATE KEY UPDATE `value`=VALUES(`value`), updated_at=NOW(), updated_by=NULL';
+            if ($stmt = $conn->prepare($sql)) {
+                $stmt->bind_param('ss', $key, $signature);
+                $stmt->execute();
+                $stmt->close();
+            }
+        } catch (Throwable $e) {
+            // ignore
+        }
+    }
+
+    /** Execute the bundled seed SQL against the sandbox database. */
+    function ppf_demo_import_seed_sql(mysqli $sandbox, string $seedSql, string $signature, ?string &$error = null): bool
+    {
+        $error = null;
+        $sql = trim($seedSql);
+        if ($sql === '') {
+            $error = 'Demo seed SQL is empty.';
+            return false;
+        }
+
+        $sandbox->autocommit(false);
+        $sandbox->begin_transaction();
+        $sandbox->query('SET FOREIGN_KEY_CHECKS=0');
+
+        if (!$sandbox->multi_query($sql)) {
+            $error = $sandbox->error ?: 'Unknown error while seeding demo data.';
+            $sandbox->rollback();
+            $sandbox->query('SET FOREIGN_KEY_CHECKS=1');
+            $sandbox->autocommit(true);
+            return false;
+        }
+
+        do {
+            if ($rs = $sandbox->store_result()) {
+                $rs->free();
+            }
+        } while ($sandbox->more_results() && $sandbox->next_result());
+
+        $sandbox->query('SET FOREIGN_KEY_CHECKS=1');
+
+        if (!$sandbox->commit()) {
+            $error = $sandbox->error ?: 'Failed to commit sandbox seed.';
+            $sandbox->rollback();
+            $sandbox->autocommit(true);
+            return false;
+        }
+
+        $sandbox->autocommit(true);
+
+        if ($signature !== '') {
+            ppf_demo_write_seed_signature($sandbox, $signature);
+        }
+
+        return true;
+    }
+
+    /** Ensure the sandbox seed runs at least once whenever Demo Mode connects. */
+    function ppf_demo_seed_if_needed(mysqli $primary, mysqli $sandbox): void
+    {
+        $seedFile = ppf_demo_seed_path();
+        if (!is_file($seedFile) || !is_readable($seedFile)) {
+            return;
+        }
+
+        $seedSql = @file_get_contents($seedFile);
+        if ($seedSql === false || trim($seedSql) === '') {
+            return;
+        }
+
+        $signature = ppf_demo_seed_signature_from_sql($seedSql);
+        if ($signature === null) {
+            return;
+        }
+
+        $current = ppf_demo_read_seed_signature($sandbox);
+        if ($current === $signature) {
+            return;
+        }
+
+        $start = microtime(true);
+        $error = null;
+        if (!ppf_demo_import_seed_sql($sandbox, $seedSql, $signature, $error)) {
+            $message = 'Demo seed failed while enabling Demo Mode.';
+            if ($error) {
+                $message .= ' ' . $error;
+            }
+            ppf_demo_push_alert($message);
+            if (function_exists('ppf_log')) {
+                try {
+                    ppf_log($primary, null, null, null, 'demo_mode_seed_failed', 'system', 'demo', $message);
+                } catch (Throwable $e) {
+                    // ignore logging failure
+                }
+            }
+            return;
+        }
+
+        $durationMs = (int)round((microtime(true) - $start) * 1000);
+        if (function_exists('ppf_log')) {
+            try {
+                $details = 'Demo seed applied automatically while enabling Demo Mode. Seed=' . basename($seedFile) . ' Time=' . $durationMs . 'ms';
+                ppf_log($primary, null, null, null, 'demo_mode_seed_applied', 'system', 'demo', $details);
+            } catch (Throwable $e) {
+                // ignore logging failure
+            }
+        }
+
+        try {
+            $flag = ppf_demo_read_flag($primary);
+            ppf_demo_write_flag($sandbox, $flag);
+        } catch (Throwable $e) {
+            // non-fatal
+        }
+    }
+
     /** Retrieve a CREATE TABLE statement from the demo seed for a given table. */
     function ppf_demo_seed_table_definition(string $table): ?string
     {
@@ -786,6 +950,9 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         if ($sandbox instanceof mysqli) {
             $PPF_DEMO_SANDBOX_CONN = $sandbox;
             $PPF_DEMO_ACTIVE_CONN  = $sandbox;
+            if (function_exists('ppf_demo_seed_if_needed')) {
+                ppf_demo_seed_if_needed($primary, $sandbox);
+            }
             if (function_exists('ppf_demo_sync_schema')) {
                 ppf_demo_sync_schema($primary, $sandbox);
             }
@@ -851,6 +1018,14 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
             return $result;
         }
 
+        $signature = ppf_demo_seed_signature_from_sql($seedSql);
+        if ($signature === null) {
+            $msg = 'Demo seed contents are empty.';
+            $result['errors'][] = $msg;
+            ppf_demo_push_alert($msg);
+            return $result;
+        }
+
         $sandbox = $PPF_DEMO_SANDBOX_CONN;
         if (!($sandbox instanceof mysqli) || $sandbox->connect_errno) {
             $sandbox = ppf_demo_connect($PPF_DEMO_SANDBOX_CFG);
@@ -867,14 +1042,9 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         }
 
         $start = microtime(true);
-        $sandbox->begin_transaction();
-        $sandbox->query('SET FOREIGN_KEY_CHECKS=0');
-
-        if (!$sandbox->multi_query($seedSql)) {
-            $sandbox->rollback();
-            $sandbox->query('SET FOREIGN_KEY_CHECKS=1');
-            $sandbox->autocommit(true);
-            $err = $sandbox->error ?: 'Unknown error while seeding demo data.';
+        $error = null;
+        if (!ppf_demo_import_seed_sql($sandbox, $seedSql, $signature, $error)) {
+            $err = $error ?: 'Unknown error while seeding demo data.';
             $result['errors'][] = $err;
             ppf_demo_push_alert('Demo reset failed: ' . $err);
             if (function_exists('ppf_log')) {
@@ -887,33 +1057,6 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
             }
             return $result;
         }
-
-        do {
-            if ($rs = $sandbox->store_result()) {
-                $rs->free();
-            }
-        } while ($sandbox->more_results() && $sandbox->next_result());
-
-        $sandbox->query('SET FOREIGN_KEY_CHECKS=1');
-
-        if (!$sandbox->commit()) {
-            $err = $sandbox->error ?: 'Failed to commit sandbox reset.';
-            $result['errors'][] = $err;
-            ppf_demo_push_alert('Demo reset failed: ' . $err);
-            if (function_exists('ppf_log')) {
-                try {
-                    ppf_log($primaryConn, null, null, null, 'demo_mode_reset_failed', 'system', 'demo', $err);
-                    $result['logged'] = true;
-                } catch (Throwable $e) {
-                    // ignore logging failure
-                }
-            }
-            $sandbox->rollback();
-            $sandbox->autocommit(true);
-            return $result;
-        }
-
-        $sandbox->autocommit(true);
 
         // Ensure sandbox flag mirrors the primary flag after the reset.
         $demoEnabled = null;
