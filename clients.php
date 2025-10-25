@@ -83,7 +83,49 @@ function ppf_column_exists_uncached(mysqli $conn, string $table, string $column)
   return (int)($row['cnt'] ?? 0) > 0;
 }
 
+function ensure_user_plan_exercises_table(mysqli $conn): void {
+  $exists = false;
+  $sql = "SELECT COUNT(*) AS c
+          FROM INFORMATION_SCHEMA.TABLES
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'user_plan_exercises'";
+  if ($res = $conn->query($sql)) {
+    $row = $res->fetch_assoc();
+    $exists = (int)($row['c'] ?? 0) > 0;
+    $res->free();
+  }
+
+  if ($exists) return;
+
+  @$conn->query(
+    "CREATE TABLE IF NOT EXISTS user_plan_exercises (
+        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        user_plan_id INT UNSIGNED NOT NULL,
+        exercise_id INT UNSIGNED NOT NULL,
+        sets INT NULL,
+        reps INT NULL,
+        duration_seconds INT NULL,
+        weight_lbs DECIMAL(6,2) NULL,
+        user_notes TEXT NULL,
+        set_details_json LONGTEXT NULL,
+        position INT NULL,
+        updated_at DATETIME NULL,
+        updated_by INT NULL,
+        PRIMARY KEY (id),
+        KEY idx_upe_plan (user_plan_id),
+        KEY idx_upe_exercise (exercise_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+  );
+
+  @$conn->query(
+    "ALTER TABLE user_plan_exercises
+        ADD CONSTRAINT fk_upe_plan FOREIGN KEY (user_plan_id) REFERENCES user_plans(id) ON DELETE CASCADE,
+        ADD CONSTRAINT fk_upe_ex FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE"
+  );
+}
+
 function ensure_user_plan_exercise_tracking_columns(mysqli $conn): void {
+  ensure_user_plan_exercises_table($conn);
   if (!ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_at')) {
     @$conn->query("ALTER TABLE user_plan_exercises ADD COLUMN updated_at DATETIME NULL");
   }
