@@ -303,6 +303,68 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
     }
 
     /**
+     * Parse CREATE TABLE definitions from the bundled demo seed so we can
+     * fall back to them when SHOW CREATE TABLE is unavailable (e.g. due to
+     * permissions) while cloning schema into the sandbox.
+     *
+     * @return array<string, string> Map of lowercase table name => CREATE TABLE SQL
+     */
+    function ppf_demo_seed_create_statements(): array
+    {
+        static $cache = null;
+        if (is_array($cache)) {
+            return $cache;
+        }
+
+        $cache = [];
+        $seedPath = ppf_demo_seed_path();
+        if (!is_file($seedPath) || !is_readable($seedPath)) {
+            return $cache;
+        }
+
+        $sql = @file_get_contents($seedPath);
+        if ($sql === false || trim($sql) === '') {
+            return $cache;
+        }
+
+        $pattern = '/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+`?([A-Za-z0-9_]+)`?\s*\(.*?;\s*/si';
+        if (preg_match_all($pattern, $sql, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $name = strtolower(trim((string)($match[1] ?? '')));
+                if ($name === '') {
+                    continue;
+                }
+
+                $statement = trim((string)$match[0]);
+                $statement = rtrim($statement, "\r\n\t ;");
+                if ($statement === '') {
+                    continue;
+                }
+
+                $cache[$name] = $statement;
+            }
+        }
+
+        return $cache;
+    }
+
+    /** Retrieve a CREATE TABLE statement from the demo seed for a given table. */
+    function ppf_demo_seed_table_definition(string $table): ?string
+    {
+        $table = strtolower(trim($table));
+        if ($table === '') {
+            return null;
+        }
+
+        $map = ppf_demo_seed_create_statements();
+        if (!isset($map[$table])) {
+            return null;
+        }
+
+        return $map[$table];
+    }
+
+    /**
      * List base tables for the current schema (excludes views).
      */
     function ppf_demo_list_tables(mysqli $conn): array
@@ -359,25 +421,44 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
             return false;
         }
 
-        if (!$createSql) {
+        $candidates = [];
+        if ($createSql) {
+            $candidates[] = $createSql;
+        }
+        if ($fallback = ppf_demo_seed_table_definition($table)) {
+            $candidates[] = $fallback;
+        }
+
+        if (!$candidates) {
             return false;
         }
 
-        // Ensure idempotency when replaying.
-        $createSql = preg_replace('/^CREATE TABLE/i', 'CREATE TABLE IF NOT EXISTS', $createSql, 1);
-
         $result = false;
 
-        try {
-            @$sandbox->query('SET FOREIGN_KEY_CHECKS=0');
-            $result = (bool)@$sandbox->query($createSql);
-        } catch (Throwable $e) {
-            $result = false;
-        } finally {
+        foreach ($candidates as $candidate) {
+            if (!$candidate) {
+                continue;
+            }
+
+            $normalized = preg_replace('/^CREATE\s+TABLE/i', 'CREATE TABLE IF NOT EXISTS', $candidate, 1);
+            if (!$normalized) {
+                continue;
+            }
+
             try {
-                @$sandbox->query('SET FOREIGN_KEY_CHECKS=1');
+                @$sandbox->query('SET FOREIGN_KEY_CHECKS=0');
+                if (@$sandbox->query($normalized)) {
+                    $result = true;
+                    break;
+                }
             } catch (Throwable $e) {
-                // Ignore re-enable failures; sandbox connection may have dropped.
+                $result = false;
+            } finally {
+                try {
+                    @$sandbox->query('SET FOREIGN_KEY_CHECKS=1');
+                } catch (Throwable $e) {
+                    // Ignore re-enable failures; sandbox connection may have dropped.
+                }
             }
         }
 
