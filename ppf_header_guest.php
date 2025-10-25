@@ -7,28 +7,45 @@ if (!function_exists('h')) {
 }
 ?>
 <style>
-/* ===== Shared Header (guest), same colors as dashboard ===== */
+/* ===== Guest Header — refreshed palette ===== */
 .ppf-topbar {
   display:flex;align-items:center;justify-content:space-between;
   padding:16px 24px;
-  background:#0b0c10;
-  border-bottom:1px solid #1c212b;
+  background:rgba(2,6,23,0.9);
+  border-bottom:1px solid rgba(148,163,184,0.18);
+  backdrop-filter:blur(18px);
+  box-shadow:0 24px 40px rgba(2,6,23,0.45);
   position: relative;
   z-index: 1000;
 }
 .ppf-brand {
-  font-weight:800;font-size:22px;color:#e6e8ee;letter-spacing:.3px;
+  font-weight:800;font-size:22px;color:var(--header-text, #f8fafc);letter-spacing:-.02em;
+  text-decoration:none;display:inline-flex;align-items:center;
+  transition:color .3s ease,text-shadow .3s ease,transform .3s ease;
+}
+.ppf-brand:hover,
+.ppf-brand:focus-visible {
+  color:color-mix(in srgb, var(--header-text, #f8fafc) 70%, var(--theme-swatch-2, var(--brand, #38bdf8)) 30%);
+  text-shadow:0 10px 26px color-mix(in srgb, var(--theme-swatch-1, var(--brand, #38bdf8)) 45%, transparent 55%);
+  transform:translateY(-1px);
+}
+.ppf-brand:focus-visible {
+  outline:2px solid color-mix(in srgb, var(--theme-swatch-2, var(--brand, #38bdf8)) 55%, transparent 45%);
+  outline-offset:4px;
+  border-radius:10px;
 }
 .ppf-right {
   display:flex;align-items:center;gap:10px;
 }
 .ppf-link {
-  color:#e6e8ee;text-decoration:none;font-size:14px;
-  padding:6px 10px;border:1px solid #1c212b;border-radius:8px;background:#151923;
+  color:#f8fafc;text-decoration:none;font-size:14px;
+  padding:8px 12px;border:1px solid rgba(148,163,184,0.22);border-radius:10px;background:rgba(15,23,42,0.72);
+  transition:background .25s ease,border-color .25s ease,box-shadow .25s ease;
 }
-.ppf-link:hover { background:#1f2430; }
+.ppf-link:hover,
+.ppf-link:focus-visible { background:rgba(30,41,59,0.75);border-color:rgba(56,189,248,0.45);box-shadow:0 12px 24px rgba(15,23,42,0.35); }
 </style>
 
 <header class="ppf-topbar">
-  <div class="ppf-brand">Peter Pang Fit</div>
+  <a class="ppf-brand" href="/index.php">Peter Pang Fit</a>
 </header>

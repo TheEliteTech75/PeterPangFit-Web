@@ -224,25 +224,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <style>
   :root{
-    --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6; --line:#1c212b;
+    color-scheme:dark;
+    --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8; --line:rgba(148,163,184,0.18);
   }
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  html,body{margin:0;padding:0;background:
+      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
+      linear-gradient(155deg, var(--bg), var(--bg-alt));
+    color:var(--text);
     font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
   a{color:var(--brand);text-decoration:none}
   a:hover{text-decoration:underline}
   .wrap{max-width:420px;margin:48px auto;padding:0 16px}
-  .card{background:#151923;border:1px solid var(--line);border-radius:14px;padding:18px}
+  .card{background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:18px}
   .card h1{margin:0 0 10px 0;font-size:18px}
   .label{font-size:13px;color:#c8d1de}
   .input{
-    width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;
+    width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;
     padding:12px 14px;border-radius:10px;outline:none;box-sizing:border-box;
   }
   .btn{display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);
-    color:#e6e8ee;padding:10px 14px;border-radius:10px;cursor:pointer;text-decoration:none}
-  .btn.brand{background:#1f2f55;border-color:#284072}
-  .flash{margin:16px 0;padding:12px;border-radius:10px;border:1px solid;background:#10161a}
-  .flash.ok{border-color:#204a36;color:#a7f3d0}
+    color:#f8fafc;padding:10px 14px;border-radius:10px;cursor:pointer;text-decoration:none}
+  .btn.brand{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35)}
+  .flash{margin:16px 0;padding:12px;border-radius:10px;border:1px solid;background:rgba(8,13,23,0.85)}
+  .flash.ok{border-color:rgba(34,197,94,0.45);color:#a7f3d0}
   .flash.err{border-color:#4a2020;color:#fca5a5}
 </style>
 </head>
@@ -250,7 +255,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <main class="wrap">
     <div class="card">
       <h1>Forgot your password?</h1>
-      <p class="muted" style="color:#9aa3b2;margin-top:6px">Enter your email and we’ll send you a reset link.</p>
+      <p class="muted" style="color:#cbd5f5;margin-top:6px">Enter your email and we’ll send you a reset link.</p>
 
       <?php if ($flash): ?>
         <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>">

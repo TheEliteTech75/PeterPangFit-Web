@@ -113,21 +113,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <title>Reset Password · Peter Pang Fit</title>
 <style>
   :root{
-    --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6; --line:#1c212b; --ok:#10b981; --warn:#ef4444;
+    color-scheme:dark;
+    --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --muted:#cbd5f5; --brand:#38bdf8; --line:rgba(148,163,184,0.18); --ok:#10b981; --warn:#ef4444;
   }
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  html,body{margin:0;padding:0;background:
+      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
+      linear-gradient(155deg, var(--bg), var(--bg-alt));
+    color:var(--text);
     font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
   a{color:var(--brand);text-decoration:none}
   a:hover{text-decoration:underline}
   .wrap{max-width:480px;margin:48px auto;padding:0 16px}
-  .card{background:#151923;border:1px solid var(--line);border-radius:14px;padding:18px}
+  .card{background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:18px}
   .card h1{margin:0 0 10px 0;font-size:18px}
   .label{font-size:13px;color:#c8d1de}
-  .input{width:100%;background:#0f1218;border:1px solid var(--line);color:var(--text);padding:12px 14px;border-radius:10px;outline:none;box-sizing:border-box;}
+  .input{width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:var(--text);padding:12px 14px;border-radius:10px;outline:none;box-sizing:border-box;}
   .btn{display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer;text-decoration:none}
-  .btn.brand{background:#1f2f55;border-color:#284072}
-  .flash{margin:16px 0;padding:12px;border-radius:10px;border:1px solid;background:#10161a}
-  .flash.ok{border-color:#204a36;color:#a7f3d0}
+  .btn.brand{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35)}
+  .flash{margin:16px 0;padding:12px;border-radius:10px;border:1px solid;background:rgba(8,13,23,0.85)}
+  .flash.ok{border-color:rgba(34,197,94,0.45);color:#a7f3d0}
   .flash.err{border-color:#4a2020;color:#fca5a5}
   .req{font-size:13px;margin:6px 0 0 0}
   .req li{margin:6px 0;list-style:none;padding-left:22px;position:relative;color:#fca5a5}

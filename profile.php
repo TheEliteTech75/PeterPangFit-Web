@@ -21,6 +21,31 @@ function ppf_log_safe(mysqli $conn, ?int $user_id, ?string $email, ?string $role
   }
 }
 
+function ppf_normalize_for_diff($value) {
+  if ($value === '' || $value === null) return null;
+  if (is_string($value)) {
+    $trimmed = trim($value);
+    return $trimmed === '' ? null : $trimmed;
+  }
+  if (is_numeric($value)) {
+    return $value + 0;
+  }
+  return $value;
+}
+
+function ppf_changed_fields(array $before, array $after): array {
+  $out = [];
+  $keys = array_unique(array_merge(array_keys($before), array_keys($after)));
+  foreach ($keys as $key) {
+    $b = ppf_normalize_for_diff($before[$key] ?? null);
+    $a = ppf_normalize_for_diff($after[$key] ?? null);
+    if ($b !== $a) {
+      $out[$key] = ['from' => $b, 'to' => $a];
+    }
+  }
+  return $out;
+}
+
 // ---------- cross-platform permission helper ----------
 /**
  * Ensure reasonable permissions for uploads.
@@ -201,25 +226,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // SAVE PROFILE FIELDS (no direct file input here)
     if ($action === 'save_profile') {
       try {
-        $normalize = function($value) {
-          if ($value === null) return null;
-          $str = trim((string)$value);
-          return $str === '' ? null : $str;
-        };
-
-        $beforeSnapshot = [
-          'email' => $normalize($me['email'] ?? null),
-          'phone' => $normalize($me['phone'] ?? null),
-          'birthdate' => $normalize($me['birthdate'] ?? null),
-          'gender' => $normalize($me['gender'] ?? null),
-          'first_name' => $normalize($me['first_name'] ?? null),
-          'middle_name' => $normalize($me['middle_name'] ?? null),
-          'last_name' => $normalize($me['last_name'] ?? null),
-          'height_ft' => $normalize($me['height_ft'] ?? null),
-          'height_in' => $normalize($me['height_in'] ?? null),
-          'weight_lbs' => $normalize($me['weight_lbs'] ?? null),
-        ];
-
         $first_name  = trim($_POST['first_name'] ?? '');
         $middle_name = trim($_POST['middle_name'] ?? '');
         $last_name   = trim($_POST['last_name'] ?? '');
@@ -253,6 +259,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($hi !== null) { if ($hi < 0) $hi = 0; if ($hi > 11) $hi = 11; }
         if ($wl !== null && $wl <= 0) $wl = null;
 
+        $beforeRow = [];
+        if ($stmt = $conn->prepare("SELECT email, phone, birthdate, gender, first_name, middle_name, last_name, height_ft, height_in, weight_lbs FROM users WHERE id = ?")) {
+          $stmt->bind_param("i", $uid);
+          $stmt->execute();
+          if ($res = $stmt->get_result()) {
+            if ($row = $res->fetch_assoc()) {
+              $beforeRow = $row;
+            }
+          }
+          $stmt->close();
+        }
+
         $q = "UPDATE users SET email=?, phone=?, birthdate=?, gender=?, first_name=?, middle_name=?, last_name=?, height_ft=?, height_in=?, weight_lbs=? WHERE id=?";
         if (!$stmt = $conn->prepare($q)) throw new Exception('Failed to prepare update.');
         $stmt->bind_param("sssssssiddi", $email, $phone, $birthdate, $gender, $first_name, $middle_name, $last_name, $hf, $hi, $wl, $uid);
@@ -260,37 +278,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->close();
 
         $flash = 'Profile updated.'; $flash_type = 'ok';
-        $afterSnapshot = [
-          'email' => $normalize($email),
-          'phone' => $normalize($phone),
-          'birthdate' => $normalize($birthdate),
-          'gender' => $normalize($gender),
-          'first_name' => $normalize($first_name),
-          'middle_name' => $normalize($middle_name),
-          'last_name' => $normalize($last_name),
-          'height_ft' => $normalize($hf),
-          'height_in' => $normalize($hi),
-          'weight_lbs' => $normalize($wl),
+        $afterRow = [
+          'email' => $email,
+          'phone' => $phone,
+          'birthdate' => $birthdate,
+          'gender' => $gender,
+          'first_name' => $first_name,
+          'middle_name' => $middle_name,
+          'last_name' => $last_name,
+          'height_ft' => $hf,
+          'height_in' => $hi,
+          'weight_lbs' => $wl,
         ];
-
-        $changes = [];
-        foreach ($afterSnapshot as $field => $newVal) {
-          $oldVal = $beforeSnapshot[$field] ?? null;
-          if ($oldVal !== $newVal) {
-            $changes[$field] = ['old' => $oldVal, 'new' => $newVal];
-          }
-        }
-
-        $detailPayload = [
-          'self_update' => true,
-          'changed_fields' => array_keys($changes),
-        ];
-        if (!empty($changes)) {
-          $detailPayload['changes'] = $changes;
-        }
-        $detailJson = json_encode($detailPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        if ($detailJson === false) { $detailJson = 'self_update=1'; }
-        ppf_log_safe($conn, $uid, $email, $userRole, 'profile_updated', $detailJson);
+        $changes = ppf_changed_fields($beforeRow, $afterRow);
+        $details = json_encode([
+          'self_service' => true,
+          'changed' => $changes,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        ppf_log_safe($conn, $uid, $email, $userRole, 'profile_updated', $details ?: '');
 
         // Refresh $me
         $q = "SELECT first_name, middle_name, last_name, email, phone, birthdate, gender, height_ft, height_in, weight_lbs"
@@ -467,11 +472,9 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Profile · Peter Pang Fit</title>
   <style>
-    :root{
-      --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6;
-      --line:#1c212b; --chip:#1f2430; --ok:#10b981; --warn:#ef4444;
-    }
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    
+    html,body{margin:0;padding:0;background: var(--page-canvas);
+    color:var(--text);
       font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
     a{color:var(--brand);text-decoration:none}
     a:hover{text-decoration:underline}
@@ -479,8 +482,8 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
     .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
     .row{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
     .span-12{grid-column:span 12}.span-6{grid-column:span 6}.span-4{grid-column:span 4}.span-3{grid-column:span 3}
-    .inline-input{background:#0e1320;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;width:100%}
-    .btn{background:#1a2232;border:1px solid var(--line);padding:8px 12px;border-radius:10px;color:var(--text);cursor:pointer}
+    .inline-input{background:rgba(8,13,23,0.88);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px;width:100%}
+    .btn{background:rgba(30,41,59,0.65);border:1px solid var(--line);padding:8px 12px;border-radius:10px;color:var(--text);cursor:pointer}
     .btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}
     .muted{color:var(--muted)}
     .flash{padding:10px 12px;border-radius:10px;border:1px solid var(--line);margin-bottom:14px}
@@ -488,12 +491,12 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
     .flash.err{border-left:3px solid var(--warn)}
 
     /* Avatar with hover pencil */
-    .avatar-wrap{position:relative;width:88px;height:88px;border-radius:50%;overflow:hidden;border:1px solid var(--line);background:#0e1320;color:#9aa3b2;display:flex;align-items:center;justify-content:center}
+    .avatar-wrap{position:relative;width:88px;height:88px;border-radius:50%;overflow:hidden;border:1px solid var(--line);background:rgba(8,13,23,0.88);color:#cbd5f5;display:flex;align-items:center;justify-content:center}
     .avatar-wrap img{display:block;width:100%;height:100%;object-fit:cover}
     .edit-badge{
       position:absolute;right:4px;bottom:4px;width:26px;height:26px;border-radius:999px;
       background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.2);
-      display:flex;align-items:center;justify-content:center;color:#e6e8ee;
+      display:flex;align-items:center;justify-content:center;color:#f8fafc;
       opacity:0;transition:opacity .18s ease;cursor:pointer
     }
     .avatar-wrap:hover .edit-badge{opacity:1}
@@ -502,7 +505,7 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
     .ppf-modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; z-index:3000; }
     .ppf-modal{
       position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
-      width:min(720px, 94vw); background:#151923; border:1px solid var(--line);
+      width:min(720px, 94vw); background:rgba(9,14,28,0.72); border:1px solid var(--line);
       border-radius:14px; padding:16px; display:none; z-index:3001;
     }
     .ppf-modal h4{margin:0 0 10px;font-size:16px}
@@ -513,14 +516,14 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
     @media (max-width:780px){ .thumbs{grid-template-columns:repeat(4,1fr);} }
     @media (max-width:520px){ .thumbs{grid-template-columns:repeat(3,1fr);} }
     .thumb{
-      border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#0f1218;
+      border:1px solid var(--line); border-radius:10px; overflow:hidden; background:rgba(8,13,23,0.95);
       cursor:pointer; position:relative; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center;
     }
     .thumb img{width:100%;height:100%;object-fit:cover;display:block}
     .thumb .mark{
       position:absolute; right:6px; top:6px; background:rgba(0,0,0,.45);
       border:1px solid rgba(255,255,255,.2); border-radius:999px; width:20px; height:20px;
-      display:flex;align-items:center;justify-content:center;font-size:12px;color:#e6e8ee
+      display:flex;align-items:center;justify-content:center;font-size:12px;color:#f8fafc
     }
 
     /* Password modal */
@@ -631,7 +634,7 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
 
       <div class="span-12" style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">
         <button class="btn brand" type="submit">Save Changes</button>
-        <a class="btn" href="dashboard.php">Cancel</a>
+        <a class="btn" href="#" onclick="window.history.back(); return false;">Cancel</a>
         <button class="btn" type="button" id="btnChangePassword">Change Password</button>
       </div>
     </form>

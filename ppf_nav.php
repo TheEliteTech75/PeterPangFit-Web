@@ -114,6 +114,10 @@ if ($isAdmin || $isTrainer) {
         ],
       ],
       [
+        'href' => 'trainer_sessions.php',
+        'label' => 'Sessions',
+      ],
+      [
         'href' => 'invites.php',
         'label' => 'Invites',
         'submenu' => [
@@ -171,19 +175,35 @@ if ($isAdmin) {
 }
 ?>
 <style>
-  :root {
-    --ppf-nav-bg: #0f121a;
-    --ppf-nav-border: #1c212b;
-    --ppf-nav-text: #e6e8ee;
-    --ppf-nav-muted: #9aa3b2;
-    --ppf-nav-active-bg: #141a25;
-    --ppf-nav-active-color: #3b82f6;
-    --ppf-section-title: #9fb0c8;
+:root {
+    --ppf-nav-tint-1: color-mix(in srgb, var(--theme-swatch-1, #05070d) 55%, #020617 45%);
+    --ppf-nav-tint-2: color-mix(in srgb, var(--theme-swatch-2, #0ea5e9) 48%, rgba(148, 163, 184, 0.45) 52%);
+    --ppf-nav-tint-3: color-mix(in srgb, var(--theme-swatch-3, #22d3a2) 42%, rgba(148, 163, 184, 0.3) 58%);
+
+    --ppf-nav-tone-1: color-mix(in srgb, var(--surface, rgba(9, 14, 28, 0.92)) 92%, var(--ppf-nav-tint-1) 8%);
+    --ppf-nav-tone-2: color-mix(in srgb, var(--surface-alt, rgba(15, 23, 42, 0.78)) 88%, var(--ppf-nav-tint-2) 12%);
+    --ppf-nav-tone-3: color-mix(in srgb, var(--surface-soft, rgba(15, 23, 42, 0.65)) 85%, var(--ppf-nav-tint-3) 15%);
+
+    --ppf-nav-bg: linear-gradient(155deg,
+      color-mix(in srgb, var(--ppf-nav-tone-1) 92%, transparent 8%) 0%,
+      color-mix(in srgb, var(--ppf-nav-tone-2) 88%, transparent 12%) 52%,
+      color-mix(in srgb, var(--ppf-nav-tone-3) 84%, transparent 16%) 100%);
+
+    --ppf-nav-border: color-mix(in srgb, var(--ppf-nav-tone-2) 18%, rgba(255, 255, 255, 0.08) 82%);
+    --ppf-nav-text: color-mix(in srgb, var(--text, #f8fafc) 88%, var(--ppf-nav-tint-3) 12%);
+    --ppf-nav-muted: color-mix(in srgb, var(--muted, rgba(203, 213, 225, 0.78)) 82%, var(--ppf-nav-tint-2) 18%);
+    --ppf-nav-active-bg: color-mix(in srgb, var(--ppf-nav-tone-3) 18%, rgba(148, 163, 184, 0.08) 82%);
+    --ppf-nav-active-color: color-mix(in srgb, var(--text, #f8fafc) 78%, var(--ppf-nav-tint-3) 22%);
+    --ppf-section-title: color-mix(in srgb, var(--muted-soft, rgba(148, 163, 184, 0.72)) 82%, var(--ppf-nav-tint-2) 18%);
+    --ppf-nav-overlay: color-mix(in srgb, var(--ppf-nav-tone-1) 55%, rgba(2, 6, 23, 0.55) 45%);
+    --ppf-nav-hover-bg: color-mix(in srgb, var(--ppf-nav-tone-2) 14%, rgba(148, 163, 184, 0.08) 86%);
+    --ppf-nav-hover-border: color-mix(in srgb, var(--ppf-nav-tone-3) 18%, transparent 82%);
+    --ppf-nav-submenu-bg: color-mix(in srgb, var(--ppf-nav-tone-1) 26%, rgba(2, 6, 23, 0.64) 74%);
   }
   .ppf-nav-overlay {
     position: fixed; inset: 0;
-    background: rgba(0,0,0,0.4);
-    backdrop-filter: blur(2px);
+    background: var(--ppf-nav-overlay, rgba(2,6,23,0.55));
+    backdrop-filter: blur(6px);
     opacity: 0; pointer-events: none;
     transition: opacity .2s ease;
     z-index: 4500;
@@ -191,11 +211,13 @@ if ($isAdmin) {
   .ppf-sidenav {
     position: fixed; top: 0; left: 0; height: 100vh; width: 280px;
     background: var(--ppf-nav-bg);
+    background-color: color-mix(in srgb, var(--ppf-nav-tone-1) 70%, #020617 30%);
     border-right: 1px solid var(--ppf-nav-border);
     transform: translateX(-100%);
-    transition: transform .24s ease;
+    transition: transform .24s ease, box-shadow .24s ease;
     z-index: 5000;
     display: flex; flex-direction: column;
+    box-shadow: var(--shadow, 0 32px 60px rgba(2,6,23,0.55));
   }
   .ppf-sidenav-header {
     display:flex; align-items:center; justify-content:space-between;
@@ -218,13 +240,14 @@ if ($isAdmin) {
     border: 1px solid transparent; font-weight: 500;
   }
   .ppf-nav-link:hover {
-    background: #141a25; border-color: var(--ppf-nav-border);
+    background: var(--ppf-nav-hover-bg, rgba(56,189,248,0.08));
+    border-color: var(--ppf-nav-hover-border, rgba(56,189,248,0.25));
   }
   .ppf-nav-link.active {
     background: var(--ppf-nav-active-bg);
     color: var(--ppf-nav-active-color);
     font-weight: 600;
-    border-color: var(--ppf-nav-active-color);
+    border-color: var(--border-strong, var(--ppf-nav-active-color));
   }
 
   /* Section blocks */
@@ -233,18 +256,21 @@ if ($isAdmin) {
   .ppf-section-head {
     width: 100%;
     display:flex; align-items:center; justify-content:space-between;
-    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--ppf-nav-tone-1) 55%, transparent 45%) 0%,
+      color-mix(in srgb, var(--ppf-nav-tone-2) 52%, transparent 48%) 52%,
+      color-mix(in srgb, var(--ppf-nav-tone-3) 50%, transparent 50%) 100%);
     padding: 10px 12px; border: 0; cursor: pointer; color: var(--ppf-section-title);
     font-weight: 600; letter-spacing: .2px;
   }
-  .ppf-section-head:hover { background: rgba(255,255,255,0.04); }
+  .ppf-section-head:hover { background: var(--ppf-nav-hover-bg, rgba(56,189,248,0.12)); }
   .ppf-section-left { display:flex; gap: 10px; align-items:center; }
   .ppf-section-icon { opacity: .9; display:flex; }
   .ppf-section-title { font-size: 13px; text-transform: uppercase; }
   .ppf-section-caret { font-size: 12px; color: var(--ppf-nav-muted); transition: transform .18s ease; }
   .ppf-section-head.expanded .ppf-section-caret { transform: rotate(180deg); }
 
-  .ppf-section-body { padding: 8px; background: rgba(255,255,255,0.01); }
+  .ppf-section-body { padding: 8px; background: var(--ppf-nav-submenu-bg, rgba(15,23,42,0.4)); }
   .ppf-section-body .ppf-nav-link + .ppf-nav-link { margin-top: 4px; }
 
   /* Tiny submenu under an item (for + Create / filters) */
@@ -255,9 +281,13 @@ if ($isAdmin) {
     display:inline-block; font-size: 12px; color: var(--ppf-nav-muted); text-decoration:none;
     padding: 4px 6px; border-radius: 6px; border: 1px dashed var(--ppf-nav-border);
     margin-right: 6px; margin-top: 6px;
-    background: rgba(255,255,255,0.02);
+    background: color-mix(in srgb, var(--ppf-nav-tone-2) 14%, transparent 86%);
   }
-  .ppf-submenu-mini a:hover { color: var(--ppf-nav-text); background: #141a25; }
+  .ppf-submenu-mini a:hover {
+    color: var(--ppf-nav-text);
+    background: var(--ppf-nav-hover-bg, rgba(56,189,248,0.12));
+    border-color: var(--ppf-nav-hover-border, rgba(56,189,248,0.35));
+  }
 
   /* Mobile open state */
   html.ppf-nav-open .ppf-sidenav { transform: translateX(0); }
@@ -279,7 +309,7 @@ if ($isAdmin) {
           echo render_section($sec, $current);
         }
       } else {
-        echo '<div style="color:#9aa3b2;font-size:12px;padding:10px 12px">No navigation available for your role.</div>';
+        echo '<div style="color:var(--ppf-nav-muted, rgba(203,213,225,0.75));font-size:12px;padding:10px 12px">No navigation available for your role.</div>';
       }
     ?>
   </div>

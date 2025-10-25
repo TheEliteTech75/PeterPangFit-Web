@@ -8,8 +8,15 @@ require_once __DIR__ . '/totp.php';
 require_once __DIR__ . '/send_email.php'; // for email login codes
 require_once __DIR__ . '/ppf_trusted.php';
 require_once __DIR__ . '/ppf_recognized_ip.php';
+require_once __DIR__ . '/ppf_theme.php';
 
 $pending = $_SESSION['pending_user'] ?? null;
+
+$themeCandidate = $pending['theme'] ?? ($_SESSION['theme'] ?? ppf_theme_default_key());
+$themeKey = ppf_theme_resolve((string)$themeCandidate);
+$_SESSION['theme'] = $themeKey;
+$themeStyleTag = ppf_theme_render_style_block();
+$themeInitScript = '<script>(function(){var theme=' . json_encode($themeKey, JSON_UNESCAPED_SLASHES) . ';function apply(){var d=document.documentElement;d.dataset.theme=theme;var b=document.body;if(b&&!b.classList.contains("ppf-themed")){b.classList.add("ppf-themed");}}if(document.readyState!=="loading"){apply();}else{document.addEventListener("DOMContentLoaded",apply);}})();</script>';
 if (!$pending) { header('Location: login.php'); exit; }
 
 $uid   = (int)$pending['id'];
@@ -111,6 +118,7 @@ function complete_login_and_redirect(mysqli $conn, array $pending, bool $trust=f
   $_SESSION['first_name']    = $pending['first'] ?? '';
   $_SESSION['last_name']     = $pending['last'] ?? '';
   $_SESSION['photo_url']     = $pending['photo'] ?? '';
+  $_SESSION['theme']         = ppf_theme_resolve((string)($pending['theme'] ?? ''));
   $_SESSION['LAST_ACTIVITY'] = time();
   unset($_SESSION['pending_user'], $_SESSION['pending_2fa_method']);
   session_regenerate_id(true);
@@ -160,17 +168,16 @@ function column_exists(mysqli $conn, string $t, string $c): bool {
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Two-Factor Authentication · Peter Pang Fit</title>
+  <?php echo $themeStyleTag, "\n", $themeInitScript, "\n"; ?>
   <style>
-    :root{
-      --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6; --line:#1c212b;
-    }
+
     html,body{
-      margin:0; padding:0; background:var(--bg); color:var(--text);
+      margin:0; padding:0; background: var(--page-canvas); color:var(--text);
       font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
     }
     .wrap{ max-width:480px; margin:48px auto; padding:0 16px; box-sizing:border-box; }
     .card{
-      background:#151923; border:1px solid var(--line); border-radius:14px;
+      background:rgba(9,14,28,0.72); border:1px solid var(--line); border-radius:14px;
       padding:18px; margin-bottom:18px;
     }
     .card h3{ margin:0 0 10px 0; font-size:16px }
@@ -178,16 +185,16 @@ function column_exists(mysqli $conn, string $t, string $c): bool {
       width:100%;
       max-width:100%;
       box-sizing:border-box; /* <-- prevents right overflow */
-      background:#0f1218; border:1px solid var(--line); color:#e6e8ee;
+      background:rgba(8,13,23,0.95); border:1px solid var(--line); color:#f8fafc;
       padding:10px; border-radius:10px; font-size:16px; display:block;
     }
     .btn{
       display:inline-flex; align-items:center; gap:8px; background:#2a3446; border:1px solid var(--line);
       color:var(--text); padding:10px 14px; border-radius:10px; cursor:pointer; text-decoration:none
     }
-    .btn.brand{ background:#1f2f55; border-color:#284072 }
-    .flash{ margin:0 0 16px 0; padding:12px; border-radius:10px; border:1px solid; background:#10161a }
-    .flash.ok{ border-color:#204a36; color:#a7f3d0 }
+    .btn.brand{ background:rgba(56,189,248,0.22); border-color:rgba(56,189,248,0.35) }
+    .flash{ margin:0 0 16px 0; padding:12px; border-radius:10px; border:1px solid; background:rgba(8,13,23,0.85) }
+    .flash.ok{ border-color:rgba(34,197,94,0.45); color:#a7f3d0 }
     .flash.err{ border-color:#4a2020; color:#fca5a5 }
     .row{ display:grid; grid-template-columns:1fr; gap:10px }
     form{ margin:0 } /* ensure no unexpected default margins */

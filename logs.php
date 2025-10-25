@@ -22,8 +22,7 @@ if ($is_direct_request) {
   session_start();
   $role = strtolower(trim((string)($_SESSION['role'] ?? ($USER_ROLE ?? ''))));
   if ($role !== 'admin') {
-    http_response_code(403);
-    echo 'Forbidden';
+    require_once __DIR__ . '/access_denied.php';
     exit;
   }
 }
@@ -232,12 +231,9 @@ if ($stmt = $conn->prepare($sql)) {
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>System Logs · Peter Pang Fit</title>
   <style>
-    :root{
-      --bg:#0b0c10; --panel:#12141a; --text:#e6e8ee; --muted:#9aa3b2; --brand:#3b82f6;
-      --line:#1c212b; --chip:#1f2430; --ok:#10b981; --warn:#ef4444;
-      --page-pad: clamp(14px, 3vw, 28px);
-    }
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    
+    html,body{margin:0;padding:0;background: var(--page-canvas);
+    color:var(--text);
       font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
     a{color:var(--brand);text-decoration:none}
     a:hover{text-decoration:underline}
@@ -247,19 +243,19 @@ if ($stmt = $conn->prepare($sql)) {
     .wrap{
       width:100%; max-width:100%; margin:24px auto; padding:0 var(--page-pad); box-sizing:border-box;
     }
-    .card{background:#151923;border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+    .card{background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
     .card h3{margin:0 0 10px 0;font-size:16px}
     .row{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
     .span-12{grid-column:span 12}
-    .inline-input{width:100%;background:#0f1218;border:1px solid var(--line);color:#e6e8ee;
+    .inline-input{width:100%;background:rgba(8,13,23,0.95);border:1px solid var(--line);color:#f8fafc;
       padding:8px;border-radius:8px;outline:none;box-sizing:border-box;font-size:14px}
     label{display:block;margin:2px 0 6px 0;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
     .btn{display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);
       color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none}
-    .btn.brand{background:#1f2f55;border-color:#284072}
+    .btn.brand{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35)}
     table{width:100%;border-collapse:collapse}
     th,td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
-    th{color:#c3c9d4;font-size:12px;text-transform:uppercase;letter-spacing:.3px;background:#0f1218;text-align:left}
+    th{color:#c3c9d4;font-size:12px;text-transform:uppercase;letter-spacing:.3px;background:rgba(8,13,23,0.95);text-align:left}
     .muted{color:var(--muted)}
     .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end}
     .filters{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
