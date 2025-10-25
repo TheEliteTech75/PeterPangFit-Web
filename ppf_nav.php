@@ -169,7 +169,13 @@ if ($isAdmin) {
     'title' => 'System',
     'icon'  => '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 1a4 4 0 0 1 4 4v1h1a3 3 0 0 1 3 3v3a9 9 0 1 1-18 0V9a3 3 0 0 1 3-3h1V5a4 4 0 0 1 4-4z"/></svg>',
     'items' => [
-      ['href' => 'users.php',    'label' => 'Users'],
+      [
+        'href' => 'users.php',
+        'label' => 'Users',
+        'submenu' => [
+          ['href' => 'users.php?open=create', 'label' => 'Create User'],
+        ],
+      ],
       ['href' => 'sessions.php', 'label' => 'Sessions'],  // ← NEW admin-only link
       ['href' => 'logs.php',     'label' => 'Logs'],
     ],
