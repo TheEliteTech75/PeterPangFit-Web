@@ -9,6 +9,9 @@ require_once __DIR__ . '/db.php';        // must define $conn (mysqli)
 require_once __DIR__ . '/logs.php';      // safe include (no redirects/output)
 require_once __DIR__ . '/geo.php';       // <-- NEW (IP + geo helpers)
 require_once __DIR__ . '/ppf_theme.php'; // Theme helpers (color palettes)
+require_once __DIR__ . '/helpers.php';
+
+ppf_time_ensure_columns($conn);
 
 // Capture any Demo Mode alerts and log them for auditing.
 if (!empty($GLOBALS['PPF_DEMO_ALERTS_BUFFER']) && session_status() === PHP_SESSION_ACTIVE) {
@@ -139,6 +142,48 @@ try {
     }
 } catch (Throwable $e) { /* non-fatal */ }
 
+// Ensure per-user time preferences are cached in the session
+if (session_status() === PHP_SESSION_ACTIVE) {
+    $uid = (int)($_SESSION['user_id'] ?? 0);
+    $sessionTzRaw = $_SESSION['user_timezone'] ?? ($_SESSION['timezone'] ?? null);
+    $normalizedSessionTz = ppf_time_normalize_timezone($sessionTzRaw);
+    $needsTimezone = ($normalizedSessionTz === null);
+    $needsFormat = !isset($_SESSION['user_time_24h']);
+
+    if (($needsTimezone || $needsFormat) && $uid > 0 && isset($conn) && $conn instanceof mysqli) {
+        try {
+            if ($st = $conn->prepare('SELECT timezone, time_format_24h FROM users WHERE id=? LIMIT 1')) {
+                $st->bind_param('i', $uid);
+                $st->execute();
+                $res = $st->get_result();
+                if ($res && ($row = $res->fetch_assoc())) {
+                    if ($needsTimezone) {
+                        $normalizedSessionTz = ppf_time_normalize_timezone($row['timezone'] ?? '') ?? $normalizedSessionTz;
+                    }
+                    if ($needsFormat && isset($row['time_format_24h'])) {
+                        $_SESSION['user_time_24h'] = (int)$row['time_format_24h'] === 1 ? 1 : 0;
+                    }
+                }
+                $st->close();
+            }
+        } catch (Throwable $e) {
+            // Ignore — preferences remain default if unavailable
+        }
+    }
+
+    if ($normalizedSessionTz === null) {
+        $normalizedSessionTz = ppf_time_default_timezone();
+    }
+    $_SESSION['user_timezone'] = $normalizedSessionTz;
+    $_SESSION['timezone'] = $normalizedSessionTz;
+
+    if (!isset($_SESSION['user_time_24h'])) {
+        $_SESSION['user_time_24h'] = 0;
+    }
+    $_SESSION['user_time_24h'] = (int)$_SESSION['user_time_24h'] === 1 ? 1 : 0;
+    $_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
+}
+
 /* 5) Expose handy template variables (many pages rely on these) */
 $USER_ID         = $_SESSION['user_id']    ?? null;
 $USER_EMAIL      = $_SESSION['email']      ?? null;
@@ -146,6 +191,8 @@ $USER_ROLE       = $_SESSION['role']       ?? null;
 $USER_FIRST_NAME = $_SESSION['first_name'] ?? null;
 $USER_LAST_NAME  = $_SESSION['last_name']  ?? null;
 $USER_PHOTO_URL  = $_SESSION['photo_url']  ?? null;
+$USER_TIMEZONE   = $_SESSION['user_timezone'] ?? null;
+$USER_TIME_24H   = (int)($_SESSION['user_time_24h'] ?? 0) === 1;
 $USER_THEME      = null;
 
 try {

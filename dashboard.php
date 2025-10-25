@@ -22,6 +22,10 @@ require_once __DIR__ . '/trainer_sessions_helpers.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
 
+$dashboardNow = ppf_time_user_now();
+$dashboardDateLong = ppf_format_user_datetime($dashboardNow, ['type' => 'date_long']);
+$dashboardTimeNow = ppf_format_user_datetime($dashboardNow, ['type' => 'time']);
+
 function safe_count_sql(mysqli $conn, string $sql, string $types = '', ...$params): ?int {
   try {
     if ($types === '') {
@@ -1432,8 +1436,36 @@ $CAT_PALETTE = [
       gap:12px;
       flex-wrap:wrap;
     }
-    .dashboard-head__title{ display:flex; flex-direction:column; gap:4px; min-width:0; }
+    .dashboard-head__title{
+      display:flex;
+      flex:1 1 auto;
+      gap:28px;
+      align-items:flex-start;
+      flex-wrap:wrap;
+      min-width:0;
+    }
+    .dashboard-head__primary{ display:flex; flex-direction:column; gap:4px; min-width:0; }
     .dashboard-head__title h1{ margin:0; }
+    .dashboard-head__clock{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      align-items:flex-start;
+      text-align:left;
+      min-width:0;
+      line-height:1.1;
+    }
+    .dashboard-head__clock-date{
+      font-size:1.6rem;
+      font-weight:700;
+      letter-spacing:0.015em;
+      color:var(--c-text);
+    }
+    .dashboard-head__clock-time{
+      font-size:1.15rem;
+      font-weight:600;
+      color:var(--c-muted);
+    }
 
     .dash-settings-toggle{
       display:inline-flex;
@@ -1596,6 +1628,8 @@ $CAT_PALETTE = [
 
     @media (max-width: 768px){
       .dashboard-head{ flex-direction:column; align-items:stretch; }
+      .dashboard-head__title{ flex-direction:column; align-items:flex-start; }
+      .dashboard-head__clock{ margin-left:0; align-items:flex-start; text-align:left; }
       .dash-settings-toggle{ width:100%; justify-content:center; }
       .dash-settings{ width:100%; max-width:100%; }
     }
@@ -1871,12 +1905,18 @@ $CAT_PALETTE = [
   <main class="wrap">
     <header class="dashboard-head">
       <div class="dashboard-head__title">
-        <h1>Dashboard</h1>
-        <div class="muted">Welcome back<?php echo isset($USER_NAME) ? ', '.h($USER_NAME) : ''; ?>.</div>
+        <div class="dashboard-head__primary">
+          <h1>Dashboard</h1>
+          <div class="muted">Welcome back<?php echo isset($USER_NAME) ? ', '.h($USER_NAME) : ''; ?>.</div>
+        </div>
+        <div class="dashboard-head__clock">
+          <div class="dashboard-head__clock-date" data-live-clock="date-long"><?php echo h($dashboardDateLong); ?></div>
+          <div class="dashboard-head__clock-time" data-live-clock="time"><?php echo h($dashboardTimeNow); ?></div>
+        </div>
       </div>
       <button type="button" class="dash-settings-toggle" aria-expanded="false" aria-controls="dashboard-settings">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path fill="currentColor" d="M12 8a4 4 0 100 8 4 4 0 000-8zm9 4a1 1 0 01-.64.93l-1.55.62c-.09.25-.19.49-.3.72l.74 1.53a1 1 0 01-.22 1.17l-1.42 1.42a1 1 0 01-1.17.22l-1.53-.74a7.2 7.2 0 01-.72.3l-.62 1.55a1 1 0 01-.93.64h-2a1 1 0 01-.93-.64l-.62-1.55a7.2 7.2 0 01-.72-.3l-1.53.74a1 1 0 01-1.17-.22L3.3 16.97a1 1 0 01-.22-1.17l.74-1.53a7.2 7.2 0 01-.3-.72l-1.55-.62A1 1 0 012 12v-2a1 1 0 01.64-.93l1.55-.62c.09-.25.19-.49.3-.72l-.74-1.53A1 1 0 013.3 5.03l1.42-1.42a1 1 0 011.17-.22l1.53.74c.23-.11.47-.21.72-.3l.62-1.55A1 1 0 0110.7 2h2a1 1 0 01.93.64l.62 1.55c.25.09.49.19.72.3l1.53-.74a1 1 0 011.17.22l1.42 1.42a1 1 0 01.22 1.17l-.74 1.53c.11.23.21.47.3.72l1.55.62A1 1 0 0121 10v2z" />
+          <path fill="currentColor" d="M12 8a4 4 0 100 8 4 4 0 000-8zm9 4a1 1 0 01-.64.93l-1.55.62c-.09.25-.19.49-.3.72l.74 1.53a1 1 0 01-.22 1.17l-1.42 1.42a1 1 0 01-1.17.22l-1.53-.74a7.2 7.2 0 01-.72.3l-.62 1.55a1 1 0 01-.93.64h-2a1 1 0 01-.93-.64l-.62-1.55a7.2 7.2 0 01-.72-.3l-1.53.74a1 1 0 01-1.17-.22L3.3 16.97a1 1 0 01-.22-1.17l.74-1.53a7.2 7.2 0 01-.3-.72l-1.55-.62A1 1 0 0121 10v2z" />
         </svg>
         <span>Dashboard Options</span>
       </button>
@@ -2077,7 +2117,7 @@ $CAT_PALETTE = [
             </div>
           </div>
 
-          <div class="actions">
+          <div class="actions" style="margin-top:12px;">
             <a class="btn primary" href="invites.php">Manage Invites</a>
             <a class="btn" href="create_invite_form.php">Send Invite</a>
           </div>
@@ -2236,11 +2276,7 @@ $CAT_PALETTE = [
             <?php endif; ?>
           <?php endif; ?>
 
-          <?php if ($can_admin): ?>
-            <div class="actions" style="margin-top:12px;">
-              <a class="btn primary" href="trainer_sessions.php">Manage Sessions</a>
-            </div>
-          <?php elseif ($is_client && $trainer_session_focus): ?>
+          <?php if ($is_client && $trainer_session_focus): ?>
             <p class="sessions-note" style="margin-top:12px;">Need to make adjustments? Reach out to your trainer directly.</p>
           <?php endif; ?>
         </article>
@@ -3772,6 +3808,8 @@ $CAT_PALETTE = [
 
 })();
 </script>
+
+<?php echo ppf_time_render_clock_bootstrap(); ?>
 
 </body>
 </html>
