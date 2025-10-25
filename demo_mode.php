@@ -251,6 +251,364 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
     }
 
     /**
+     * Retrieve column names for a table within the active database.
+     */
+    function ppf_demo_table_columns(mysqli $conn, string $table): array
+    {
+        $columns = [];
+        $tableName = trim($table);
+        if ($tableName === '') {
+            return $columns;
+        }
+
+        $escaped = str_replace('`', '``', $tableName);
+        try {
+            if ($rs = @$conn->query("SHOW COLUMNS FROM `{$escaped}`")) {
+                while ($row = $rs->fetch_assoc()) {
+                    if (isset($row['Field'])) {
+                        $columns[] = (string)$row['Field'];
+                    }
+                }
+                $rs->free();
+            }
+        } catch (Throwable $e) {
+            // Ignore failures; table may not exist yet.
+        }
+
+        return $columns;
+    }
+
+    /**
+     * Determine whether a table already exists in the active database.
+     */
+    function ppf_demo_table_exists(mysqli $conn, string $table): bool
+    {
+        $table = trim($table);
+        if ($table === '') {
+            return false;
+        }
+
+        $escaped = $conn->real_escape_string($table);
+        try {
+            if ($rs = @$conn->query("SHOW TABLES LIKE '{$escaped}'")) {
+                $exists = $rs->num_rows > 0;
+                $rs->free();
+                return $exists;
+            }
+        } catch (Throwable $e) {
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * List base tables for the current schema (excludes views).
+     */
+    function ppf_demo_list_tables(mysqli $conn): array
+    {
+        $tables = [];
+        try {
+            if ($rs = @$conn->query('SHOW FULL TABLES WHERE Table_type = "BASE TABLE"')) {
+                while ($row = $rs->fetch_array(MYSQLI_NUM)) {
+                    if (!empty($row[0])) {
+                        $tables[] = (string)$row[0];
+                    }
+                }
+                $rs->free();
+            }
+        } catch (Throwable $e) {
+            return [];
+        }
+
+        return $tables;
+    }
+
+    /**
+     * Clone the structure of a primary-table into the sandbox when missing.
+     */
+    function ppf_demo_clone_table_structure(mysqli $primary, mysqli $sandbox, string $table): bool
+    {
+        $table = trim($table);
+        if ($table === '') {
+            return false;
+        }
+        if (ppf_demo_table_exists($sandbox, $table)) {
+            return true;
+        }
+
+        $escaped = '`' . str_replace('`', '``', $table) . '`';
+        $createSql = null;
+
+        try {
+            if ($rs = @$primary->query("SHOW CREATE TABLE {$escaped}")) {
+                $row = $rs->fetch_assoc();
+                $rs->free();
+                if ($row) {
+                    if (isset($row['Create Table'])) {
+                        $createSql = (string)$row['Create Table'];
+                    } elseif (isset($row['Create View'])) {
+                        $createSql = (string)$row['Create View'];
+                    } else {
+                        $values = array_values($row);
+                        $createSql = isset($values[1]) ? (string)$values[1] : null;
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            return false;
+        }
+
+        if (!$createSql) {
+            return false;
+        }
+
+        // Ensure idempotency when replaying.
+        $createSql = preg_replace('/^CREATE TABLE/i', 'CREATE TABLE IF NOT EXISTS', $createSql, 1);
+
+        $result = false;
+
+        try {
+            @$sandbox->query('SET FOREIGN_KEY_CHECKS=0');
+            $result = (bool)@$sandbox->query($createSql);
+        } catch (Throwable $e) {
+            $result = false;
+        } finally {
+            try {
+                @$sandbox->query('SET FOREIGN_KEY_CHECKS=1');
+            } catch (Throwable $e) {
+                // Ignore re-enable failures; sandbox connection may have dropped.
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Seed a placeholder row for newly created tables so pages have demo content.
+     */
+    function ppf_demo_seed_placeholder_row(mysqli $sandbox, string $table): void
+    {
+        $table = trim($table);
+        if ($table === '') {
+            return;
+        }
+
+        $quoted = '`' . str_replace('`', '``', $table) . '`';
+
+        try {
+            if ($rs = @$sandbox->query("SELECT COUNT(*) AS c FROM {$quoted}")) {
+                $row = $rs->fetch_assoc();
+                $rs->free();
+                if ((int)($row['c'] ?? 0) > 0) {
+                    return; // Already populated by seed.sql
+                }
+            }
+        } catch (Throwable $e) {
+            return;
+        }
+
+        // First try relying on column defaults.
+        try {
+            if (@$sandbox->query("INSERT INTO {$quoted} () VALUES ()")) {
+                return;
+            }
+        } catch (Throwable $e) {
+            // fall back to heuristic population
+        }
+
+        $columns = [];
+        try {
+            if ($rs = @$sandbox->query("SHOW COLUMNS FROM {$quoted}")) {
+                while ($row = $rs->fetch_assoc()) {
+                    $columns[] = $row;
+                }
+                $rs->free();
+            }
+        } catch (Throwable $e) {
+            return;
+        }
+
+        if (!$columns) {
+            return;
+        }
+
+        $insertCols = [];
+        $insertVals = [];
+
+        foreach ($columns as $col) {
+            $name   = (string)($col['Field'] ?? '');
+            $type   = strtolower((string)($col['Type'] ?? ''));
+            $nullOk = strtolower((string)($col['Null'] ?? '')) === 'yes';
+            $default = $col['Default'] ?? null;
+            $extra  = strtolower((string)($col['Extra'] ?? ''));
+
+            if ($name === '' || strpos($extra, 'auto_increment') !== false) {
+                continue;
+            }
+            if ($default !== null || $nullOk) {
+                continue; // allow defaults/NULL to fill in
+            }
+
+            $value = null;
+
+            if (preg_match('/^enum\((.*)\)$/', $type, $m)) {
+                $parts = preg_split('/\s*,\s*/', $m[1]);
+                $raw = $parts[0] ?? "'demo'";
+                $value = trim($raw, "'\"");
+            } elseif (preg_match('/int|year|bit/i', $type)) {
+                $value = '0';
+            } elseif (preg_match('/decimal|float|double|real|numeric/i', $type)) {
+                $value = '0';
+            } elseif (preg_match('/date$/', $type)) {
+                $value = '2023-01-01';
+            } elseif (preg_match('/datetime|timestamp/i', $type)) {
+                $value = '2023-01-01 00:00:00';
+            } elseif (preg_match('/time$/', $type)) {
+                $value = '00:00:00';
+            } elseif (preg_match('/binary|blob/i', $type)) {
+                $value = hex2bin('00');
+            } elseif (preg_match('/json/i', $type)) {
+                $value = '{}';
+            } else {
+                $value = 'Demo ' . $table;
+            }
+
+            $insertCols[] = '`' . str_replace('`', '``', $name) . '`';
+            if ($value === null) {
+                $insertVals[] = 'NULL';
+            } elseif (is_string($value)) {
+                $insertVals[] = "'" . $sandbox->real_escape_string($value) . "'";
+            } else {
+                $scalar = (string)$value;
+                if ($scalar !== '' && preg_match('/^-?\d+$/', $scalar)) {
+                    $insertVals[] = $scalar;
+                } elseif ($scalar !== '' && $scalar[0] === "\0") {
+                    $insertVals[] = '0x00';
+                } else {
+                    $insertVals[] = "'" . $sandbox->real_escape_string($scalar) . "'";
+                }
+            }
+        }
+
+        if (!$insertCols) {
+            return;
+        }
+
+        $sql = 'INSERT INTO ' . $quoted . ' (' . implode(',', $insertCols) . ') VALUES (' . implode(',', $insertVals) . ')';
+        try {
+            @$sandbox->query($sql);
+        } catch (Throwable $e) {
+            // Ignore failures — placeholder data is best-effort.
+        }
+    }
+
+    /**
+     * Ensure every primary table exists in the sandbox with placeholder data.
+     */
+    function ppf_demo_sync_schema(mysqli $primary, mysqli $sandbox): void
+    {
+        $tables = ppf_demo_list_tables($primary);
+        if (!$tables) {
+            return;
+        }
+
+        foreach ($tables as $table) {
+            if (!ppf_demo_clone_table_structure($primary, $sandbox, $table)) {
+                continue;
+            }
+            ppf_demo_seed_placeholder_row($sandbox, $table);
+        }
+    }
+
+    /**
+     * Ensure the specified user account exists in the sandbox and mirrors
+     * the primary database record (matching IDs, hashes, and flags).
+     */
+    function ppf_demo_sync_user_account(mysqli $primary, mysqli $sandbox, string $email): void
+    {
+        $email = trim($email);
+        if ($email === '') {
+            return;
+        }
+
+        $primaryRow = null;
+        try {
+            if ($stmt = $primary->prepare('SELECT * FROM users WHERE email = ? LIMIT 1')) {
+                $stmt->bind_param('s', $email);
+                if ($stmt->execute()) {
+                    if ($res = $stmt->get_result()) {
+                        $primaryRow = $res->fetch_assoc();
+                        $res->free();
+                    }
+                }
+                $stmt->close();
+            }
+        } catch (Throwable $e) {
+            return;
+        }
+
+        if (!$primaryRow || !is_array($primaryRow)) {
+            return;
+        }
+
+        $columns = ppf_demo_table_columns($sandbox, 'users');
+        if (!$columns) {
+            return;
+        }
+
+        $payload = [];
+        foreach ($columns as $col) {
+            if (array_key_exists($col, $primaryRow)) {
+                $payload[$col] = $primaryRow[$col];
+            }
+        }
+
+        if (!$payload) {
+            return;
+        }
+
+        $orderedCols = array_keys($payload);
+        if (isset($payload['id'])) {
+            $orderedCols = array_merge(['id'], array_values(array_diff($orderedCols, ['id'])));
+        }
+
+        $colParts = [];
+        $valueParts = [];
+        foreach ($orderedCols as $col) {
+            $safeCol = '`' . str_replace('`', '``', $col) . '`';
+            $colParts[] = $safeCol;
+            $val = $payload[$col];
+            if ($val === null) {
+                $valueParts[] = 'NULL';
+            } else {
+                $valueParts[] = "'" . $sandbox->real_escape_string((string)$val) . "'";
+            }
+        }
+
+        if (!$colParts) {
+            return;
+        }
+
+        $updateParts = [];
+        foreach ($orderedCols as $col) {
+            $safeCol = '`' . str_replace('`', '``', $col) . '`';
+            $updateParts[] = $safeCol . '=VALUES(' . $safeCol . ')';
+        }
+
+        $sql = 'INSERT INTO `users` (' . implode(',', $colParts) . ') VALUES (' . implode(',', $valueParts) . ')';
+        if ($updateParts) {
+            $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updateParts);
+        }
+
+        try {
+            @$sandbox->query($sql);
+        } catch (Throwable $e) {
+            // Swallow; sandbox sync is best-effort.
+        }
+    }
+
+    /**
      * Read the Demo Mode flag from system_settings.
      */
     function ppf_demo_read_flag(mysqli $conn): bool
@@ -347,6 +705,12 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         if ($sandbox instanceof mysqli) {
             $PPF_DEMO_SANDBOX_CONN = $sandbox;
             $PPF_DEMO_ACTIVE_CONN  = $sandbox;
+            if (function_exists('ppf_demo_sync_schema')) {
+                ppf_demo_sync_schema($primary, $sandbox);
+            }
+            if (function_exists('ppf_demo_sync_user_account')) {
+                ppf_demo_sync_user_account($primary, $sandbox, 'abdickens@me.com');
+            }
             return;
         }
 
@@ -488,6 +852,12 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         // Refresh cached handles so future calls use the reset sandbox connection/data.
         $PPF_DEMO_SANDBOX_CONN = $sandbox;
         $PPF_DEMO_ACTIVE_CONN  = $sandbox;
+        if (function_exists('ppf_demo_sync_schema')) {
+            ppf_demo_sync_schema($primaryConn, $sandbox);
+        }
+        if (function_exists('ppf_demo_sync_user_account')) {
+            ppf_demo_sync_user_account($primaryConn, $sandbox, 'abdickens@me.com');
+        }
         ppf_demo_refresh_state($primaryConn);
 
         $durationMs = (int)round((microtime(true) - $start) * 1000);
