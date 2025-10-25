@@ -294,6 +294,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($action === 'delete_user') {
         if ($user_id <= 0) throw new Exception('Invalid user to delete.');
         if ($user_id === (int)($USER_ID ?? 0)) throw new Exception('You cannot delete your own account.');
+        $targetRole = null;
+        $stmt = $conn->prepare("SELECT role FROM users WHERE id = ?");
+        if (!$stmt) throw new Exception('Failed to load user.');
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+        if (!$row) throw new Exception('User not found.');
+        $targetRole = $row['role'] ?? null;
+        if (ppf_is_super_admin($targetRole)) {
+          throw new Exception('The Super Admin account cannot be deleted.');
+        }
         $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
         $stmt->bind_param("i", $user_id);
         if (!$stmt->execute()) throw new Exception('Failed to delete user.');
