@@ -1439,7 +1439,7 @@ $CAT_PALETTE = [
     .dashboard-head__title{
       display:flex;
       flex:1 1 auto;
-      gap:18px;
+      gap:28px;
       align-items:flex-start;
       flex-wrap:wrap;
       min-width:0;
@@ -2117,7 +2117,7 @@ $CAT_PALETTE = [
             </div>
           </div>
 
-          <div class="actions">
+          <div class="actions" style="margin-top:12px;">
             <a class="btn primary" href="invites.php">Manage Invites</a>
             <a class="btn" href="create_invite_form.php">Send Invite</a>
           </div>
@@ -2276,11 +2276,7 @@ $CAT_PALETTE = [
             <?php endif; ?>
           <?php endif; ?>
 
-          <?php if ($can_admin): ?>
-            <div class="actions" style="margin-top:12px;">
-              <a class="btn primary" href="trainer_sessions.php">Manage Sessions</a>
-            </div>
-          <?php elseif ($is_client && $trainer_session_focus): ?>
+          <?php if ($is_client && $trainer_session_focus): ?>
             <p class="sessions-note" style="margin-top:12px;">Need to make adjustments? Reach out to your trainer directly.</p>
           <?php endif; ?>
         </article>
