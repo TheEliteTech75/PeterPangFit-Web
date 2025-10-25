@@ -262,12 +262,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Toggle "also acts as client"
       if ($action === 'toggle_is_client') {
         if ($user_id <= 0) throw new Exception('Invalid user.');
+        $roleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
+        if (!$roleStmt) throw new Exception('Failed to load user role.');
+        $roleStmt->bind_param("i", $user_id);
+        $roleStmt->execute();
+        $roleRes = $roleStmt->get_result();
+        $roleRow = $roleRes ? $roleRes->fetch_assoc() : null;
+        $roleStmt->close();
+        if (!$roleRow) throw new Exception('User not found.');
+        $roleKey = ppf_role_key($roleRow['role'] ?? '');
+        if ($roleKey === 'client') {
+          throw new Exception('Client role users already appear in client lists.');
+        }
         $to = (int)($_POST['to'] ?? 0);
         $stmt = $conn->prepare("UPDATE users SET is_client = ? WHERE id = ?");
         $stmt->bind_param("ii", $to, $user_id);
         if (!$stmt->execute()) throw new Exception('Failed to update client flag.');
         $stmt->close();
-        $flash = $to ? 'User will now appear in client lists.' : 'User removed from client lists.'; 
+        $flash = $to ? 'User will now appear in client lists.' : 'User removed from client lists.';
         $flash_type = 'ok';
       }
 
@@ -553,11 +565,14 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
                   'trainer'     => 'Trainer',
                   'client'      => 'Client',
                 ];
-                $targetIsSuper = ppf_is_super_admin($u['role']);
+                $roleKey = ppf_role_key($u['role'] ?? '');
+                $targetIsSuper = ($roleKey === 'super_admin');
+                $targetIsClientRole = ($roleKey === 'client');
                 if (!$currentUserIsSuper && !$targetIsSuper) {
                   unset($roleOptions['super_admin']);
                 }
                 $lockSuperRole = !$currentUserIsSuper && $targetIsSuper;
+                $canToggleClientFlag = !$targetIsClientRole;
               ?>
               <select name="new_role" class="inline-input role-select" required
                       data-current="<?php echo h($u['role']); ?>"
@@ -645,15 +660,17 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
               <?php endif; ?>
 
               <!-- Toggle "acts as client" -->
-              <form method="post" style="display:inline">
-                <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                <input type="hidden" name="action" value="toggle_is_client">
-                <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
-                <input type="hidden" name="to" value="<?php echo $flag ? 0 : 1; ?>">
-                <button class="btn small" type="submit">
-                  <?php echo $flag ? 'Remove from Clients' : 'Add to Clients'; ?>
-                </button>
-              </form>
+              <?php if ($canToggleClientFlag): ?>
+                <form method="post" style="display:inline">
+                  <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                  <input type="hidden" name="action" value="toggle_is_client">
+                  <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
+                  <input type="hidden" name="to" value="<?php echo $flag ? 0 : 1; ?>">
+                  <button class="btn small" type="submit">
+                    <?php echo $flag ? 'Remove from Clients' : 'Add to Clients'; ?>
+                  </button>
+                </form>
+              <?php endif; ?>
 
               <!-- NEW: Change Password (opens modal) -->
               <button class="btn small" type="button"

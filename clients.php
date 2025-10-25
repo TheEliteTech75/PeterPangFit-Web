@@ -451,13 +451,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           }
           $idList = implode(',', array_map('intval', $ids));
 
-          $superSql = "SELECT id FROM users WHERE id IN ($idList) AND role='super_admin'";
+          $superSql = "SELECT COUNT(*) AS total FROM users WHERE id IN ($idList) AND role='super_admin'";
           if ($superRes = $conn->query($superSql)) {
-            if ($superRes->num_rows > 0) {
-              $superRes->free();
+            $superRow = $superRes->fetch_assoc();
+            $superRes->free();
+            if ((int)($superRow['total'] ?? 0) > 0) {
               throw new Exception('Super Admin accounts cannot be deactivated.');
             }
-            $superRes->free();
           }
 
           $sql = "UPDATE users SET is_active=0 WHERE id IN ($idList) AND (role='client' OR is_client=1) AND role<>'super_admin'";
@@ -1583,8 +1583,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
           $pw   = (string)($c['password_hash'] ?? '');
           $has_password = ($pw !== null && $pw !== '');
           $editing = isset($_GET['edit']) && (int)$_GET['edit'] === $id;
-          $is_real_client = ($c['role'] === 'client');
-          $targetIsSuper = ppf_is_super_admin($c['role'] ?? '');
+          $roleKey = ppf_role_key($c['role'] ?? '');
+          $is_real_client = ($roleKey === 'client');
+          $targetIsSuper = ($roleKey === 'super_admin');
           $ageYears = calc_age_years($c['birthdate'] ?? null);
           $lockedUntil = $c['locked_until'] ?? null;
           $isLocked = !empty($lockedUntil) && (strtotime($lockedUntil) > time());
@@ -1611,7 +1612,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
         ?>
           <tr class="client-row" data-uid="<?php echo $id; ?>" data-order="<?php echo $orderIndex; ?>" data-sort-id="<?php echo $id; ?>" data-sort-first="<?php echo h($firstSort); ?>" data-sort-middle="<?php echo h($middleSort); ?>" data-sort-last="<?php echo h($lastSort); ?>" data-sort-email="<?php echo h($emailSort); ?>" data-sort-phone="<?php echo h($phoneDigits); ?>" data-sort-birthdate="<?php echo h($birthAttr); ?>" data-sort-age="<?php echo $ageYears === null ? '' : (int)$ageYears; ?>" data-sort-gender="<?php echo h($genderSort); ?>" data-sort-height="<?php echo h($heightSortAttr); ?>" data-sort-weight="<?php echo h($weightSortAttr); ?>" data-sort-plans="<?php echo $plansCount; ?>">
             <td>
-              <input type="checkbox" class="client-select" value="<?php echo $id; ?>" data-client-checkbox aria-label="Select <?php echo h($labelName !== '' ? $labelName : ('Client #' . $id)); ?>">
+              <input type="checkbox" class="client-select" value="<?php echo $id; ?>" data-client-checkbox aria-label="Select <?php echo h($labelName !== '' ? $labelName : ('Client #' . $id)); ?>"<?php echo $targetIsSuper ? ' disabled aria-disabled="true" title="Super Admin accounts cannot be selected"' : ''; ?>>
             </td>
 
             <td><?php echo $id; ?></td>
@@ -2232,18 +2233,22 @@ const CLIENT_SORT_TYPES = {
   function updateSelectAll(){
     if (!selectAll) return;
     const visible = rows.filter(row => row.style.display !== 'none');
-    if (!visible.length) {
+    const actionable = visible.filter(row => {
+      const cb = row.querySelector('[data-client-checkbox]');
+      return cb && !cb.disabled;
+    });
+    if (!actionable.length) {
       selectAll.checked = false;
       selectAll.indeterminate = false;
       return;
     }
     let checkedCount = 0;
-    visible.forEach(row => {
+    actionable.forEach(row => {
       const cb = row.querySelector('[data-client-checkbox]');
       if (cb && cb.checked) checkedCount++;
     });
-    selectAll.checked = checkedCount > 0 && checkedCount === visible.length;
-    selectAll.indeterminate = checkedCount > 0 && checkedCount < visible.length;
+    selectAll.checked = checkedCount > 0 && checkedCount === actionable.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < actionable.length;
   }
 
   function applySearch(query){
@@ -2283,7 +2288,7 @@ const CLIENT_SORT_TYPES = {
       const visible = rows.filter(row => row.style.display !== 'none');
       visible.forEach(row => {
         const cb = row.querySelector('[data-client-checkbox]');
-        if (cb) cb.checked = selectAll.checked;
+        if (cb && !cb.disabled) cb.checked = selectAll.checked;
       });
       updateSelectAll();
     });
