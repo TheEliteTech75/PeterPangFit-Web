@@ -6,6 +6,7 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Drop in dependency order so we can recreate fresh tables each reset
+DROP TABLE IF EXISTS plan_exercises;
 DROP TABLE IF EXISTS user_plan_exercises;
 DROP TABLE IF EXISTS user_plans;
 DROP TABLE IF EXISTS workout_plans;
@@ -23,6 +24,7 @@ DROP TABLE IF EXISTS ip_cache;
 DROP TABLE IF EXISTS system_logs;
 DROP TABLE IF EXISTS passkeys;
 DROP TABLE IF EXISTS system_settings;
+DROP TABLE IF EXISTS password_resets;
 DROP TABLE IF EXISTS users;
 
 -- ---------------------------------------------------------------------------
@@ -82,7 +84,25 @@ VALUES
   (2, 'trainer', 0, 1, 'demo.trainer@example.com', '$2y$12$nLkM5nMYlD4kDsAt36gSmOUWmLnXJA39PwudFT.QGia4MaoA4XT4m',
    '+1-555-0101', '1990-07-14', 'male', 'Kai', 'Rivera', 7200, 1, '2023-01-03 10:30:00', 'summit'),
   (3, 'client', 1, 0, 'demo.client@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
-   '+1-555-0102', '1995-02-22', 'female', 'Jordan', 'Parker', 7200, 1, '2023-02-10 15:45:00', 'default');
+   '+1-555-0102', '1995-02-22', 'female', 'Jordan', 'Parker', 7200, 1, '2023-02-10 15:45:00', 'default'),
+  (4, 'trainer', 0, 1, 'demo.mindbody.trainer@example.com', '$2y$12$nLkM5nMYlD4kDsAt36gSmOUWmLnXJA39PwudFT.QGia4MaoA4XT4m',
+   '+1-555-0103', '1985-11-18', 'female', 'Mira', 'Chen', 7200, 1, '2023-01-05 08:15:00', 'zenith'),
+  (5, 'client', 1, 0, 'demo.client.alex@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
+   '+1-555-0104', '1992-03-11', 'male', 'Alex', 'Morgan', 7200, 1, '2023-02-18 13:20:00', 'default'),
+  (6, 'client', 1, 0, 'demo.client.skylar@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
+   '+1-555-0105', '1989-09-07', 'female', 'Skylar', 'Reed', 7200, 1, '2023-02-22 07:40:00', 'aurora'),
+  (7, 'client', 1, 0, 'demo.client.emery@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
+   '+1-555-0106', '1984-12-02', 'non-binary', 'Emery', 'Blake', 5400, 1, '2023-03-02 11:55:00', 'summit'),
+  (8, 'client', 1, 0, 'demo.client.aria@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
+   '+1-555-0107', '1997-04-19', 'female', 'Aria', 'Lopez', 7200, 1, '2023-03-09 10:05:00', 'aurora'),
+  (9, 'client', 1, 0, 'demo.client.darius@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
+   '+1-555-0108', '1981-06-23', 'male', 'Darius', 'Cole', 5400, 1, '2023-03-15 17:45:00', 'summit'),
+  (10, 'client', 1, 0, 'demo.client.nova@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
+   '+1-555-0109', '1994-10-30', 'female', 'Nova', 'Singh', 7200, 1, '2023-03-21 08:10:00', 'default'),
+  (11, 'client', 1, 0, 'demo.client.eli@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
+   '+1-555-0110', '1987-01-12', 'male', 'Eli', 'Patel', 7200, 1, '2023-03-27 06:30:00', 'summit'),
+  (12, 'client', 1, 0, 'demo.client.zara@example.com', '$2y$12$UmKZWNPNwIH/zKmI1xRTFOgk/V2ohv9MfL/gdnkrh8UB0Ra5Opjlq',
+   '+1-555-0111', '1999-08-05', 'female', 'Zara', 'Khan', 7200, 1, '2023-04-02 14:25:00', 'aurora');
 
 -- Promote the developer account to Super Admin if it exists as an admin.
 UPDATE users SET role='super_admin' WHERE email='abdickens@me.com' AND role='admin';
@@ -154,12 +174,33 @@ VALUES
   (NULL, 'vip.client@example.com', 'INVITE-BRAVO-2023', '2023-08-15 11:00:00', '2023-09-15 11:00:00', '2023-08-20 14:00:00', '2023-08-22 09:30:00', 1, 2);
 
 -- ---------------------------------------------------------------------------
+-- password reset tokens
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id INT UNSIGNED NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_password_resets_token (token_hash),
+  KEY idx_password_resets_user (user_id),
+  CONSTRAINT fk_password_resets_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO password_resets (user_id, token_hash, expires_at, used_at, created_at)
+VALUES
+  (3, '54d9f6b8c7cbb5d2d5d4a32d7f5cdd8aab4ec2f76bd2f43f7090d6ef0a4c9b11', '2023-09-12 12:00:00', NULL, '2023-09-12 11:00:00'),
+  (1, 'd1e8c4a0b5c9f32e4a7d88c5f0b6d3a1902f54e776ca2d71a8e34bb7129dff45', '2023-08-01 18:30:00', '2023-08-01 18:45:00', '2023-08-01 17:40:00');
+
+-- ---------------------------------------------------------------------------
 -- trainer session tables
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS trainer_session_packages (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  client_id INT NOT NULL,
-  trainer_id INT NOT NULL,
+  client_id INT UNSIGNED NOT NULL,
+  trainer_id INT UNSIGNED NOT NULL,
   package_name VARCHAR(191) NOT NULL,
   purchased_sessions INT NOT NULL DEFAULT 0,
   price_per_session DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -270,19 +311,41 @@ INSERT INTO categories (id, name, description, created_at, created_by)
 VALUES
   (1, 'Strength', 'Foundational compound lifts.', '2023-06-01 08:00:00', 2),
   (2, 'Conditioning', 'Intervals and energy systems work.', '2023-06-01 08:05:00', 2),
-  (3, 'Mobility', 'Dynamic warmups and mobility flows.', '2023-06-01 08:10:00', 2);
+  (3, 'Mobility', 'Dynamic warmups and mobility flows.', '2023-06-01 08:10:00', 2),
+  (4, 'Core & Stability', 'Anti-rotation, balance, and trunk stability drills.', '2023-06-01 08:15:00', 2),
+  (5, 'Mind-Body', 'Breath work and restorative flow sessions.', '2023-06-01 08:20:00', 4);
 
 INSERT INTO exercises (id, name, notes, video_url, video_poster_url, video_duration_sec, video_autoplay, video_loop, video_muted, captions_vtt_url, category_id, created_at, created_by)
 VALUES
   (1, 'Barbell Back Squat', 'Focus on depth and bracing. 3x8 at moderate load.', '/media/demo/barbell-squat.mp4', '/media/demo/barbell-squat.jpg', 52, 0, 0, 1, NULL, 1, '2023-06-02 09:00:00', 2),
   (2, 'Assault Bike Intervals', '30s hard effort, 60s easy pace. Repeat for 10 rounds.', '/media/demo/assault-bike.mp4', '/media/demo/assault-bike.jpg', 75, 0, 0, 1, NULL, 2, '2023-06-02 09:30:00', 2),
-  (3, 'Worlds Greatest Stretch', 'Dynamic mobility sequence to open hips and thoracic spine.', NULL, NULL, NULL, 0, 0, 1, NULL, 3, '2023-06-02 09:45:00', 2);
+  (3, 'Worlds Greatest Stretch', 'Dynamic mobility sequence to open hips and thoracic spine.', NULL, NULL, NULL, 0, 0, 1, NULL, 3, '2023-06-02 09:45:00', 2),
+  (4, 'Kettlebell Swings', 'Power-focused hinge pattern. 4 sets of 15 reps.', '/media/demo/kb-swing.mp4', '/media/demo/kb-swing.jpg', 48, 0, 0, 1, NULL, 2, '2023-06-03 07:55:00', 2),
+  (5, 'Single-Leg Romanian Deadlift', 'Balance challenge with glute emphasis. Use moderate kettlebell.', '/media/demo/sl-rdl.mp4', '/media/demo/sl-rdl.jpg', 60, 0, 0, 1, NULL, 4, '2023-06-03 08:10:00', 2),
+  (6, 'Box Jump Series', 'Explosive jumps with controlled landings. 3x8.', '/media/demo/box-jump.mp4', '/media/demo/box-jump.jpg', 33, 0, 0, 1, NULL, 2, '2023-06-03 08:20:00', 2),
+  (7, 'Half-Kneeling Thoracic Rotation', 'Breath-driven mobility. 2x10 per side.', NULL, NULL, NULL, 0, 0, 1, NULL, 3, '2023-06-03 08:30:00', 4),
+  (8, 'Dumbbell Bench Press', 'Tempo-controlled pressing. 4x10 with 3011 tempo.', '/media/demo/db-bench.mp4', '/media/demo/db-bench.jpg', 57, 0, 0, 1, NULL, 1, '2023-06-04 09:05:00', 2),
+  (9, 'Row Erg Pyramids', 'Increasing/decreasing pace sets. Maintain strong stroke rate.', '/media/demo/row-erg.mp4', '/media/demo/row-erg.jpg', 68, 0, 0, 1, NULL, 2, '2023-06-04 09:20:00', 2),
+  (10, 'Primal Flow Reset', 'Mind-body flow for downregulation and recovery.', '/media/demo/primal-flow.mp4', '/media/demo/primal-flow.jpg', 180, 0, 0, 1, NULL, 5, '2023-06-04 09:35:00', 4),
+  (11, 'Pallof Press Hold', 'Anti-rotation core stability. 3x30s per side.', NULL, NULL, NULL, 0, 0, 1, NULL, 4, '2023-06-04 09:45:00', 4),
+  (12, 'Farmer Carry March', 'Grip and core builder. 5 rounds of 40 yards.', '/media/demo/farmer-carry.mp4', '/media/demo/farmer-carry.jpg', 42, 0, 0, 1, NULL, 1, '2023-06-04 09:55:00', 2);
 
 INSERT INTO exercise_categories (exercise_id, category_id) VALUES
   (1, 1),
   (2, 2),
   (3, 3),
-  (1, 3);
+  (1, 3),
+  (4, 2),
+  (5, 1),
+  (5, 4),
+  (6, 2),
+  (7, 3),
+  (8, 1),
+  (9, 2),
+  (10, 5),
+  (11, 4),
+  (12, 1),
+  (12, 2);
 
 -- ---------------------------------------------------------------------------
 -- workout plans and assignments
@@ -296,6 +359,21 @@ CREATE TABLE IF NOT EXISTS workout_plans (
   updated_at DATETIME NULL,
   updated_by INT NULL,
   PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS plan_exercises (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  plan_id INT UNSIGNED NOT NULL,
+  exercise_id INT UNSIGNED NOT NULL,
+  position INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_plan_exercise (plan_id, exercise_id),
+  KEY idx_plan_pos (plan_id, position),
+  KEY idx_plan_exercise (exercise_id),
+  CONSTRAINT fk_plan_exercises_plan FOREIGN KEY (plan_id) REFERENCES workout_plans(id) ON DELETE CASCADE,
+  CONSTRAINT fk_plan_exercises_ex FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS user_plans (
@@ -334,18 +412,76 @@ CREATE TABLE IF NOT EXISTS user_plan_exercises (
 INSERT INTO workout_plans (id, name, description, created_at, created_by)
 VALUES
   (1, 'Total Strength Builder', 'Three-day strength emphasis with conditioning support.', '2023-06-10 08:00:00', 2),
-  (2, 'Metcon Express', 'Quick interval sessions for busy professionals.', '2023-06-15 07:30:00', 2);
+  (2, 'Metcon Express', 'Quick interval sessions for busy professionals.', '2023-06-15 07:30:00', 2),
+  (3, 'Mobility Recharge', 'Joint-by-joint mobility reset with mindful breathing.', '2023-06-18 06:45:00', 4),
+  (4, 'Hypertrophy Push/Pull', 'Upper/lower split with progressive overload focus.', '2023-06-20 07:15:00', 2),
+  (5, 'Endurance Engine', 'Aerobic base building with tempo progressions.', '2023-06-22 06:30:00', 2);
+
+INSERT INTO plan_exercises (plan_id, exercise_id, position, created_at)
+VALUES
+  (1, 1, 1, '2023-06-10 08:05:00'),
+  (1, 3, 2, '2023-06-10 08:06:00'),
+  (1, 11, 3, '2023-06-10 08:07:00'),
+  (2, 2, 1, '2023-06-15 07:35:00'),
+  (2, 6, 2, '2023-06-15 07:36:00'),
+  (2, 9, 3, '2023-06-15 07:37:00'),
+  (3, 7, 1, '2023-06-18 06:50:00'),
+  (3, 10, 2, '2023-06-18 06:51:00'),
+  (3, 5, 3, '2023-06-18 06:52:00'),
+  (4, 8, 1, '2023-06-20 07:20:00'),
+  (4, 1, 2, '2023-06-20 07:21:00'),
+  (4, 12, 3, '2023-06-20 07:22:00'),
+  (5, 4, 1, '2023-06-22 06:35:00'),
+  (5, 2, 2, '2023-06-22 06:36:00'),
+  (5, 9, 3, '2023-06-22 06:37:00');
 
 INSERT INTO user_plans (id, user_id, plan_id, assigned_at, assigned_by)
 VALUES
   (1, 3, 1, '2023-06-20 09:00:00', 2),
-  (2, 3, 2, '2023-07-10 08:30:00', 2);
+  (2, 3, 2, '2023-07-10 08:30:00', 2),
+  (3, 5, 1, '2023-07-02 07:30:00', 2),
+  (4, 5, 3, '2023-07-02 07:35:00', 4),
+  (5, 6, 2, '2023-07-05 06:45:00', 2),
+  (6, 7, 4, '2023-07-08 08:15:00', 2),
+  (7, 8, 3, '2023-07-11 12:05:00', 4),
+  (8, 9, 5, '2023-07-15 09:25:00', 2),
+  (9, 10, 4, '2023-07-18 05:55:00', 2),
+  (10, 11, 5, '2023-07-20 06:10:00', 2),
+  (11, 12, 2, '2023-07-24 07:50:00', 4);
 
 INSERT INTO user_plan_exercises (user_plan_id, exercise_id, sets, reps, duration_seconds, weight_lbs, user_notes, set_details_json, position, updated_at, updated_by)
 VALUES
   (1, 1, 3, 8, NULL, 135.0, 'Add 5lbs if all sets move smoothly.', NULL, 1, '2023-06-20 09:05:00', 2),
   (1, 3, 2, 10, NULL, NULL, 'Use as active recovery between squat sets.', NULL, 2, '2023-06-20 09:06:00', 2),
-  (2, 2, NULL, NULL, 1800, NULL, 'Aim for consistent wattage above 65.', NULL, 1, '2023-07-10 08:35:00', 2);
+  (1, 11, 3, 12, NULL, 20.0, 'Pause for anti-rotation focus.', NULL, 3, '2023-06-20 09:07:00', 2),
+  (2, 2, NULL, NULL, 1800, NULL, 'Aim for consistent wattage above 65.', NULL, 1, '2023-07-10 08:35:00', 2),
+  (2, 6, 4, 12, NULL, NULL, 'Explosive but soft landings.', NULL, 2, '2023-07-10 08:36:00', 2),
+  (2, 9, NULL, NULL, 1200, NULL, 'Negative split on descending ladder.', NULL, 3, '2023-07-10 08:37:00', 2),
+  (3, 1, 4, 6, NULL, 155.0, 'Tempo 31X1 across sets.', NULL, 1, '2023-07-02 07:45:00', 2),
+  (3, 12, 5, 40, NULL, 65.0, 'Carry with tall posture.', NULL, 2, '2023-07-02 07:46:00', 2),
+  (4, 7, 2, 10, NULL, NULL, 'Slow breath through rib cage.', NULL, 1, '2023-07-02 07:50:00', 4),
+  (4, 10, NULL, NULL, 1500, NULL, 'Finish with guided breath work.', NULL, 2, '2023-07-02 07:51:00', 4),
+  (5, 2, NULL, NULL, 1500, NULL, 'Keep cadence between 70-75 RPM.', NULL, 1, '2023-07-05 06:55:00', 2),
+  (5, 6, 4, 10, NULL, NULL, 'Step down quietly to absorb landing.', NULL, 2, '2023-07-05 06:56:00', 2),
+  (5, 9, NULL, NULL, 900, NULL, 'Cool down with low damper easy row.', NULL, 3, '2023-07-05 06:57:00', 2),
+  (6, 8, 4, 12, NULL, 55.0, 'Add final drop set with lighter weight.', NULL, 1, '2023-07-08 08:25:00', 2),
+  (6, 1, 4, 8, NULL, 185.0, 'Pause at bottom for 1 second.', NULL, 2, '2023-07-08 08:26:00', 2),
+  (6, 12, 5, 50, NULL, 75.0, 'Slow march pace while keeping rib cage stacked.', NULL, 3, '2023-07-08 08:27:00', 2),
+  (7, 7, 2, 12, NULL, NULL, 'Focus on gentle thoracic opening.', NULL, 1, '2023-07-11 12:10:00', 4),
+  (7, 5, 3, 10, NULL, 25.0, 'Light load for balance practice.', NULL, 2, '2023-07-11 12:11:00', 4),
+  (7, 10, NULL, NULL, 1320, NULL, 'Guided flow soundtrack.', NULL, 3, '2023-07-11 12:12:00', 4),
+  (8, 4, 5, 15, NULL, 35.0, 'Strong hip snap each rep.', NULL, 1, '2023-07-15 09:35:00', 2),
+  (8, 2, NULL, NULL, 1800, NULL, 'Alternate minutes 80/60 RPM.', NULL, 2, '2023-07-15 09:36:00', 2),
+  (8, 9, NULL, NULL, 1200, NULL, 'Final tempo row with nasal breathing.', NULL, 3, '2023-07-15 09:37:00', 2),
+  (9, 8, 4, 10, NULL, 60.0, 'Last set drop weight by 15%.', NULL, 1, '2023-07-18 06:05:00', 2),
+  (9, 11, 4, 12, NULL, 30.0, 'Resist rotation on each press.', NULL, 2, '2023-07-18 06:06:00', 2),
+  (9, 12, 4, 40, NULL, 80.0, 'Farmer carry finisher with sled handles.', NULL, 3, '2023-07-18 06:07:00', 2),
+  (10, 4, 4, 12, NULL, 40.0, 'Breath reset between sets.', NULL, 1, '2023-07-20 06:20:00', 2),
+  (10, 2, NULL, NULL, 2100, NULL, 'Long slow distance ride.', NULL, 2, '2023-07-20 06:21:00', 2),
+  (10, 10, NULL, NULL, 1500, NULL, 'Extended cooldown stretch.', NULL, 3, '2023-07-20 06:22:00', 4),
+  (11, 2, NULL, NULL, 1650, NULL, 'Progressive interval build.', NULL, 1, '2023-07-24 08:00:00', 4),
+  (11, 6, 5, 8, NULL, NULL, 'Add contrast jump step downs.', NULL, 2, '2023-07-24 08:01:00', 4),
+  (11, 9, NULL, NULL, 900, NULL, 'Finish with easy paddle strokes.', NULL, 3, '2023-07-24 08:02:00', 4);
 
 -- ---------------------------------------------------------------------------
 -- session + trusted device tables
@@ -371,7 +507,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 
 CREATE TABLE IF NOT EXISTS trusted_devices (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id INT NOT NULL,
+  user_id INT UNSIGNED NOT NULL,
   selector VARBINARY(24) NOT NULL,
   validator_hash VARBINARY(64) NOT NULL,
   device_name VARCHAR(100) NOT NULL,
@@ -390,25 +526,30 @@ CREATE TABLE IF NOT EXISTS trusted_devices (
 CREATE TABLE IF NOT EXISTS user_recognized_ips (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id INT UNSIGNED NOT NULL,
-  ip_address VARCHAR(45) NOT NULL,
+  ip_bin VARBINARY(16) NOT NULL,
+  ip_address VARCHAR(45) NULL,
   label VARCHAR(120) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  last_seen_at DATETIME NULL,
+  last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_recognized_user_ip (user_id, ip_address),
+  UNIQUE KEY uq_recognized_user_ip (user_id, ip_bin),
   KEY idx_recognized_user (user_id),
   CONSTRAINT fk_recognized_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ip_cache (
-  ip VARCHAR(45) NOT NULL,
-  city VARCHAR(80) NULL,
-  region VARCHAR(80) NULL,
+  ip_bin VARBINARY(16) NOT NULL,
+  city VARCHAR(80) NOT NULL DEFAULT '',
+  region VARCHAR(80) NOT NULL DEFAULT '',
   country VARCHAR(80) NULL,
   latitude DECIMAL(9,6) NULL,
   longitude DECIMAL(9,6) NULL,
   looked_up_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (ip)
+  is_vpn TINYINT(1) NOT NULL DEFAULT 0,
+  vpn_checked_at DATETIME NULL,
+  is_icloud TINYINT(1) NOT NULL DEFAULT 0,
+  icloud_checked_at DATETIME NULL,
+  PRIMARY KEY (ip_bin)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO user_sessions (user_id, session_id, created_at, last_seen_at, revoked, ip, city, region, platform, browser)
@@ -421,15 +562,15 @@ VALUES
    'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15', '203.0.113.10',
    '2023-09-01 07:30:00', '2023-09-10 09:15:00', '2023-10-01 07:30:00');
 
-INSERT INTO user_recognized_ips (user_id, ip_address, label, created_at, last_seen_at)
+INSERT INTO user_recognized_ips (user_id, ip_bin, ip_address, label, created_at, last_seen_at)
 VALUES
-  (1, '203.0.113.10', 'Admin HQ Office', '2023-08-01 09:00:00', '2023-09-10 09:15:00'),
-  (3, '198.51.100.25', 'Client Home', '2023-08-12 07:45:00', '2023-09-03 18:20:00');
+  (1, INET6_ATON('203.0.113.10'), '203.0.113.10', 'Admin HQ Office', '2023-08-01 09:00:00', '2023-09-10 09:15:00'),
+  (3, INET6_ATON('198.51.100.25'), '198.51.100.25', 'Client Home', '2023-08-12 07:45:00', '2023-09-03 18:20:00');
 
-INSERT INTO ip_cache (ip, city, region, country, latitude, longitude, looked_up_at)
+INSERT INTO ip_cache (ip_bin, city, region, country, latitude, longitude, looked_up_at, is_vpn, vpn_checked_at, is_icloud, icloud_checked_at)
 VALUES
-  ('203.0.113.10', 'Seattle', 'Washington', 'United States', 47.6062, -122.3321, '2023-09-01 07:31:00'),
-  ('198.51.100.25', 'Denver', 'Colorado', 'United States', 39.7392, -104.9903, '2023-09-02 12:05:00');
+  (INET6_ATON('203.0.113.10'), 'Seattle', 'Washington', 'United States', 47.6062, -122.3321, '2023-09-01 07:31:00', 0, '2023-09-01 07:31:00', 0, NULL),
+  (INET6_ATON('198.51.100.25'), 'Denver', 'Colorado', 'United States', 39.7392, -104.9903, '2023-09-02 12:05:00', 1, '2023-09-02 12:05:00', 0, NULL);
 
 -- ---------------------------------------------------------------------------
 -- system logs (auditing)

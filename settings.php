@@ -48,6 +48,7 @@ $demoPrimaryConn = null;
 $demoModeEnabled = false;
 $demoModeControlsAvailable = false;
 $demoModeStatusError = null;
+$demoSandboxCfg = $GLOBALS['demoSandboxCfg'] ?? null;
 
 if (function_exists('ppf_demo_primary_conn')) {
     try {
@@ -70,7 +71,7 @@ if ($demoPrimaryConn instanceof mysqli) {
         if (function_exists('ppf_demo_get_enabled')) {
             $demoModeEnabled = (bool)ppf_demo_get_enabled($demoPrimaryConn);
         } elseif (function_exists('ppf_demo_is_enabled')) {
-            $demoModeEnabled = (bool)ppf_demo_is_enabled($demoPrimaryConn);
+            $demoModeEnabled = (bool)ppf_demo_is_enabled();
         } else {
             $demoModeEnabled = ss_get($demoPrimaryConn, 'demo_mode_enabled', '0') === '1';
         }
@@ -269,6 +270,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $statusType = 'success';
             $messageParts = [];
+            $demoAjaxRequested = false;
+            $ajaxHeader = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? ''));
+            if ($ajaxHeader === 'xmlhttprequest') {
+                $demoAjaxRequested = true;
+            } elseif (isset($_POST['demo_ajax']) && $_POST['demo_ajax'] === '1') {
+                $demoAjaxRequested = true;
+            } elseif (isset($_SERVER['HTTP_ACCEPT']) && stripos((string)$_SERVER['HTTP_ACCEPT'], 'application/json') !== false) {
+                $demoAjaxRequested = true;
+            }
 
             $demoCurrentPassword = (string)($_POST['demo_current_password'] ?? '');
             $demoTotpCode = preg_replace('/\D/', '', (string)($_POST['demo_totp_code'] ?? ''));
@@ -306,8 +316,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } elseif ($demoPrimaryConn instanceof mysqli) {
                             try {
                                 if (function_exists('ppf_demo_set_enabled')) {
-                                    $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled);
+                                    $cfgOverride = is_array($demoSandboxCfg) ? $demoSandboxCfg : null;
+                                    $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled, $cfgOverride);
                                     $demoToggleSuccess = ($result !== false);
+                                    if (!$demoToggleSuccess && $demoToggleErrorMsg === '' && function_exists('ppf_demo_last_error')) {
+                                        $err = (string)(ppf_demo_last_error() ?? '');
+                                        if ($err !== '') {
+                                            $demoToggleErrorMsg = $err;
+                                        }
+                                    }
                                 } else {
                                     ensure_system_settings_table($demoPrimaryConn);
                                     $demoToggleSuccess = ss_set($demoPrimaryConn, 'demo_mode_enabled', $desiredDemoEnabled ? '1' : '0');
@@ -323,6 +340,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if ($demoToggleSuccess) {
+                    $demoModeEnabled = $desiredDemoEnabled;
                     $messageParts[] = $desiredDemoEnabled ? 'Demo Mode enabled.' : 'Demo Mode disabled.';
                     if (function_exists('ppf_log')) {
                         $action = $desiredDemoEnabled ? 'demo_mode_enabled' : 'demo_mode_disabled';
@@ -486,10 +504,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ? 'System settings saved.'
                 : 'System settings saved, but some actions failed.';
             array_unshift($messageParts, $baseMessage);
-            $message = trim(implode(' ', array_filter($messageParts)));
+            $messages = array_values(array_filter($messageParts));
+            $message = trim(implode(' ', $messages));
             if ($message === '') {
                 $message = $baseMessage;
+                $messages = [$baseMessage];
             }
+
+            if ($demoAjaxRequested) {
+                $enabledState = $demoModeEnabled;
+                if (function_exists('ppf_demo_get_enabled')) {
+                    try {
+                        $enabledState = (bool)ppf_demo_get_enabled($demoPrimaryConn instanceof mysqli ? $demoPrimaryConn : $conn);
+                    } catch (Throwable $e) {
+                        // ignore and fall back to computed state
+                    }
+                }
+
+                $payload = [
+                    'success'  => ($statusType === 'success'),
+                    'status'   => $statusType,
+                    'message'  => $message,
+                    'messages' => $messages,
+                    'enabled'  => (bool)$enabledState,
+                    'redirect' => 'settings.php#system',
+                ];
+
+                if ($statusType !== 'success') {
+                    $payload['errors'] = $messages;
+                }
+
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode($payload);
+                exit;
+            }
+
             redirect_with_flash($statusType, $message, 'system');
         }
     }
@@ -2946,6 +2995,20 @@ if ($demoModeControlsAvailable) {
         return hiddenEnabled.value === '1';
       }
 
+      function redirectToSettingsAnchor() {
+        const targetUrl = 'settings.php#system';
+        const currentPath = window.location.pathname.replace(/\/+/g, '/');
+        const normalizedPath = currentPath.endsWith('/') ? currentPath.slice(0, -1) : currentPath;
+        if (normalizedPath !== '/settings.php') {
+          window.location.assign(targetUrl);
+          return;
+        }
+        if (window.location.hash !== '#system') {
+          window.location.hash = 'system';
+        }
+        window.location.reload();
+      }
+
       async function submitDemoAction(extraFields = {}, options = {}) {
         const { submitButton = null, cancelButton = null, loadingText = 'Submitting...' } = options;
         let restoreLoading = () => {};
@@ -2966,16 +3029,47 @@ if ($demoModeControlsAvailable) {
           }
         });
         formData.set('demo_mode_enabled_present', '1');
+        formData.set('demo_ajax', '1');
 
         try {
           const response = await fetch(actionUrl, {
             method: 'POST',
             body: formData,
-            credentials: 'same-origin'
+            credentials: 'same-origin',
+            headers: {
+              'Accept': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest'
+            }
           });
           if (!response.ok) {
             throw new Error('Request failed. Please try again.');
           }
+          const contentType = response.headers.get('Content-Type') || '';
+          let payload = null;
+          if (contentType.toLowerCase().includes('application/json')) {
+            try {
+              payload = await response.json();
+            } catch (parseErr) {
+              payload = null;
+            }
+          }
+          if (!payload || typeof payload !== 'object') {
+            throw new Error('Unexpected response from the server.');
+          }
+          if (!payload.success) {
+            const errMessage = (typeof payload.message === 'string' && payload.message.trim() !== '')
+              ? payload.message.trim()
+              : 'Request could not be completed. Please try again.';
+            throw new Error(errMessage);
+          }
+          if (Object.prototype.hasOwnProperty.call(payload, 'enabled')) {
+            hiddenEnabled.value = payload.enabled ? '1' : '0';
+          }
+          restoreLoading(true);
+          if (cancelButton) {
+            cancelButton.disabled = false;
+          }
+          return payload;
         } catch (err) {
           restoreLoading(false);
           if (cancelButton) {
@@ -3081,9 +3175,13 @@ if ($demoModeControlsAvailable) {
                 submitButton: confirmBtn,
                 cancelButton: cancelBtn,
                 loadingText: isEnable ? 'Enabling...' : 'Disabling...'
-              }).then(() => {
+              }).then((payload) => {
                 controls.close();
-                window.location.href = 'settings.php#system';
+                if (payload && typeof payload.redirect === 'string' && payload.redirect !== '') {
+                  window.location.assign(payload.redirect);
+                } else {
+                  redirectToSettingsAnchor();
+                }
               }).catch((err) => {
                 hiddenEnabled.value = previousValue;
                 errorEl.textContent = (err && err.message) ? err.message : 'Unable to complete the request.';
@@ -3163,9 +3261,13 @@ if ($demoModeControlsAvailable) {
                 submitButton: confirmBtn,
                 cancelButton: cancelBtn,
                 loadingText: 'Resetting...'
-              }).then(() => {
+              }).then((payload) => {
                 controls.close();
-                window.location.href = 'settings.php#system';
+                if (payload && typeof payload.redirect === 'string' && payload.redirect !== '') {
+                  window.location.assign(payload.redirect);
+                } else {
+                  redirectToSettingsAnchor();
+                }
               }).catch((err) => {
                 hiddenEnabled.value = currentValue;
                 errorEl.textContent = (err && err.message) ? err.message : 'Unable to complete the request.';
