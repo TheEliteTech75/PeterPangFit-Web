@@ -8,6 +8,22 @@ require_once __DIR__ . '/send_email.php';
 require_once __DIR__ . '/geo.php'; // provides ppf_geo_city_region, ppf_detect_platform, ppf_detect_browser
 
 // --- begin: session table auto-migration guard ---
+if (!function_exists('ppf_table_exists')) {
+  function ppf_table_exists(mysqli $conn, string $table): bool {
+    $sql = "SELECT COUNT(*) AS c
+            FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?";
+    if (!$st = $conn->prepare($sql)) return false;
+    $st->bind_param("s", $table);
+    $st->execute();
+    $res = $st->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $st->close();
+    return (int)($row['c'] ?? 0) > 0;
+  }
+}
+
 if (!function_exists('ppf_column_exists')) {
   function ppf_column_exists(mysqli $conn, string $table, string $col): bool {
     $sql = "SELECT COUNT(*) AS c
@@ -27,6 +43,28 @@ if (!function_exists('ppf_column_exists')) {
 
 if (!function_exists('ppf_sessions_ensure_columns')) {
   function ppf_sessions_ensure_columns(mysqli $conn): void {
+    if (!ppf_table_exists($conn, 'user_sessions')) {
+      $sql = "CREATE TABLE IF NOT EXISTS user_sessions (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                user_id INT UNSIGNED NOT NULL,
+                session_id VARCHAR(128) NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at DATETIME NULL,
+                revoked TINYINT(1) NOT NULL DEFAULT 0,
+                ip VARCHAR(45) NULL,
+                city VARCHAR(80) NULL,
+                region VARCHAR(80) NULL,
+                user_agent TEXT NULL,
+                platform VARCHAR(40) NULL,
+                browser VARCHAR(40) NULL,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_user_session (user_id, session_id),
+                KEY idx_sessions_user (user_id),
+                CONSTRAINT fk_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+      @$conn->query($sql);
+    }
+
     $adds = [];
     if (!ppf_column_exists($conn, 'user_sessions', 'city'))       $adds[] = "ADD COLUMN city VARCHAR(80) NULL";
     if (!ppf_column_exists($conn, 'user_sessions', 'region'))     $adds[] = "ADD COLUMN region VARCHAR(80) NULL";
