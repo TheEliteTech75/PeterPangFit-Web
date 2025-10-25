@@ -1764,9 +1764,6 @@ if ($demoModeControlsAvailable) {
           <input type="hidden" name="action" value="system_settings">
           <input type="hidden" name="demo_mode_enabled_present" value="1">
           <input type="hidden" name="demo_mode_enabled" id="demoModeEnabledInput" value="<?php echo $demoModeEnabled ? '1' : '0'; ?>">
-          <input type="hidden" name="demo_totp_code" id="demoTotpCodeInput" value="">
-          <input type="hidden" name="demo_current_password" id="demoCurrentPasswordInput" value="">
-          <input type="hidden" name="demo_reset" id="demoResetInput" value="0">
 
           <div>
             <h3>Account Lockout (minutes)</h3>
@@ -2944,26 +2941,51 @@ if ($demoModeControlsAvailable) {
       const disableBtn = demoForm.querySelector('[data-demo-action="disable"]');
       const resetBtn = demoForm.querySelector('[data-demo-action="reset"]');
       const hiddenEnabled = document.getElementById('demoModeEnabledInput');
-      const hiddenTotp = document.getElementById('demoTotpCodeInput');
-      const hiddenPassword = document.getElementById('demoCurrentPasswordInput');
-      const hiddenReset = document.getElementById('demoResetInput');
 
-      if (!hiddenEnabled || !hiddenTotp || !hiddenPassword || !hiddenReset) return;
+      if (!hiddenEnabled) return;
 
-      const currentState = hiddenEnabled.value === '1';
+      function findHiddenField(name) {
+        return demoForm.querySelector(`input[name="${name}"]`);
+      }
+
+      function ensureHiddenField(name) {
+        let input = findHiddenField(name);
+        if (!input) {
+          input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = '';
+          demoForm.appendChild(input);
+        }
+        return input;
+      }
+
+      function setHiddenValue(name, value) {
+        const input = ensureHiddenField(name);
+        input.value = value;
+        return input;
+      }
 
       function sanitizeCode(value) {
         return (value || '').replace(/\D+/g, '').slice(0, 6);
       }
 
       function clearHiddenCreds() {
-        hiddenTotp.value = '';
-        hiddenPassword.value = '';
-        hiddenReset.value = '0';
+        const totpField = findHiddenField('demo_totp_code');
+        if (totpField) totpField.value = '';
+        const passwordField = findHiddenField('demo_current_password');
+        if (passwordField) passwordField.value = '';
+        const resetField = findHiddenField('demo_reset');
+        if (resetField) resetField.value = '0';
+      }
+
+      function getCurrentState() {
+        return hiddenEnabled.value === '1';
       }
 
       function openToggleModal(targetEnabled) {
         const isEnable = targetEnabled === true;
+        clearHiddenCreds();
         openModal({
           title: isEnable ? 'Enable Demo Mode' : 'Disable Demo Mode',
           render: (body, controls) => {
@@ -3043,9 +3065,9 @@ if ($demoModeControlsAvailable) {
                 passInput.setCustomValidity('');
                 return;
               }
-              hiddenTotp.value = sanitizedCode;
-              hiddenPassword.value = passInput.value;
-              hiddenReset.value = '0';
+              setHiddenValue('demo_totp_code', sanitizedCode);
+              setHiddenValue('demo_current_password', passInput.value);
+              setHiddenValue('demo_reset', '0');
               hiddenEnabled.value = isEnable ? '1' : '0';
               controls.close();
               demoForm.submit();
@@ -3055,6 +3077,7 @@ if ($demoModeControlsAvailable) {
       }
 
       function openResetModal() {
+        clearHiddenCreds();
         openModal({
           title: 'Reset Demo Data',
           render: (body, controls) => {
@@ -3109,10 +3132,10 @@ if ($demoModeControlsAvailable) {
                 passInput.setCustomValidity('');
                 return;
               }
-              hiddenTotp.value = '';
-              hiddenPassword.value = passInput.value;
-              hiddenReset.value = '1';
-              hiddenEnabled.value = currentState ? '1' : '0';
+              setHiddenValue('demo_totp_code', '');
+              setHiddenValue('demo_current_password', passInput.value);
+              setHiddenValue('demo_reset', '1');
+              hiddenEnabled.value = getCurrentState() ? '1' : '0';
               controls.close();
               demoForm.submit();
             });
