@@ -472,7 +472,7 @@ $pageTitle = $isSelfView
 
 $latestPlan = $plans[0] ?? null;
 $latestPlanAssignedStr = $latestPlan && !empty($latestPlan['assigned_at'])
-  ? date('M j, Y', strtotime($latestPlan['assigned_at']))
+  ? ppf_format_user_datetime($latestPlan['assigned_at'], ['type' => 'date', 'format' => 'M j, Y'])
   : null;
 
 $heroHeadlineName = $clientFirst !== '' ? $clientFirst : ($clientName !== '' ? $clientName : null);
@@ -482,7 +482,11 @@ $heroLine = $latestPlanAssignedStr
   ? 'Your workouts, videos, and coaching cues are queued up below. Open a plan to see exactly what to focus on today.'
   : 'As soon as your coach publishes a plan it’ll land here with videos, descriptions, and notes ready to go.';
 
-$firstDate  = $earliestAssignedTs ? date('M j, Y', $earliestAssignedTs) : '—';
+$currentUserNow = ppf_time_user_now();
+$heroCurrentDate = ppf_format_user_datetime($currentUserNow, ['type' => 'date_long']);
+$heroCurrentTime = ppf_format_user_datetime($currentUserNow, ['type' => 'time']);
+
+$firstDate  = $earliestAssignedTs ? ppf_format_user_datetime($earliestAssignedTs, ['type' => 'date', 'format' => 'M j, Y']) : '—';
 $latestPlanName = $latestPlan['plan_name'] ?? '';
 $latestPlanId = isset($latestPlan['user_plan_id']) ? (int)$latestPlan['user_plan_id'] : null;
 
@@ -697,6 +701,16 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       gap: 12px;
     }
 
+    .hero-highlight--date {
+      align-content: start;
+      justify-items: start;
+      background:
+        linear-gradient(150deg, rgba(0, 191, 255, 0.28), rgba(0, 0, 0, 0.55));
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 18px 38px rgba(0, 0, 0, 0.35);
+    }
+
     .hero-highlight--action {
       position: relative;
       cursor: default;
@@ -738,11 +752,25 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       font-size: 15px;
     }
 
+    .hero-highlight__date {
+      font-size: clamp(26px, 5vw, 34px);
+      font-weight: 600;
+      color: #ffffff;
+      line-height: 1.2;
+    }
+
+    .hero-highlight__time {
+      font-size: clamp(20px, 4vw, 26px);
+      font-weight: 500;
+      color: rgba(243, 247, 255, 0.85);
+    }
+
     .hero__stats {
       display: grid;
       gap: 16px;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       align-items: stretch;
+      grid-column: 1 / -1;
     }
 
     .hero-stat {
@@ -1757,6 +1785,21 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       }
     }
 
+    @media (min-width: 1101px) {
+      .hero__status {
+        grid-template-columns: minmax(340px, 1.35fr) repeat(2, minmax(260px, 1fr));
+        grid-auto-flow: dense;
+      }
+
+      .hero-highlight--date {
+        grid-column: span 2;
+      }
+
+      .hero__stats {
+        grid-column: 1 / -1;
+      }
+    }
+
     @media (max-width: 760px) {
       main {
         padding: clamp(20px, 6vw, 36px) clamp(14px, 6vw, 26px) 80px;
@@ -2067,6 +2110,11 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       <p class="hero__subtitle"><?php echo h($heroLine); ?></p>
     </div>
     <div class="hero__status">
+      <div class="hero-highlight hero-highlight--date">
+        <div class="hero-highlight__label">Today</div>
+        <div class="hero-highlight__date" data-live-clock="date-long"><?php echo h($heroCurrentDate); ?></div>
+        <div class="hero-highlight__time" data-live-clock="time"><?php echo h($heroCurrentTime); ?></div>
+      </div>
       <div class="hero-highlight hero-highlight--action<?php echo $latestPlanId ? ' hero-highlight--ready' : ''; ?>"
            <?php if ($latestPlanId): ?>
              role="button"
@@ -2317,7 +2365,9 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         <div class="plan-nav__rail">
         <?php foreach ($plans as $planNav):
           $navId = (int)$planNav['user_plan_id'];
-          $navAssigned = !empty($planNav['assigned_at']) ? date('M j, Y', strtotime($planNav['assigned_at'])) : 'No date set';
+          $navAssigned = !empty($planNav['assigned_at'])
+            ? ppf_format_user_datetime($planNav['assigned_at'], ['type' => 'date', 'format' => 'M j, Y', 'fallback' => 'No date set'])
+            : 'No date set';
         ?>
           <button type="button" class="plan-nav__button" data-plan-nav data-target="plan-<?php echo $navId; ?>">
             <?php echo h($planNav['plan_name']); ?>
@@ -2342,7 +2392,9 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
           }
         }
         $durStr = total_duration_str($items);
-        $assignedStr = $plan['assigned_at'] ? date('M j, Y g:ia', strtotime($plan['assigned_at'])) : '—';
+        $assignedStr = $plan['assigned_at']
+          ? ppf_format_user_datetime($plan['assigned_at'], ['fallback' => '—'])
+          : '—';
       ?>
       <section class="plan-card" id="plan-<?php echo $pid; ?>" data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($plan['plan_name']); ?>" data-plan-assigned="<?php echo h($assignedStr); ?>" data-open="false">
         <div class="plan-card__header">
@@ -3204,6 +3256,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
   });
 })();
 </script>
+
+<?php echo ppf_time_render_clock_bootstrap(); ?>
 
 </body>
 </html>

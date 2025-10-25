@@ -9,6 +9,9 @@ require_once __DIR__ . '/send_email.php'; // for email login codes
 require_once __DIR__ . '/ppf_trusted.php';
 require_once __DIR__ . '/ppf_recognized_ip.php';
 require_once __DIR__ . '/ppf_theme.php';
+require_once __DIR__ . '/helpers.php';
+
+ppf_time_ensure_columns($conn);
 
 $pending = $_SESSION['pending_user'] ?? null;
 
@@ -119,6 +122,12 @@ function complete_login_and_redirect(mysqli $conn, array $pending, bool $trust=f
   $_SESSION['last_name']     = $pending['last'] ?? '';
   $_SESSION['photo_url']     = $pending['photo'] ?? '';
   $_SESSION['theme']         = ppf_theme_resolve((string)($pending['theme'] ?? ''));
+  $timezonePref = ppf_time_normalize_timezone($pending['timezone'] ?? ($_SESSION['user_timezone'] ?? null)) ?? ppf_time_default_timezone();
+  $timeFormat24 = (int)($pending['time_format_24h'] ?? ($_SESSION['user_time_24h'] ?? 0)) === 1;
+  $_SESSION['user_timezone'] = $timezonePref;
+  $_SESSION['timezone']      = $timezonePref;
+  $_SESSION['user_time_24h'] = $timeFormat24 ? 1 : 0;
+  $_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
   $_SESSION['LAST_ACTIVITY'] = time();
   unset($_SESSION['pending_user'], $_SESSION['pending_2fa_method']);
   session_regenerate_id(true);
@@ -156,11 +165,13 @@ function complete_login_and_redirect(mysqli $conn, array $pending, bool $trust=f
   header('Location: dashboard.php'); exit;
 }
 
-function column_exists(mysqli $conn, string $t, string $c): bool {
-  $sql="SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?";
-  if (!$st = $conn->prepare($sql)) return false;
-  $st->bind_param("ss", $t, $c); $st->execute(); $r = $st->get_result(); $row = $r ? $r->fetch_assoc() : null; $st->close();
-  return (int)($row['c'] ?? 0) > 0;
+if (!function_exists('column_exists')) {
+  function column_exists(mysqli $conn, string $t, string $c): bool {
+    $sql="SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?";
+    if (!$st = $conn->prepare($sql)) return false;
+    $st->bind_param("ss", $t, $c); $st->execute(); $r = $st->get_result(); $row = $r ? $r->fetch_assoc() : null; $st->close();
+    return (int)($row['c'] ?? 0) > 0;
+  }
 }
 ?>
 <!doctype html>
