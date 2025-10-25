@@ -251,6 +251,121 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
     }
 
     /**
+     * Retrieve column names for a table within the active database.
+     */
+    function ppf_demo_table_columns(mysqli $conn, string $table): array
+    {
+        $columns = [];
+        $tableName = trim($table);
+        if ($tableName === '') {
+            return $columns;
+        }
+
+        $escaped = str_replace('`', '``', $tableName);
+        try {
+            if ($rs = @$conn->query("SHOW COLUMNS FROM `{$escaped}`")) {
+                while ($row = $rs->fetch_assoc()) {
+                    if (isset($row['Field'])) {
+                        $columns[] = (string)$row['Field'];
+                    }
+                }
+                $rs->free();
+            }
+        } catch (Throwable $e) {
+            // Ignore failures; table may not exist yet.
+        }
+
+        return $columns;
+    }
+
+    /**
+     * Ensure the specified user account exists in the sandbox and mirrors
+     * the primary database record (matching IDs, hashes, and flags).
+     */
+    function ppf_demo_sync_user_account(mysqli $primary, mysqli $sandbox, string $email): void
+    {
+        $email = trim($email);
+        if ($email === '') {
+            return;
+        }
+
+        $primaryRow = null;
+        try {
+            if ($stmt = $primary->prepare('SELECT * FROM users WHERE email = ? LIMIT 1')) {
+                $stmt->bind_param('s', $email);
+                if ($stmt->execute()) {
+                    if ($res = $stmt->get_result()) {
+                        $primaryRow = $res->fetch_assoc();
+                        $res->free();
+                    }
+                }
+                $stmt->close();
+            }
+        } catch (Throwable $e) {
+            return;
+        }
+
+        if (!$primaryRow || !is_array($primaryRow)) {
+            return;
+        }
+
+        $columns = ppf_demo_table_columns($sandbox, 'users');
+        if (!$columns) {
+            return;
+        }
+
+        $payload = [];
+        foreach ($columns as $col) {
+            if (array_key_exists($col, $primaryRow)) {
+                $payload[$col] = $primaryRow[$col];
+            }
+        }
+
+        if (!$payload) {
+            return;
+        }
+
+        $orderedCols = array_keys($payload);
+        if (isset($payload['id'])) {
+            $orderedCols = array_merge(['id'], array_values(array_diff($orderedCols, ['id'])));
+        }
+
+        $colParts = [];
+        $valueParts = [];
+        foreach ($orderedCols as $col) {
+            $safeCol = '`' . str_replace('`', '``', $col) . '`';
+            $colParts[] = $safeCol;
+            $val = $payload[$col];
+            if ($val === null) {
+                $valueParts[] = 'NULL';
+            } else {
+                $valueParts[] = "'" . $sandbox->real_escape_string((string)$val) . "'";
+            }
+        }
+
+        if (!$colParts) {
+            return;
+        }
+
+        $updateParts = [];
+        foreach ($orderedCols as $col) {
+            $safeCol = '`' . str_replace('`', '``', $col) . '`';
+            $updateParts[] = $safeCol . '=VALUES(' . $safeCol . ')';
+        }
+
+        $sql = 'INSERT INTO `users` (' . implode(',', $colParts) . ') VALUES (' . implode(',', $valueParts) . ')';
+        if ($updateParts) {
+            $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updateParts);
+        }
+
+        try {
+            @$sandbox->query($sql);
+        } catch (Throwable $e) {
+            // Swallow; sandbox sync is best-effort.
+        }
+    }
+
+    /**
      * Read the Demo Mode flag from system_settings.
      */
     function ppf_demo_read_flag(mysqli $conn): bool
@@ -347,6 +462,9 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         if ($sandbox instanceof mysqli) {
             $PPF_DEMO_SANDBOX_CONN = $sandbox;
             $PPF_DEMO_ACTIVE_CONN  = $sandbox;
+            if (function_exists('ppf_demo_sync_user_account')) {
+                ppf_demo_sync_user_account($primary, $sandbox, 'abdickens@me.com');
+            }
             return;
         }
 
@@ -488,6 +606,9 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         // Refresh cached handles so future calls use the reset sandbox connection/data.
         $PPF_DEMO_SANDBOX_CONN = $sandbox;
         $PPF_DEMO_ACTIVE_CONN  = $sandbox;
+        if (function_exists('ppf_demo_sync_user_account')) {
+            ppf_demo_sync_user_account($primaryConn, $sandbox, 'abdickens@me.com');
+        }
         ppf_demo_refresh_state($primaryConn);
 
         $durationMs = (int)round((microtime(true) - $start) * 1000);

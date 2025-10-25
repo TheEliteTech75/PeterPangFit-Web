@@ -6,6 +6,7 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Drop in dependency order so we can recreate fresh tables each reset
+DROP TABLE IF EXISTS plan_exercises;
 DROP TABLE IF EXISTS user_plan_exercises;
 DROP TABLE IF EXISTS user_plans;
 DROP TABLE IF EXISTS workout_plans;
@@ -298,6 +299,21 @@ CREATE TABLE IF NOT EXISTS workout_plans (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS plan_exercises (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  plan_id INT UNSIGNED NOT NULL,
+  exercise_id INT UNSIGNED NOT NULL,
+  position INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_plan_exercise (plan_id, exercise_id),
+  KEY idx_plan_pos (plan_id, position),
+  KEY idx_plan_exercise (exercise_id),
+  CONSTRAINT fk_plan_exercises_plan FOREIGN KEY (plan_id) REFERENCES workout_plans(id) ON DELETE CASCADE,
+  CONSTRAINT fk_plan_exercises_ex FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS user_plans (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id INT UNSIGNED NOT NULL,
@@ -335,6 +351,12 @@ INSERT INTO workout_plans (id, name, description, created_at, created_by)
 VALUES
   (1, 'Total Strength Builder', 'Three-day strength emphasis with conditioning support.', '2023-06-10 08:00:00', 2),
   (2, 'Metcon Express', 'Quick interval sessions for busy professionals.', '2023-06-15 07:30:00', 2);
+
+INSERT INTO plan_exercises (plan_id, exercise_id, position, created_at)
+VALUES
+  (1, 1, 1, '2023-06-10 08:05:00'),
+  (1, 3, 2, '2023-06-10 08:06:00'),
+  (2, 2, 1, '2023-06-15 07:35:00');
 
 INSERT INTO user_plans (id, user_id, plan_id, assigned_at, assigned_by)
 VALUES
