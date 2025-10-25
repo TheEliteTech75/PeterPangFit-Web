@@ -7,8 +7,10 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/ppf_passkeys.php';
 require_once __DIR__ . '/ppf_theme.php';
+require_once __DIR__ . '/helpers.php';
 
 ppf_theme_ensure_column($conn);
+ppf_time_ensure_columns($conn);
 
 function b64url_decode_strict(string $s): string {
     $s = strtr($s, '-_', '+/');
@@ -173,7 +175,8 @@ try {
     // DB: lookup passkey by raw cred_id (BLOB)
     if (!$st = $conn->prepare("
         SELECT p.id, p.user_id, p.public_key, p.counter,
-               u.email, u.role, u.first_name, u.last_name, u.photo_url, u.theme
+               u.email, u.role, u.first_name, u.last_name, u.photo_url, u.theme,
+               u.timezone, u.time_format_24h
         FROM passkeys p
         JOIN users u ON u.id = p.user_id
         WHERE p.cred_id = ?
@@ -246,6 +249,12 @@ try {
     $_SESSION['last_name']     = $row['last_name'] ?? '';
     $_SESSION['photo_url']     = $row['photo_url'] ?? '';
     $_SESSION['theme']         = ppf_theme_resolve((string)($row['theme'] ?? ''));
+    $timezonePref = ppf_time_normalize_timezone($row['timezone'] ?? '') ?? ppf_time_default_timezone();
+    $timeFormat24 = (int)($row['time_format_24h'] ?? 0) === 1;
+    $_SESSION['user_timezone'] = $timezonePref;
+    $_SESSION['timezone']      = $timezonePref;
+    $_SESSION['user_time_24h'] = $timeFormat24 ? 1 : 0;
+    $_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
     $_SESSION['LAST_ACTIVITY'] = time();
 
     session_regenerate_id(true);

@@ -43,6 +43,7 @@ ppf_ensure_twofa_columns($conn);
 ppf_td_ensure_table($conn);
 ppf_seed_lockout_defaults($conn);
 ppf_theme_ensure_column($conn);
+ppf_time_ensure_columns($conn);
 
 $demoPrimaryConn = null;
 $demoModeEnabled = false;
@@ -241,6 +242,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ppf_log($conn, $uid, $email ?: null, $role ?: null, 'theme_updated', 'user', (string)$uid, $themeKey);
             }
             redirect_with_flash('success', 'Theme updated. Enjoy your new look!', 'appearance');
+        }
+
+        case 'save_formatting': {
+            $timezoneInput = (string)($_POST['timezone'] ?? '');
+            $normalizedTz = ppf_time_normalize_timezone($timezoneInput);
+            if ($normalizedTz === null) {
+                redirect_with_flash('error', 'Select a valid time zone.', 'formatting');
+            }
+
+            $modeInput = strtolower(trim((string)($_POST['time_mode'] ?? '')));
+            if (!in_array($modeInput, ['12', '24'], true)) {
+                redirect_with_flash('error', 'Choose a valid time format.', 'formatting');
+            }
+            $use24h = $modeInput === '24';
+
+            if ($st = $conn->prepare("UPDATE users SET timezone=?, time_format_24h=? WHERE id=?")) {
+                $timeFormat = $use24h ? 1 : 0;
+                $st->bind_param('sii', $normalizedTz, $timeFormat, $uid);
+                $st->execute();
+                $st->close();
+            } else {
+                redirect_with_flash('error', 'We couldn\'t save your formatting preferences. Please try again.', 'formatting');
+            }
+
+            $_SESSION['user_timezone'] = $normalizedTz;
+            $_SESSION['timezone']      = $normalizedTz;
+            $_SESSION['user_time_24h'] = $use24h ? 1 : 0;
+            $_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
+
+            if (function_exists('ppf_log')) {
+                $details = json_encode([
+                    'timezone' => $normalizedTz,
+                    'time_format_24h' => $use24h ? '1' : '0',
+                ]);
+                ppf_log($conn, $uid, $email ?: null, $role ?: null, 'time_preferences_updated', 'user', (string)$uid, $details);
+            }
+
+            redirect_with_flash('success', 'Formatting preferences saved.', 'formatting');
         }
 
         case 'system_settings': {
@@ -573,7 +612,7 @@ if (!$flash && $msgKey !== '') {
 
 // ---------- load user + security data ----------
 $userRow = null;
-if ($st = $conn->prepare("SELECT email, first_name, last_name, role, theme, twofa_email_enabled, twofa_app_enabled, twofa_secret FROM users WHERE id=? LIMIT 1")) {
+if ($st = $conn->prepare("SELECT email, first_name, last_name, role, theme, timezone, time_format_24h, twofa_email_enabled, twofa_app_enabled, twofa_secret FROM users WHERE id=? LIMIT 1")) {
     $st->bind_param('i', $uid);
     $st->execute();
     $res = $st->get_result();
@@ -585,6 +624,15 @@ $twofaEmailEnabled = (int)($userRow['twofa_email_enabled'] ?? 0) === 1;
 $twofaAppEnabled   = (int)($userRow['twofa_app_enabled'] ?? 0) === 1;
 $twofaSecret       = strtoupper(preg_replace('/\s+/', '', (string)($userRow['twofa_secret'] ?? '')));
 
+$formattingTimezone = ppf_time_normalize_timezone($userRow['timezone'] ?? ($_SESSION['user_timezone'] ?? null)) ?? ppf_time_default_timezone();
+$formattingUse24h   = (int)($userRow['time_format_24h'] ?? ($_SESSION['user_time_24h'] ?? 0)) === 1;
+$_SESSION['user_timezone'] = $formattingTimezone;
+$_SESSION['timezone']      = $formattingTimezone;
+$_SESSION['user_time_24h'] = $formattingUse24h ? 1 : 0;
+$_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
+$formattingPreviewDate = ppf_format_user_datetime(ppf_time_user_now(), ['type' => 'date_long']);
+$formattingPreviewTime = ppf_format_user_datetime(ppf_time_user_now(), ['type' => 'time']);
+
 $themeCatalog     = ppf_theme_catalog();
 $currentThemeKey  = ppf_theme_sanitize_key((string)($userRow['theme'] ?? ($_SESSION['theme'] ?? '')));
 if (!ppf_theme_exists($currentThemeKey)) {
@@ -592,6 +640,52 @@ if (!ppf_theme_exists($currentThemeKey)) {
 }
 $_SESSION['theme'] = $currentThemeKey;
 $themeGroups      = ppf_theme_grouped_catalog();
+
+$timezoneOptions = [];
+try {
+    $utcNow = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    foreach (DateTimeZone::listIdentifiers(DateTimeZone::ALL) as $tzId) {
+        try {
+            $tzObj = new DateTimeZone($tzId);
+        } catch (Throwable $e) {
+            continue;
+        }
+        $offset = $tzObj->getOffset($utcNow);
+        $hours = intdiv($offset, 3600);
+        $minutes = abs(intdiv($offset % 3600, 60));
+        $sign = $offset >= 0 ? '+' : '-';
+        $label = sprintf('(UTC%s%02d:%02d) %s', $sign, abs($hours), $minutes, str_replace('_', ' ', $tzId));
+        $timezoneOptions[] = ['id' => $tzId, 'label' => $label, 'offset' => $offset];
+    }
+    usort($timezoneOptions, function (array $a, array $b): int {
+        if ($a['offset'] === $b['offset']) {
+            return strcmp($a['id'], $b['id']);
+        }
+        return $a['offset'] <=> $b['offset'];
+    });
+    $hasCurrentTz = false;
+    foreach ($timezoneOptions as $opt) {
+        if ($opt['id'] === $formattingTimezone) {
+            $hasCurrentTz = true;
+            break;
+        }
+    }
+    if (!$hasCurrentTz && $formattingTimezone) {
+        $timezoneOptions[] = [
+            'id' => $formattingTimezone,
+            'label' => sprintf('(UTC) %s', str_replace('_', ' ', $formattingTimezone)),
+            'offset' => 0,
+        ];
+    }
+    usort($timezoneOptions, function (array $a, array $b): int {
+        if ($a['offset'] === $b['offset']) {
+            return strcmp($a['id'], $b['id']);
+        }
+        return $a['offset'] <=> $b['offset'];
+    });
+} catch (Throwable $e) {
+    $timezoneOptions = [];
+}
 
 // Passkeys
 $passkeys = [];
@@ -673,12 +767,12 @@ function rel_time(?int $ts): string {
     if ($diff < 3600) return round($diff / 60) . 'm ago';
     if ($diff < 86400) return round($diff / 3600) . 'h ago';
     if ($diff < 604800) return round($diff / 86400) . 'd ago';
-    return date('M j, Y', $ts);
+    return ppf_format_user_datetime($ts, ['type' => 'date']);
 }
 
 function fmt_datetime(?int $ts): string {
     if (!$ts) return '—';
-    return date('M j, Y g:i a', $ts);
+    return ppf_format_user_datetime($ts, ['fallback' => '—']);
 }
 
 function fmt_badge_class(string $status): string {
@@ -1316,6 +1410,53 @@ if ($demoModeControlsAvailable) {
       gap: 24px;
     }
 
+    .formatting-option {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.45);
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: border-color .2s ease, background .2s ease, transform .2s ease;
+    }
+    .formatting-option input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent, #38bdf8);
+    }
+    .formatting-option span {
+      flex: 1;
+      font-size: .92rem;
+      color: var(--text);
+    }
+    .formatting-option:hover {
+      border-color: color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
+      background: rgba(15, 23, 42, 0.6);
+      transform: translateY(-1px);
+    }
+
+    .formatting-preview {
+      margin-top: 12px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(12, 19, 35, 0.55);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: .95rem;
+      color: var(--muted-soft);
+    }
+    .formatting-preview strong {
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: .04em;
+      color: var(--text);
+    }
+
     .demo-mode-content {
       border: 1px solid var(--border);
       border-radius: 16px;
@@ -1738,6 +1879,49 @@ if ($demoModeControlsAvailable) {
     </div>
 
     <div class="tab-panel" data-panel="appearance" id="settings-appearance" role="tabpanel" aria-labelledby="tab-appearance">
+      <section class="card" id="formatting">
+        <div class="section-title">
+          <div>
+            <h2>Formatting</h2>
+            <p class="muted">Control your personal time zone and clock style across Peter Pang Fit.</p>
+          </div>
+        </div>
+
+        <form method="post" class="two-col" style="margin-top:18px;">
+          <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+          <input type="hidden" name="action" value="save_formatting">
+
+          <div>
+            <label class="small-text" for="user_timezone">Time zone</label>
+            <select class="input" id="user_timezone" name="timezone">
+              <?php foreach ($timezoneOptions as $tzOpt): ?>
+                <option value="<?php echo h($tzOpt['id']); ?>"<?php if ($tzOpt['id'] === $formattingTimezone) echo ' selected'; ?>><?php echo h($tzOpt['label']); ?></option>
+              <?php endforeach; ?>
+            </select>
+            <p class="small-text muted" style="margin-top:8px;">Daylight saving time shifts are applied automatically.</p>
+          </div>
+
+          <div>
+            <h3>Clock style</h3>
+            <label class="formatting-option">
+              <input type="radio" name="time_mode" value="12"<?php if (!$formattingUse24h) echo ' checked'; ?>>
+              <span>12-hour (e.g., <?php echo h(ppf_format_user_datetime(ppf_time_user_now(), ['type' => 'time', 'format' => 'g:i A'])); ?>)</span>
+            </label>
+            <label class="formatting-option">
+              <input type="radio" name="time_mode" value="24"<?php if ($formattingUse24h) echo ' checked'; ?>>
+              <span>24-hour (e.g., <?php echo h(ppf_format_user_datetime(ppf_time_user_now(), ['type' => 'time', 'format' => 'H:i'])); ?>)</span>
+            </label>
+            <div class="formatting-preview">
+              <strong><?php echo h($formattingPreviewDate); ?></strong>
+              <div><?php echo h($formattingPreviewTime); ?> · <?php echo h(str_replace('_', ' ', $formattingTimezone)); ?></div>
+            </div>
+            <div style="margin-top:16px;">
+              <button class="btn" type="submit">Save formatting</button>
+            </div>
+          </div>
+        </form>
+      </section>
+
       <section class="card" id="appearance">
         <div class="section-title">
           <div>
