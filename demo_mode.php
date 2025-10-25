@@ -366,11 +366,22 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         // Ensure idempotency when replaying.
         $createSql = preg_replace('/^CREATE TABLE/i', 'CREATE TABLE IF NOT EXISTS', $createSql, 1);
 
+        $result = false;
+
         try {
-            return (bool)@$sandbox->query($createSql);
+            @$sandbox->query('SET FOREIGN_KEY_CHECKS=0');
+            $result = (bool)@$sandbox->query($createSql);
         } catch (Throwable $e) {
-            return false;
+            $result = false;
+        } finally {
+            try {
+                @$sandbox->query('SET FOREIGN_KEY_CHECKS=1');
+            } catch (Throwable $e) {
+                // Ignore re-enable failures; sandbox connection may have dropped.
+            }
         }
+
+        return $result;
     }
 
     /**
