@@ -35,8 +35,9 @@ $role  = (string)($_SESSION['role'] ?? 'client');
 
 if ($uid <= 0) { header('Location: login.php'); exit; }
 
-$roleLower = ppf_role_key($role);
-$isAdmin   = ppf_is_admin_role($role);
+$roleLower     = ppf_role_key($role);
+$isAdmin       = ppf_is_admin_role($role);
+$isSuperAdmin  = ppf_is_super_admin($role);
 
 ppf_ensure_twofa_columns($conn);
 ppf_td_ensure_table($conn);
@@ -1792,6 +1793,7 @@ if ($demoModeControlsAvailable) {
         </form>
       </section>
 
+      <?php if ($isSuperAdmin): ?>
       <section class="card" id="demo-mode" data-demo-mode-card="1">
         <div class="section-title">
           <div>
@@ -1819,6 +1821,7 @@ if ($demoModeControlsAvailable) {
           </div>
         </div>
       </section>
+      <?php endif; ?>
     </div>
 <?php endif; ?>
   </main>

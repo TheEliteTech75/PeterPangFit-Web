@@ -57,6 +57,21 @@ $demoAlerts = [];
 if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['demo_alerts']) && ppf_is_admin_role($role)) {
   $demoAlerts = array_values(array_unique(array_map('strval', $_SESSION['demo_alerts'])));
 }
+$showDemoBanner = false;
+if (ppf_is_admin_role($role)) {
+  try {
+    if (function_exists('ppf_demo_is_enabled')) {
+      $showDemoBanner = (bool)ppf_demo_is_enabled();
+    } elseif (function_exists('ppf_demo_get_enabled')) {
+      $primaryConn = $GLOBALS['demoPrimaryConn'] ?? ($GLOBALS['PPF_DEMO_PRIMARY_CONN'] ?? null);
+      if ($primaryConn instanceof mysqli) {
+        $showDemoBanner = (bool)ppf_demo_get_enabled($primaryConn);
+      }
+    }
+  } catch (Throwable $e) {
+    $showDemoBanner = false;
+  }
+}
 ?>
 <?php echo $themeStyleTag, "\n", $themeInitScript, "\n"; ?>
 <style>
@@ -84,6 +99,30 @@ if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['demo_alerts']) 
   border-bottom:1px solid color-mix(in srgb, var(--danger-line, rgba(248,113,113,0.6)) 65%, var(--card-border) 35%);
   box-shadow:0 12px 28px rgba(15,23,42,0.45);
   color:color-mix(in srgb, #fecaca 70%, var(--text) 30%);
+}
+.ppf-demo-banner {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  padding:18px 24px;
+  background:linear-gradient(135deg, rgba(185,28,28,0.92), rgba(239,68,68,0.92));
+  border-bottom:1px solid rgba(127,29,29,0.65);
+  box-shadow:0 16px 32px rgba(15,23,42,0.55);
+  color:#fee2e2;
+  font-weight:700;
+  letter-spacing:0.04em;
+  text-transform:uppercase;
+  position:relative;
+  z-index:2950;
+}
+.ppf-demo-banner svg {
+  width:22px;
+  height:22px;
+  flex-shrink:0;
+}
+.ppf-demo-banner span {
+  font-size:15px;
 }
 .ppf-demo-alerts strong {
   font-weight:700;
@@ -283,6 +322,17 @@ body.ppf-themed .dash-settings-toggle {
     </nav>
   </div>
 </header>
+
+<?php if ($showDemoBanner): ?>
+<div class="ppf-demo-banner" role="alert" aria-live="assertive">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="12" y1="8" x2="12" y2="12"></line>
+    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+  </svg>
+  <span>Demo Mode is Enabled</span>
+</div>
+<?php endif; ?>
 
 <script>
 (function(){
