@@ -316,7 +316,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
       if ($action === 'bulk_action') {
-        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+        if (!is_trainer_admin($USER_ROLE ?? null)) {
           throw new Exception('You do not have permission to perform bulk actions.');
         }
 
@@ -498,7 +498,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       // Append one or more exercises to an existing plan (AJAX, no navigation)
       if ($action === 'add_exercises_to_plan') {
-        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+        if (!is_trainer_admin($USER_ROLE ?? null)) {
           throw new Exception('You do not have permission to edit plans.');
         }
 
@@ -617,7 +617,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       // Admin unlock (lockout feature)
       if ($action === 'unlock_user') {
-        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+        if (!is_trainer_admin($USER_ROLE ?? null)) {
           throw new Exception('You do not have permission to unlock accounts.');
         }
         if ($uid <= 0) throw new Exception('Invalid client.');
@@ -634,7 +634,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $up_id = null;
           $existingRow = null;
           try {
-            if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+            if (!is_trainer_admin($USER_ROLE ?? null)) {
               throw new Exception('You do not have permission to edit exercise settings.');
             }
 
@@ -1006,7 +1006,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       // Assign a plan to a user (AJAX, no navigation)
       if ($action === 'assign_plan_to_user') {
-        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+        if (!is_trainer_admin($USER_ROLE ?? null)) {
           throw new Exception('You do not have permission to assign plans.');
         }
 
@@ -1072,7 +1072,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       // Unassign plan from user
       if ($action === 'unassign_plan') {
-        if (!in_array(($USER_ROLE ?? ''), ['admin','trainer'], true)) {
+        if (!is_trainer_admin($USER_ROLE ?? null)) {
           throw new Exception('You do not have permission to unassign plans.');
         }
         $plan_id = (int)($_POST['plan_id'] ?? 0);
@@ -1618,7 +1618,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 
             <td>
               <div class="actions">
-                <?php if (in_array(($USER_ROLE ?? ''), ['admin','trainer'], true) && $isLocked): ?>
+                <?php if (is_trainer_admin($USER_ROLE ?? null) && $isLocked): ?>
                   <form method="post" action="clients.php" style="display:inline" onsubmit="return confirm('Unlock this account? This will clear failed attempts and remove the lockout.');">
                     <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
                     <input type="hidden" name="action" value="unlock_user">

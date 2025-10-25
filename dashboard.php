@@ -441,7 +441,8 @@ try {
   }
 } catch (Throwable $e) { /* non-fatal */ }
 
-$can_admin = in_array(strtolower($role), ['admin','trainer'], true);
+$role_key  = ppf_role_key($role);
+$can_admin = ($role_key === 'trainer') || ppf_is_admin_role($role);
 $is_admin  = ppf_is_admin_role($role);
 
 /* ---------- Topline metrics (admin/trainer) ---------- */

@@ -23,6 +23,7 @@ $first = $USER_FIRST_NAME ?? ($_SESSION['first_name'] ?? '');
 $last  = $USER_LAST_NAME  ?? ($_SESSION['last_name']  ?? '');
 $name  = trim(($first . ' ' . $last)) ?: ($USER_EMAIL ?? $_SESSION['email'] ?? 'Account');
 $role  = $USER_ROLE ?? ($_SESSION['role'] ?? '');
+$roleKey = ppf_role_key($role);
 $photoRaw = $USER_PHOTO_URL ?? ($_SESSION['photo_url'] ?? '');
 
 // Add a cache-busting query any time photo_ver changes (set in profile.php after upload)
@@ -243,15 +244,15 @@ body.ppf-themed .dash-settings-toggle {
 <?php endif; ?>
 
 <header class="ppf-topbar">
-  <?php if (in_array(($USER_ROLE ?? 'guest'), ['admin','trainer', 'client'], true)): ?>
-  <button id="ppfHamburger" type="button" aria-label="Open navigation" title="Open navigation"
-          style="background:transparent;border:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;color:#e6e8ee">
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <line x1="3" y1="6" x2="21" y2="6"></line>
-      <line x1="3" y1="12" x2="21" y2="12"></line>
-      <line x1="3" y1="18" x2="21" y2="18"></line>
-    </svg>
-  </button>
+  <?php if (ppf_is_admin_role($roleKey) || in_array($roleKey, ['trainer','client'], true)): ?>
+    <button id="ppfHamburger" type="button" aria-label="Open navigation" title="Open navigation"
+            style="background:transparent;border:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;color:#e6e8ee">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+    </button>
   <?php endif; ?>
   <a class="ppf-brand" href="/index.php">Peter Pang Fit</a>
   <div class="ppf-user">
