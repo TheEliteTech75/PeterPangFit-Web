@@ -1785,6 +1785,21 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       }
     }
 
+    @media (min-width: 1101px) {
+      .hero__status {
+        grid-template-columns: minmax(340px, 1.35fr) repeat(2, minmax(260px, 1fr));
+        grid-auto-flow: dense;
+      }
+
+      .hero-highlight--date {
+        grid-column: span 2;
+      }
+
+      .hero__stats {
+        grid-column: 1 / -1;
+      }
+    }
+
     @media (max-width: 760px) {
       main {
         padding: clamp(20px, 6vw, 36px) clamp(14px, 6vw, 26px) 80px;
