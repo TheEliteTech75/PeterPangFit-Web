@@ -902,6 +902,24 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
     }
 
     /**
+     * Convenience wrapper for callers that need to read the flag from a
+     * specific connection while still falling back to the cached state.
+     */
+    function ppf_demo_get_enabled(?mysqli $conn = null): bool
+    {
+        if ($conn instanceof mysqli) {
+            return ppf_demo_read_flag($conn);
+        }
+
+        $active = ppf_demo_active_conn();
+        if ($active instanceof mysqli) {
+            return ppf_demo_read_flag($active);
+        }
+
+        return ppf_demo_is_enabled();
+    }
+
+    /**
      * Toggle the Demo Mode flag and refresh runtime state.
      * Optionally accepts a sandbox configuration override so the helper can
      * reconnect after the flag changes (used by settings.php).

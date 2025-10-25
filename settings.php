@@ -71,7 +71,7 @@ if ($demoPrimaryConn instanceof mysqli) {
         if (function_exists('ppf_demo_get_enabled')) {
             $demoModeEnabled = (bool)ppf_demo_get_enabled($demoPrimaryConn);
         } elseif (function_exists('ppf_demo_is_enabled')) {
-            $demoModeEnabled = (bool)ppf_demo_is_enabled($demoPrimaryConn);
+            $demoModeEnabled = (bool)ppf_demo_is_enabled();
         } else {
             $demoModeEnabled = ss_get($demoPrimaryConn, 'demo_mode_enabled', '0') === '1';
         }
