@@ -28,7 +28,8 @@ function fmt_dt($s) {
     }
 }
 // Gate: trainers & admins only
-if (!in_array($USER_ROLE, ['trainer','admin'], true)) {
+$roleKey = ppf_role_key($USER_ROLE ?? 'guest');
+if ($roleKey !== 'trainer' && !ppf_is_admin_role($USER_ROLE ?? null)) {
     require_once __DIR__ . '/access_denied.php';
     exit;
 }

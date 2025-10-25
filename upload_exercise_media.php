@@ -48,8 +48,8 @@ function ppf_log_detail(mysqli $conn, string $action, ?int $exercise_id, array $
 
 // Gate (trainer/admin)
 function is_trainer_admin($role){
-  $r = strtolower(trim((string)($role ?? '')));
-  return in_array($r, ['trainer','admin'], true);
+  $r = ppf_role_key($role);
+  return $r === 'trainer' || ppf_is_admin_role($role);
 }
 if (!is_trainer_admin($USER_ROLE ?? ($_SESSION['role'] ?? null))) {
   http_response_code(403);

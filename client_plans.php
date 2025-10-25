@@ -20,7 +20,8 @@ if (!function_exists('h')) {
 }
 
 function is_trainer_admin($role): bool {
-  return in_array(strtolower((string)($role ?? 'guest')), ['trainer', 'admin'], true);
+  $key = ppf_role_key($role);
+  return $key === 'trainer' || ppf_is_admin_role($role);
 }
 
 $VIEWER_ID   = (int)($_SESSION['user_id'] ?? $USER_ID ?? 0);

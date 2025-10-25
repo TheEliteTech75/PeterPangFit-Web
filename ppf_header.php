@@ -2,6 +2,7 @@
 // ppf_header.php — shared top-right profile menu, styled same as dashboard.php
 // Sticky header version: stays visible at top on scroll.
 
+require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/ppf_theme.php';
 
 if (!function_exists('h')) {
@@ -31,8 +32,9 @@ if ($photo) { $photo .= ($photoVer ? ('?v='.$photoVer) : ''); }
 
 // Role default avatars (place files at /assets/avatars/default_{role}.png)
 function role_default_avatar(?string $role): ?string {
-  $r = strtolower((string)$role);
+  $r = ppf_role_key($role);
   $map = [
+    'super_admin' => '/assets/avatars/default_admin.png',
     'admin'   => '/assets/avatars/default_admin.png',
     'trainer' => '/assets/avatars/default_trainer.png',
     'client'  => '/assets/avatars/default_client.png',
@@ -51,7 +53,7 @@ $_SESSION['theme'] = $themeKey;
 $themeStyleTag = ppf_theme_render_style_block();
 $themeInitScript = '<script>(function(){var theme=' . json_encode($themeKey, JSON_UNESCAPED_SLASHES) . ';function apply(){var d=document.documentElement;d.dataset.theme=theme;var b=document.body;if(b&&!b.classList.contains("ppf-themed")){b.classList.add("ppf-themed");}}if(document.readyState!=="loading"){apply();}else{document.addEventListener("DOMContentLoaded",apply);}})();</script>';
 $demoAlerts = [];
-if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['demo_alerts']) && strtolower((string)$role) === 'admin') {
+if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['demo_alerts']) && ppf_is_admin_role($role)) {
   $demoAlerts = array_values(array_unique(array_map('strval', $_SESSION['demo_alerts'])));
 }
 ?>
@@ -267,7 +269,7 @@ body.ppf-themed .dash-settings-toggle {
       </div>
       <div class="ppf-names">
         <span class="ppf-name"><?php echo h($name); ?></span>
-        <span class="ppf-role"><?php echo h(ucfirst((string)$role)); ?></span>
+        <span class="ppf-role"><?php echo h(ppf_role_display($role)); ?></span>
       </div>
       <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" width="16" height="16" style="opacity:.7">
         <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/>

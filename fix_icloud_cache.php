@@ -11,12 +11,13 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/geo.php';
 require_once __DIR__ . '/logs.php';
 
 $uid  = (int)($_SESSION['user_id'] ?? 0);
 $role = (string)($_SESSION['role'] ?? '');
-if ($uid <= 0 || strtolower($role) !== 'admin') {
+if ($uid <= 0 || !ppf_is_admin_role($role)) {
   require_once __DIR__ . '/access_denied.php';
   exit;
 }
@@ -106,7 +107,7 @@ foreach ($ips as $ip => $_ts) {
   } catch (\Throwable $e) {
     $errors++;
     if (function_exists('ppf_log')) {
-      ppf_log($conn, $uid, $_SESSION['email'] ?? null, 'admin', 'fix_icloud_cache_error', 'system', (string)$uid, 'ip='.$ip.';ex='.$e->getMessage());
+      ppf_log($conn, $uid, $_SESSION['email'] ?? null, ppf_role_key($role), 'fix_icloud_cache_error', 'system', (string)$uid, 'ip='.$ip.';ex='.$e->getMessage());
     }
   }
 }
