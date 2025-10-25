@@ -1584,6 +1584,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
           $has_password = ($pw !== null && $pw !== '');
           $editing = isset($_GET['edit']) && (int)$_GET['edit'] === $id;
           $is_real_client = ($c['role'] === 'client');
+          $targetIsSuper = ppf_is_super_admin($c['role'] ?? '');
           $ageYears = calc_age_years($c['birthdate'] ?? null);
           $lockedUntil = $c['locked_until'] ?? null;
           $isLocked = !empty($lockedUntil) && (strtotime($lockedUntil) > time());
@@ -1747,7 +1748,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
                   </form>
                 <?php endif; ?>
 
-                <?php if ($is_real_client): ?>
+                <?php if ($is_real_client && !$targetIsSuper): ?>
                   <?php if ($whichTab === 'active'): ?>
                     <form method="post" style="display:inline" onsubmit="return confirm('Deactivate this client? They will be moved to Inactive Clients and will be unable to log in.');">
                       <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">

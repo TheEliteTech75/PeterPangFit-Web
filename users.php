@@ -661,13 +661,15 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
                 Change Password
               </button>
 
-              <!-- Delete -->
-              <form method="post" style="display:inline" onsubmit="return confirm('Are you sure you want to delete <?php echo h($full ?: ($u['email'] ?? 'this user')); ?>?');">
-                <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
-                <input type="hidden" name="action" value="delete_user">
-                <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
-                <button class="btn small warn" type="submit">Delete</button>
-              </form>
+              <?php if (!$targetIsSuper): ?>
+                <!-- Delete -->
+                <form method="post" style="display:inline" onsubmit="return confirm('Are you sure you want to delete <?php echo h($full ?: ($u['email'] ?? 'this user')); ?>?');">
+                  <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                  <input type="hidden" name="action" value="delete_user">
+                  <input type="hidden" name="user_id" value="<?php echo $uid; ?>">
+                  <button class="btn small warn" type="submit">Delete</button>
+                </form>
+              <?php endif; ?>
             </div>
           </td>
         </tr>
