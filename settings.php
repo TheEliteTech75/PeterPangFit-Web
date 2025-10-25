@@ -48,6 +48,7 @@ $demoPrimaryConn = null;
 $demoModeEnabled = false;
 $demoModeControlsAvailable = false;
 $demoModeStatusError = null;
+$demoSandboxCfg = $GLOBALS['demoSandboxCfg'] ?? null;
 
 if (function_exists('ppf_demo_primary_conn')) {
     try {
@@ -306,8 +307,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } elseif ($demoPrimaryConn instanceof mysqli) {
                             try {
                                 if (function_exists('ppf_demo_set_enabled')) {
-                                    $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled);
+                                    $cfgOverride = is_array($demoSandboxCfg) ? $demoSandboxCfg : null;
+                                    $result = ppf_demo_set_enabled($demoPrimaryConn, $desiredDemoEnabled, $cfgOverride);
                                     $demoToggleSuccess = ($result !== false);
+                                    if (!$demoToggleSuccess && $demoToggleErrorMsg === '' && function_exists('ppf_demo_last_error')) {
+                                        $err = (string)(ppf_demo_last_error() ?? '');
+                                        if ($err !== '') {
+                                            $demoToggleErrorMsg = $err;
+                                        }
+                                    }
                                 } else {
                                     ensure_system_settings_table($demoPrimaryConn);
                                     $demoToggleSuccess = ss_set($demoPrimaryConn, 'demo_mode_enabled', $desiredDemoEnabled ? '1' : '0');
