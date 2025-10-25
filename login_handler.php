@@ -11,6 +11,7 @@ require_once __DIR__ . '/ppf_trusted.php';
 require_once __DIR__ . '/ppf_recognized_ip.php';
 require_once __DIR__ . '/ppf_lockout.php';
 require_once __DIR__ . '/ppf_theme.php';
+require_once __DIR__ . '/helpers.php';
 
 // ----------------------------------------------
 const RATE_LIMIT_WINDOW_SEC = 15 * 60;
@@ -85,10 +86,12 @@ function log_honeypot(mysqli $conn, ?string $email, array $extra = []): void {
   ppf_log($conn, null, $email ?: null, null, 'login_failed_honeypot', 'auth', null, $details);
 }
 
-function column_exists(mysqli $conn, string $t, string $c): bool {
-  $sql="SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?";
-  if(!$st=$conn->prepare($sql)) return false; $st->bind_param("ss",$t,$c); $st->execute(); $r=$st->get_result(); $row=$r?$r->fetch_assoc():null; $st->close();
-  return (int)($row['c']??0)>0;
+if (!function_exists('column_exists')) {
+  function column_exists(mysqli $conn, string $t, string $c): bool {
+    $sql="SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?";
+    if(!$st=$conn->prepare($sql)) return false; $st->bind_param("ss",$t,$c); $st->execute(); $r=$st->get_result(); $row=$r?$r->fetch_assoc():null; $st->close();
+    return (int)($row['c']??0)>0;
+  }
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') back_to_login_invalid_creds();
@@ -98,6 +101,7 @@ $email = strtolower(trim($_POST['email'] ?? ''));
 $password = (string)($_POST['password'] ?? '');
 
 ppf_theme_ensure_column($conn);
+ppf_time_ensure_columns($conn);
 
 // Honeypot
 foreach (HONEYPOT_FIELDS as $hp) {
@@ -128,6 +132,7 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $password ===
 
 // Fetch user (include locked_until so we can check lock state)
 $st = $conn->prepare("SELECT id, email, password_hash, role, first_name, last_name, photo_url, theme,
+                             timezone, time_format_24h,
                              twofa_email_enabled, twofa_app_enabled, is_active, locked_until
                       FROM users WHERE LOWER(email)=LOWER(?) LIMIT 1");
 if (!$st) { rate_limit_record_failure(); if (rate_limit_fail_count()>=2) force_captcha_on(); back_to_login_invalid_creds(); }
@@ -137,6 +142,9 @@ if (!$user) {
   ppf_log($conn, null, $email, null, 'login_failed_email', 'user', null, 'Email not found; ua=' . ua_snippet());
   rate_limit_record_failure(); if (rate_limit_fail_count()>=2) force_captcha_on(); back_to_login_invalid_creds();
 }
+
+$timezonePref = ppf_time_normalize_timezone($user['timezone'] ?? '') ?? ppf_time_default_timezone();
+$timeFormat24 = (int)($user['time_format_24h'] ?? 0) === 1;
 
 // If already locked, bounce with banner (no new email here — email is sent at lock moment)
 if ($user && ppf_is_account_locked($user)) {
@@ -233,6 +241,10 @@ if (($twofaEmailOn || $twofaAppOn) && ppf_td_validate_for_user($conn, $uid)) {
   $_SESSION['last_name']     = $user['last_name'] ?? '';
   $_SESSION['photo_url']     = $user['photo_url'] ?? '';
   $_SESSION['theme']         = $resolvedTheme;
+  $_SESSION['user_timezone'] = $timezonePref;
+  $_SESSION['timezone']      = $timezonePref;
+  $_SESSION['user_time_24h'] = $timeFormat24 ? 1 : 0;
+  $_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
   $_SESSION['LAST_ACTIVITY'] = time();
   session_regenerate_id(true);
 
@@ -285,6 +297,10 @@ if (!$twofaEmailOn && !$twofaAppOn) {
   $_SESSION['last_name']     = $user['last_name'] ?? '';
   $_SESSION['photo_url']     = $user['photo_url'] ?? '';
   $_SESSION['theme']         = $resolvedTheme;
+  $_SESSION['user_timezone'] = $timezonePref;
+  $_SESSION['timezone']      = $timezonePref;
+  $_SESSION['user_time_24h'] = $timeFormat24 ? 1 : 0;
+  $_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
   $_SESSION['LAST_ACTIVITY'] = time();
   session_regenerate_id(true);
 
@@ -330,6 +346,8 @@ $_SESSION['pending_user'] = [
   'last'  => $user['last_name'] ?? '',
   'photo' => $user['photo_url'] ?? '',
   'theme' => ppf_theme_resolve((string)($user['theme'] ?? '')),
+  'timezone' => $timezonePref,
+  'time_format_24h' => $timeFormat24 ? 1 : 0,
 ];
 
 // If both enabled, ask which method; else auto-select
