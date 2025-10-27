@@ -351,6 +351,17 @@ if ($stmt = $conn->prepare($sql)) {
     .span-2{grid-column:span 2}
     .span-3{grid-column:span 3}
     .span-4{grid-column:span 4}
+    .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:none;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer}
+    .sort-btn:hover .sort-indicator{opacity:0.8}
+    .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+    .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}
+    .sort-btn[data-state="asc"] .sort-indicator::before{content:'▲'}
+    .sort-btn[data-state="desc"] .sort-indicator::before{content:'▼'}
+    .sort-btn[data-state="off"] .sort-indicator::before{content:''}
+    .sort-btn[data-state="asc"] .sort-indicator,
+    .sort-btn[data-state="desc"] .sort-indicator{opacity:0.8}
+    .col-resize-handle{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize}
+    .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:rgba(148,163,184,0.2)}
   </style>
 </head>
 <body>
@@ -406,25 +417,57 @@ if ($stmt = $conn->prepare($sql)) {
   <div class="card">
     <h3>Results <span class="muted">(<?php echo (int)$total; ?> total)</span></h3>
     <div style="overflow:auto">
-      <table>
+      <table id="logsTable">
+        <colgroup>
+          <col style="width:100px">
+          <col style="min-width:200px">
+          <col style="width:120px">
+          <col style="min-width:220px">
+          <col style="min-width:160px">
+          <col style="min-width:200px">
+          <col style="min-width:200px">
+          <col style="min-width:200px">
+          <col style="min-width:260px">
+        </colgroup>
         <thead>
           <tr>
-            <th>ID</th>
-            <th>When</th>
-            <th>User ID</th>
-            <th>Email</th>
-            <th>Role</th>
-            <th>IP</th>
-            <th>Action</th>
-            <th>Target Type</th>
-            <th>Details</th>
+            <th data-sort-key="id"><button type="button" class="sort-btn" data-sort-key="id" data-state="off">ID<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="when"><button type="button" class="sort-btn" data-sort-key="when" data-state="off">When<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="user"><button type="button" class="sort-btn" data-sort-key="user" data-state="off">User ID<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="email"><button type="button" class="sort-btn" data-sort-key="email" data-state="off">Email<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="role"><button type="button" class="sort-btn" data-sort-key="role" data-state="off">Role<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="ip"><button type="button" class="sort-btn" data-sort-key="ip" data-state="off">IP<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="action"><button type="button" class="sort-btn" data-sort-key="action" data-state="off">Action<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="target"><button type="button" class="sort-btn" data-sort-key="target" data-state="off">Target Type<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="details"><button type="button" class="sort-btn" data-sort-key="details" data-state="off">Details<span class="sort-indicator" aria-hidden="true"></span></button></th>
           </tr>
         </thead>
         <tbody>
           <?php if (!$rows): ?>
             <tr><td colspan="9" class="muted">No logs found.</td></tr>
           <?php else: foreach ($rows as $r): ?>
-            <tr>
+            <?php
+              $sortWhen = !empty($r['created_at']) ? strtotime($r['created_at']) : '';
+              $sortUser = isset($r['user_id']) ? (int)$r['user_id'] : 0;
+              $sortEmail = strtolower($r['actor_email'] ?? '');
+              $sortRole = strtolower($r['actor_role'] ?? '');
+              $sortIp = strtolower($r['ip_address'] ?? '');
+              $sortAction = strtolower($r['action'] ?? '');
+              $sortTarget = strtolower($r['target_type'] ?? '');
+              $sortDetails = strtolower(strip_tags($r['details'] ?? ''));
+            ?>
+            <tr
+              class="log-row"
+              data-sort-id="<?php echo (int)$r['id']; ?>"
+              data-sort-when="<?php echo h($sortWhen); ?>"
+              data-sort-user="<?php echo h($sortUser); ?>"
+              data-sort-email="<?php echo h($sortEmail); ?>"
+              data-sort-role="<?php echo h($sortRole); ?>"
+              data-sort-ip="<?php echo h($sortIp); ?>"
+              data-sort-action="<?php echo h($sortAction); ?>"
+              data-sort-target="<?php echo h($sortTarget); ?>"
+              data-sort-details="<?php echo h($sortDetails); ?>"
+            >
               <td><?php echo (int)$r['id']; ?></td>
               <td><?php echo h(fmt_when($r['created_at'])); ?></td>
               <td><?php echo h($r['user_id'] ?? ''); ?></td>
@@ -451,5 +494,17 @@ if ($stmt = $conn->prepare($sql)) {
     </div>
   </div>
 </main>
+<script src="table_enhancements.js"></script>
+<script>
+ppfEnhanceTable('#logsTable', {
+  rowSelector: 'tbody tr.log-row',
+  sortTypes: {
+    id: 'number',
+    when: 'number',
+    user: 'number'
+  },
+  noMatchesText: 'No matching logs.'
+});
+</script>
 </body>
 </html>

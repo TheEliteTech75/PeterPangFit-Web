@@ -390,6 +390,20 @@ require_once __DIR__ . '/ppf_nav.php';
   .check{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}
   .check:hover{background:#101725}
   .check input{accent-color:#38bdf8}
+  .table-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .table-tools__search{flex:1 1 260px;max-width:420px}
+  .table-tools__search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text)}
+  .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:none;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer}
+  .sort-btn:hover .sort-indicator{opacity:0.8}
+  .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}
+  .sort-btn[data-state="asc"] .sort-indicator::before{content:'▲'}
+  .sort-btn[data-state="desc"] .sort-indicator::before{content:'▼'}
+  .sort-btn[data-state="off"] .sort-indicator::before{content:''}
+  .sort-btn[data-state="asc"] .sort-indicator,
+  .sort-btn[data-state="desc"] .sort-indicator{opacity:0.8}
+  .col-resize-handle{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize}
+  .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:rgba(148,163,184,0.2)}
 </style>
 </head>
 <body>
@@ -412,17 +426,34 @@ require_once __DIR__ . '/ppf_nav.php';
 <main class="wrap">
   <div class="card">
     <h2 style="margin:6px 0 12px 0">Categories</h2>
-    <table>
+    <div class="table-tools">
+      <div class="table-tools__search">
+        <input type="search" class="input search-input" id="categorySearch" placeholder="Search categories..." autocomplete="off">
+      </div>
+    </div>
+    <div class="table-wrapper">
+    <table id="categoriesTable">
+      <colgroup>
+        <col style="width:110px">
+        <col style="min-width:220px">
+        <col style="min-width:260px">
+        <col style="min-width:200px">
+        <col style="min-width:200px">
+        <col style="min-width:200px">
+        <col style="min-width:200px">
+        <col style="width:160px">
+        <col style="min-width:160px">
+      </colgroup>
       <thead>
         <tr>
-          <th>Cat ID</th>
-          <th>Name</th>
-          <th>Description</th>
-          <th>Created</th>
-          <th>Created By</th>
-          <th>Edited</th>
-          <th>Edited By</th>
-          <th># Exercises Assigned</th>
+          <th data-sort-key="id"><button type="button" class="sort-btn" data-sort-key="id" data-state="off">Cat ID<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="name"><button type="button" class="sort-btn" data-sort-key="name" data-state="off">Name<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="description"><button type="button" class="sort-btn" data-sort-key="description" data-state="off">Description<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="created"><button type="button" class="sort-btn" data-sort-key="created" data-state="off">Created<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="created-by"><button type="button" class="sort-btn" data-sort-key="created-by" data-state="off">Created By<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="edited"><button type="button" class="sort-btn" data-sort-key="edited" data-state="off">Edited<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="edited-by"><button type="button" class="sort-btn" data-sort-key="edited-by" data-state="off">Edited By<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="exercises"><button type="button" class="sort-btn" data-sort-key="exercises" data-state="off"># Exercises Assigned<span class="sort-indicator" aria-hidden="true"></span></button></th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -435,8 +466,27 @@ require_once __DIR__ . '/ppf_nav.php';
         $editor  = !empty($c['updated_by']) && isset($userMap[(int)$c['updated_by']]) ? $userMap[(int)$c['updated_by']] : '—';
         $preIds  = $exIdsByCat[$cid] ?? [];
         $dataExIds = implode(',', array_map('intval', $preIds));
+        $sortName = strtolower($c['name'] ?? '');
+        $sortDescription = strtolower(strip_tags($c['description'] ?? ''));
+        $sortCreated = !empty($c['created_at']) ? strtotime($c['created_at']) : '';
+        $sortEdited = !empty($c['updated_at']) ? strtotime($c['updated_at']) : '';
+        $sortCreator = strtolower($creator ?? '');
+        $sortEditor = strtolower($editor ?? '');
+        $sortExercises = (int)($c['ex_count'] ?? 0);
       ?>
-        <tr class="cat-row" data-cat="<?php echo $cid; ?>" id="cat-<?php echo $cid; ?>">
+        <tr
+          class="cat-row"
+          data-cat="<?php echo $cid; ?>"
+          id="cat-<?php echo $cid; ?>"
+          data-sort-id="<?php echo $cid; ?>"
+          data-sort-name="<?php echo h($sortName); ?>"
+          data-sort-description="<?php echo h($sortDescription); ?>"
+          data-sort-created="<?php echo h($sortCreated); ?>"
+          data-sort-created-by="<?php echo h($sortCreator); ?>"
+          data-sort-edited="<?php echo h($sortEdited); ?>"
+          data-sort-edited-by="<?php echo h($sortEditor); ?>"
+          data-sort-exercises="<?php echo $sortExercises; ?>"
+        >
           <td><?php echo $cid; ?></td>
           <td><strong><?php echo h($c['name']); ?></strong></td>
           <td class="muted"><?php echo $c['description'] ? nl2br(h($c['description'])) : '—'; ?></td>
@@ -494,6 +544,7 @@ require_once __DIR__ . '/ppf_nav.php';
       <?php endforeach; endif; ?>
       </tbody>
     </table>
+    </div>
   </div>
 </main>
 
@@ -586,8 +637,22 @@ require_once __DIR__ . '/ppf_nav.php';
   </form>
 </div>
 
+<script src="table_enhancements.js"></script>
 <script>
 (function(){
+  const categorySearchInput = document.getElementById('categorySearch');
+  ppfEnhanceTable('#categoriesTable', {
+    rowSelector: 'tbody tr.cat-row',
+    searchInput: categorySearchInput,
+    sortTypes: {
+      id: 'number',
+      created: 'number',
+      edited: 'number',
+      exercises: 'number'
+    },
+    noMatchesText: 'No matching categories.'
+  });
+
   // Row expand/collapse
   document.querySelectorAll('.cat-row').forEach(tr=>{
     tr.addEventListener('click', (e)=>{
