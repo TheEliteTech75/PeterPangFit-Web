@@ -693,7 +693,7 @@ require_once __DIR__ . '/ppf_nav.php';
 
   table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
   th,td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
+  th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:13px;letter-spacing:.3px}
   tr:last-child td{border-bottom:none}
 
   .exercise-row{cursor:pointer}
@@ -720,6 +720,23 @@ require_once __DIR__ . '/ppf_nav.php';
   .thumb-mini{height:54px;width:96px;overflow:hidden;border-radius:6px;border:1px solid var(--line);background:rgba(8,13,23,0.95)}
   .thumb-mini img{height:100%;width:100%;object-fit:cover;display:block}
   @media (min-width:1400px){ .thumb-mini{height:68px;width:120px} }
+
+  .table-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .table-tools__search{flex:1 1 260px;max-width:420px}
+  .table-tools__search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text)}
+  .sort-btn{appearance:none;-webkit-appearance:none;-moz-appearance:none;background:none;background-color:transparent;border:none;border-radius:0;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn:focus{outline:none}
+  .sort-btn::-moz-focus-inner{border:0;padding:0;margin:0}
+  .sort-btn:hover .sort-indicator{opacity:0.8}
+  .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}
+  .sort-btn[data-state="asc"] .sort-indicator::before{content:'▲'}
+  .sort-btn[data-state="desc"] .sort-indicator::before{content:'▼'}
+  .sort-btn[data-state="off"] .sort-indicator::before{content:''}
+  .sort-btn[data-state="asc"] .sort-indicator,
+  .sort-btn[data-state="desc"] .sort-indicator{opacity:0.8}
+  .col-resize-handle{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize}
+  .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:rgba(148,163,184,0.2)}
 
   /* NEW: categories checklist styling */
   .checkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px}
@@ -753,19 +770,38 @@ require_once __DIR__ . '/ppf_nav.php';
 
   <div class="card">
     <h2 style="margin:6px 0 12px 0">Exercises</h2>
-    <table>
+    <div class="table-tools">
+      <div class="table-tools__search">
+        <input type="search" class="input search-input" id="exerciseSearch" placeholder="Search exercises..." autocomplete="off">
+      </div>
+    </div>
+    <div class="table-wrapper">
+    <table id="exercisesTable">
+      <colgroup>
+        <col style="width:110px">
+        <col style="min-width:220px">
+        <col style="min-width:260px">
+        <col style="min-width:200px">
+        <col style="min-width:160px">
+        <col style="min-width:200px">
+        <col style="min-width:180px">
+        <col style="min-width:200px">
+        <col style="min-width:180px">
+        <col style="width:150px">
+        <col style="min-width:160px">
+      </colgroup>
       <thead>
         <tr>
-          <th>Ex ID</th>
-          <th>Name</th>
-          <th>Description</th> <!-- renamed -->
-          <th>Categories</th>
-          <th>Media</th>
-          <th>Created</th>
-          <th>Created By</th>
-          <th>Edited</th>
-          <th>Edited By</th>
-          <th>Used In # Plans</th>
+          <th data-sort-key="id"><button type="button" class="sort-btn" data-sort-key="id" data-state="off">Ex ID<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="name"><button type="button" class="sort-btn" data-sort-key="name" data-state="off">Name<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="description"><button type="button" class="sort-btn" data-sort-key="description" data-state="off">Description<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="categories"><button type="button" class="sort-btn" data-sort-key="categories" data-state="off">Categories<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="media"><button type="button" class="sort-btn" data-sort-key="media" data-state="off">Media<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="created"><button type="button" class="sort-btn" data-sort-key="created" data-state="off">Created<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="created-by"><button type="button" class="sort-btn" data-sort-key="created-by" data-state="off">Created By<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="edited"><button type="button" class="sort-btn" data-sort-key="edited" data-state="off">Edited<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="edited-by"><button type="button" class="sort-btn" data-sort-key="edited-by" data-state="off">Edited By<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="plans"><button type="button" class="sort-btn" data-sort-key="plans" data-state="off">Used In # Plans<span class="sort-indicator" aria-hidden="true"></span></button></th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -810,7 +846,36 @@ require_once __DIR__ . '/ppf_nav.php';
         $poster = $ex['video_poster_url'] ?? '';
         $thumbHtml = $poster ? '<div class="thumb-mini"><img src="'.h($poster).'" alt="thumb"></div>' : '';
       ?>
-        <tr class="exercise-row" data-ex="<?php echo $eid; ?>" id="ex-<?php echo $eid; ?>">
+        <?php
+          $sortName = strtolower($ex['name'] ?? '');
+          $sortDescription = strtolower(strip_tags($ex['notes'] ?? ''));
+          $categoryNames = [];
+          foreach ($catsForEx as $cCat) {
+            $categoryNames[] = strtolower($cCat['name'] ?? '');
+          }
+          $sortCategories = implode(' ', $categoryNames);
+          $sortCreated = $createdAt ? strtotime($createdAt) : '';
+          $sortUpdated = $updatedAt ? strtotime($updatedAt) : '';
+          $sortCreator = strtolower($creator ?? '');
+          $sortEditor = strtolower($editor ?? '');
+          $sortMedia = $hasVideo ? '1' : '0';
+          $sortPlans = (int)($ex['plan_count'] ?? $ex['used_in_plans'] ?? 0);
+        ?>
+        <tr
+          class="exercise-row"
+          data-ex="<?php echo $eid; ?>"
+          id="ex-<?php echo $eid; ?>"
+          data-sort-id="<?php echo $eid; ?>"
+          data-sort-name="<?php echo h($sortName); ?>"
+          data-sort-description="<?php echo h($sortDescription); ?>"
+          data-sort-categories="<?php echo h($sortCategories); ?>"
+          data-sort-media="<?php echo h($sortMedia); ?>"
+          data-sort-created="<?php echo h($sortCreated); ?>"
+          data-sort-created-by="<?php echo h($sortCreator); ?>"
+          data-sort-edited="<?php echo h($sortUpdated); ?>"
+          data-sort-edited-by="<?php echo h($sortEditor); ?>"
+          data-sort-plans="<?php echo $sortPlans; ?>"
+        >
           <td><?php echo $eid; ?></td>
           <td><strong><?php echo h($ex['name']); ?></strong></td>
           <td class="muted"><?php echo $ex['notes'] ? nl2br(h($ex['notes'])) : '—'; ?></td>
@@ -997,6 +1062,7 @@ require_once __DIR__ . '/ppf_nav.php';
       <?php endforeach; endif; ?>
       </tbody>
     </table>
+    </div>
   </div>
 
 </main>
@@ -1151,10 +1217,25 @@ require_once __DIR__ . '/ppf_nav.php';
   </form>
 </div>
 
+<script src="table_enhancements.js"></script>
 <script>
 const measurementConfig = <?php echo json_encode($EXERCISES_MEASUREMENT_JS, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 window.ppfMeasurement = measurementConfig;
 (function(){
+  const exerciseSearchInput = document.getElementById('exerciseSearch');
+  ppfEnhanceTable('#exercisesTable', {
+    rowSelector: 'tbody tr.exercise-row',
+    searchInput: exerciseSearchInput,
+    sortTypes: {
+      id: 'number',
+      created: 'number',
+      edited: 'number',
+      plans: 'number',
+      media: 'number'
+    },
+    noMatchesText: 'No matching exercises.'
+  });
+
   // Remove any lingering measurement chips from the subheader.
   document.querySelectorAll('.subheader .chip').forEach(chip => {
     const text = (chip.textContent || '').toLowerCase();
