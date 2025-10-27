@@ -15,6 +15,50 @@ $types = ppf_notifications_types();
 $priorities = ppf_notifications_priorities();
 $catalog = ppf_notifications_catalog();
 
+$preconfiguredRules = [];
+if ($userId > 0) {
+  foreach ($catalog as $typeKey => $definition) {
+    if (empty($definition['preconfigured'])) {
+      continue;
+    }
+    $channels = ['center' => true, 'email' => false];
+    if (!empty($definition['channels']) && is_array($definition['channels'])) {
+      $channels = array_merge($channels, $definition['channels']);
+    } elseif (!empty($definition['send_email'])) {
+      $channels['email'] = true;
+    }
+    $categoryKey = ppf_notifications_valid_category((string)($definition['category'] ?? 'system'));
+    $sendEmail = isset($definition['send_email']) ? (bool)$definition['send_email'] : !empty($channels['email']);
+    $immutable = !empty($definition['immutable']);
+    $metadata = [
+      'preconfigured' => true,
+      'type_key' => $typeKey,
+      'category' => $categoryKey,
+      'channels' => $channels,
+      'send_email' => $sendEmail,
+    ];
+    if ($immutable) {
+      $metadata['immutable'] = true;
+    }
+    $preconfiguredRules[$typeKey] = [
+      'id' => null,
+      'tenant_id' => $tenantId,
+      'user_id' => $userId,
+      'type_key' => $typeKey,
+      'title' => (string)($definition['title'] ?? 'Notification'),
+      'body' => (string)($definition['body'] ?? ''),
+      'category' => $categoryKey,
+      'channels' => $channels,
+      'send_email' => $sendEmail,
+      'priority' => (int)($definition['priority'] ?? 0),
+      'immutable' => $immutable,
+      'metadata' => $metadata,
+      'created_at' => null,
+      'updated_at' => null,
+    ];
+  }
+}
+
 ppf_notifications_seed_defaults($conn, $tenantId, $userId);
 
 $catalogGrouped = [];
@@ -81,6 +125,43 @@ try {
   $initialState['rules'] = ppf_notification_rules_list($conn, $tenantId, $userId);
 } catch (Throwable $e) {
   $initialState['rules'] = [];
+}
+
+if (!is_array($initialState['rules'])) {
+  $initialState['rules'] = [];
+}
+
+if (!empty($preconfiguredRules)) {
+  $existingRuleKeys = [];
+  foreach ($initialState['rules'] as $rule) {
+    $key = isset($rule['type_key']) ? (string)$rule['type_key'] : '';
+    if ($key !== '') {
+      $existingRuleKeys[$key] = true;
+    }
+  }
+  foreach ($preconfiguredRules as $typeKey => $rule) {
+    if (!isset($existingRuleKeys[$typeKey])) {
+      $initialState['rules'][] = $rule;
+    }
+  }
+  if (!empty($initialState['rules'])) {
+    usort($initialState['rules'], function ($a, $b) {
+      $catA = strtolower((string)($a['category'] ?? ''));
+      $catB = strtolower((string)($b['category'] ?? ''));
+      if ($catA !== $catB) {
+        return $catA <=> $catB;
+      }
+      $priorityA = (int)($a['priority'] ?? 0);
+      $priorityB = (int)($b['priority'] ?? 0);
+      if ($priorityA !== $priorityB) {
+        return $priorityB <=> $priorityA;
+      }
+      $titleA = (string)($a['title'] ?? '');
+      $titleB = (string)($b['title'] ?? '');
+      return $titleA <=> $titleB;
+    });
+    $initialState['rules'] = array_values($initialState['rules']);
+  }
 }
 
 $initialStateJson = json_encode($initialState, JSON_UNESCAPED_SLASHES);
@@ -471,6 +552,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       padding: 24px;
       z-index: 1000;
     }
+    .modal-backdrop.is-active,
     .modal-backdrop.is-visible {
       display: flex;
     }
@@ -694,6 +776,73 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var catalog = bootstrap.catalog || {};
     var types = bootstrap.types || {};
     var csrf = bootstrap.csrf || '';
+    function cloneRule(rule) {
+      return JSON.parse(JSON.stringify(rule || {}));
+    }
+
+    function ruleKey(rule) {
+      if (!rule) { return ''; }
+      if (rule.type_key) { return String(rule.type_key); }
+      if (rule.metadata && rule.metadata.type_key) { return String(rule.metadata.type_key); }
+      return '';
+    }
+
+    function sortRuleList(list) {
+      return list.slice().sort(function(a, b){
+        var catA = ((a && (a.category || (a.metadata && a.metadata.category))) || '').toString().toLowerCase();
+        var catB = ((b && (b.category || (b.metadata && b.metadata.category))) || '').toString().toLowerCase();
+        if (catA !== catB) {
+          return catA < catB ? -1 : 1;
+        }
+        var priorityA = parseInt(a && a.priority, 10);
+        if (isNaN(priorityA)) { priorityA = 0; }
+        var priorityB = parseInt(b && b.priority, 10);
+        if (isNaN(priorityB)) { priorityB = 0; }
+        if (priorityA !== priorityB) {
+          return priorityB - priorityA;
+        }
+        var titleA = ((a && a.title) || '').toString();
+        var titleB = ((b && b.title) || '').toString();
+        return titleA.localeCompare(titleB);
+      });
+    }
+
+    var preconfiguredRuleMap = {};
+    if (Array.isArray(initialState.rules)) {
+      initialState.rules.forEach(function(rule){
+        if (!(rule && rule.metadata && rule.metadata.preconfigured)) { return; }
+        var key = ruleKey(rule);
+        if (!key || preconfiguredRuleMap[key]) { return; }
+        preconfiguredRuleMap[key] = cloneRule(rule);
+      });
+    }
+
+    function withPreconfiguredRules(rules) {
+      var list = Array.isArray(rules) ? rules.slice() : [];
+      var seen = {};
+      list = list.map(function(rule){
+        var key = ruleKey(rule);
+        if (key) {
+          seen[key] = true;
+          if (preconfiguredRuleMap[key]) {
+            var fallback = preconfiguredRuleMap[key];
+            var merged = Object.assign({}, fallback, rule);
+            var fallbackMeta = fallback.metadata || {};
+            var ruleMeta = rule.metadata || {};
+            merged.metadata = Object.assign({}, fallbackMeta, ruleMeta);
+            return merged;
+          }
+        }
+        return rule;
+      });
+      Object.keys(preconfiguredRuleMap).forEach(function(key){
+        if (!seen[key]) {
+          list.push(cloneRule(preconfiguredRuleMap[key]));
+        }
+      });
+      return sortRuleList(list);
+    }
+
     var state = {
       feed: {
         items: initialState.feed && Array.isArray(initialState.feed.items) ? initialState.feed.items.slice() : [],
@@ -704,7 +853,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         category: 'all',
         loading: false
       },
-      rules: Array.isArray(initialState.rules) ? initialState.rules.slice() : [],
+      rules: withPreconfiguredRules(Array.isArray(initialState.rules) ? initialState.rules.slice() : []),
       ruleEditing: null,
       searchTimeout: null
     };
@@ -1080,7 +1229,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     function loadRules() {
       fetchJson('api/notifications/index.php/rules').then(function(json){
-        state.rules = Array.isArray(json.rules) ? json.rules : [];
+        state.rules = withPreconfiguredRules(Array.isArray(json.rules) ? json.rules : []);
         renderRules();
       }).catch(function(err){
         console.error(err);
@@ -1089,11 +1238,13 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     function updateRuleInState(rule) {
       var idx = state.rules.findIndex(function(r){ return r.id === rule.id; });
+      var nextRules = state.rules.slice();
       if (idx === -1) {
-        state.rules.push(rule);
+        nextRules.push(rule);
       } else {
-        state.rules[idx] = rule;
+        nextRules[idx] = rule;
       }
+      state.rules = withPreconfiguredRules(nextRules);
       renderRules();
     }
 
@@ -1265,6 +1416,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     function closeRuleModal() {
       if (!modalBackdrop) return;
       modalBackdrop.classList.remove('is-active');
+      modalBackdrop.classList.remove('is-visible');
       state.ruleEditing = null;
       if (modalForm) {
         modalForm.reset();
@@ -1346,7 +1498,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         } else if (action === 'delete') {
           if (!confirm('Delete this notification rule?')) { return; }
           fetchJson('api/notifications/index.php/rules/' + id, withCsrfOptions('DELETE')).then(function(){
-            state.rules = state.rules.filter(function(r){ return r.id !== id; });
+            state.rules = withPreconfiguredRules(state.rules.filter(function(r){ return r.id !== id; }));
             renderRules();
           }).catch(function(err){
             alert(err.message || 'Unable to delete rule.');
