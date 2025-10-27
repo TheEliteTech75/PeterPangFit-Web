@@ -487,6 +487,20 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
       .role-form{flex-direction:column;align-items:flex-start}
       .role-select{width:100%}
     }
+    .table-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:12px 0}
+    .table-tools__search{flex:1 1 260px;max-width:420px}
+    .table-tools__search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(8,13,23,0.95);color:#f8fafc}
+    .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:none;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer}
+    .sort-btn:hover .sort-indicator{opacity:0.8}
+    .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+    .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}
+    .sort-btn[data-state="asc"] .sort-indicator::before{content:'▲'}
+    .sort-btn[data-state="desc"] .sort-indicator::before{content:'▼'}
+    .sort-btn[data-state="off"] .sort-indicator::before{content:''}
+    .sort-btn[data-state="asc"] .sort-indicator,
+    .sort-btn[data-state="desc"] .sort-indicator{opacity:0.8}
+    .col-resize-handle{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize}
+    .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:rgba(148,163,184,0.2)}
   </style>
 </head>
 <body>
@@ -514,24 +528,46 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
   <?php endif; ?>
 
   <!-- Users table -->
+  <div class="table-tools">
+    <div class="table-tools__search">
+      <input type="search" class="input search-input" id="userSearch" placeholder="Search users..." autocomplete="off">
+    </div>
+  </div>
   <div style="overflow:auto">
-    <table>
+    <table id="usersTable">
+      <colgroup>
+        <col style="width:80px">
+        <col style="min-width:160px">
+        <col style="min-width:220px">
+        <col style="min-width:160px">
+        <col style="min-width:150px">
+        <col style="width:90px">
+        <col style="min-width:120px">
+        <col style="min-width:140px">
+        <col style="min-width:140px">
+        <col style="min-width:140px">
+        <col style="min-width:180px">
+        <col style="min-width:180px">
+        <col style="min-width:200px">
+        <col style="width:120px">
+        <col style="min-width:260px">
+      </colgroup>
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Role</th>
-          <th>Email</th>
-          <th>Phone</th>
-          <th>Birthdate</th>
-          <th>Age</th>
-          <th>Gender</th>
-          <th>First</th>
-          <th>Middle</th>
-          <th>Last</th>
-          <th>Created</th>
-          <th>Last Login</th>
-          <th>IP Address</th>
-          <th>Client Flag</th>
+          <th data-sort-key="id"><button type="button" class="sort-btn" data-sort-key="id" data-state="off">ID<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="role"><button type="button" class="sort-btn" data-sort-key="role" data-state="off">Role<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="email"><button type="button" class="sort-btn" data-sort-key="email" data-state="off">Email<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="phone"><button type="button" class="sort-btn" data-sort-key="phone" data-state="off">Phone<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="birthdate"><button type="button" class="sort-btn" data-sort-key="birthdate" data-state="off">Birthdate<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="age"><button type="button" class="sort-btn" data-sort-key="age" data-state="off">Age<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="gender"><button type="button" class="sort-btn" data-sort-key="gender" data-state="off">Gender<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="first"><button type="button" class="sort-btn" data-sort-key="first" data-state="off">First<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="middle"><button type="button" class="sort-btn" data-sort-key="middle" data-state="off">Middle<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="last"><button type="button" class="sort-btn" data-sort-key="last" data-state="off">Last<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="created"><button type="button" class="sort-btn" data-sort-key="created" data-state="off">Created<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="last-login"><button type="button" class="sort-btn" data-sort-key="last-login" data-state="off">Last Login<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="ip"><button type="button" class="sort-btn" data-sort-key="ip" data-state="off">IP Address<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th data-sort-key="client"><button type="button" class="sort-btn" data-sort-key="client" data-state="off">Client Flag<span class="sort-indicator" aria-hidden="true"></span></button></th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -543,8 +579,37 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
         $full = trim(($u['first_name'] ?? '') . ' ' . ($u['last_name'] ?? ''));
         $flag = (int)($u['is_client'] ?? 0);
         $editing = ($edit_id === $uid);
+        $sortRole = strtolower($u['role'] ?? '');
+        $sortEmail = strtolower($u['email'] ?? '');
+        $sortPhone = preg_replace('/\D+/', '', (string)($u['phone'] ?? ''));
+        $sortBirthdate = !empty($u['birthdate']) ? strtotime($u['birthdate']) : '';
+        $sortAge = calc_age($u['birthdate']);
+        $sortGender = strtolower($u['gender'] ?? '');
+        $sortFirst = strtolower($u['first_name'] ?? '');
+        $sortMiddle = strtolower($u['middle_name'] ?? '');
+        $sortLast = strtolower($u['last_name'] ?? '');
+        $sortCreated = !empty($u['created_at']) ? strtotime($u['created_at']) : '';
+        $sortLastLogin = !empty($u['last_login']) ? strtotime($u['last_login']) : '';
+        $sortIp = strtolower($u['ip_address'] ?? '');
+        $sortClient = $flag ? '1' : '0';
       ?>
-        <tr>
+        <tr
+          class="user-row"
+          data-sort-id="<?php echo $uid; ?>"
+          data-sort-role="<?php echo h($sortRole); ?>"
+          data-sort-email="<?php echo h($sortEmail); ?>"
+          data-sort-phone="<?php echo h($sortPhone); ?>"
+          data-sort-birthdate="<?php echo h($sortBirthdate); ?>"
+          data-sort-age="<?php echo h($sortAge); ?>"
+          data-sort-gender="<?php echo h($sortGender); ?>"
+          data-sort-first="<?php echo h($sortFirst); ?>"
+          data-sort-middle="<?php echo h($sortMiddle); ?>"
+          data-sort-last="<?php echo h($sortLast); ?>"
+          data-sort-created="<?php echo h($sortCreated); ?>"
+          data-sort-last-login="<?php echo h($sortLastLogin); ?>"
+          data-sort-ip="<?php echo h($sortIp); ?>"
+          data-sort-client="<?php echo h($sortClient); ?>"
+        >
           <td><?php echo $uid; ?></td>
 
           <!-- Role change -->
@@ -808,7 +873,22 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
   </div>
 </div>
 
+<script src="table_enhancements.js"></script>
 <script>
+ppfEnhanceTable('#usersTable', {
+  rowSelector: 'tbody tr.user-row',
+  searchInput: document.getElementById('userSearch'),
+  sortTypes: {
+    id: 'number',
+    birthdate: 'number',
+    age: 'number',
+    created: 'number',
+    'last-login': 'number',
+    client: 'number'
+  },
+  noMatchesText: 'No matching users found.'
+});
+
 // Role Update button visibility logic
 (function(){
   const rows = document.querySelectorAll('.role-form');
