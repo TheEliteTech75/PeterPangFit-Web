@@ -814,9 +814,12 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
     .toolbar {
       display: grid;
-      align-items: stretch;
+      align-items: center;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 16px 20px;
       margin-top: clamp(18px, 4vw, 30px);
+      width: min(100%, 920px);
+      margin-inline: 0 auto;
       padding: clamp(14px, 3.5vw, 22px);
       border-radius: var(--radius, 20px);
       background: rgba(8, 8, 8, 0.88);
@@ -1230,7 +1233,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
-      justify-content: flex-start;
+      justify-content: flex-end;
       align-items: center;
     }
 
@@ -1819,6 +1822,11 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       .hero {
         border-radius: clamp(18px, 9vw, 28px);
         padding: clamp(26px, 8vw, 40px);
+      }
+      .toolbar {
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+        margin-inline: 0;
       }
       .toolbar .search {
         width: 100%;
