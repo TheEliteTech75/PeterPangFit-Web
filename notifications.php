@@ -552,6 +552,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       padding: 24px;
       z-index: 1000;
     }
+    .modal-backdrop.is-active,
     .modal-backdrop.is-visible {
       display: flex;
     }
@@ -1415,6 +1416,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     function closeRuleModal() {
       if (!modalBackdrop) return;
       modalBackdrop.classList.remove('is-active');
+      modalBackdrop.classList.remove('is-visible');
       state.ruleEditing = null;
       if (modalForm) {
         modalForm.reset();
