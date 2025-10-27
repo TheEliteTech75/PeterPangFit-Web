@@ -738,6 +738,7 @@ require_once __DIR__ . '/ppf_nav.php';
   <div class="left">
     <div class="brand">Exercises</div>
     <span class="muted">Create and manage the exercise library</span>
+    <span class="chip" style="font-size:11px;letter-spacing:.2px">Measurements: <?php echo h($EXERCISES_MEASUREMENT_LABEL); ?></span>
   </div>
   <div class="btnset">
     <a class="btn" href="dashboard.php">Back to Dashboard</a>
