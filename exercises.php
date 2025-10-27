@@ -69,6 +69,10 @@ if (!is_trainer_admin($USER_ROLE ?? null)) {
   exit;
 }
 
+$EXERCISES_MEASUREMENT_SYSTEM = ppf_measurement_user_system();
+$EXERCISES_MEASUREMENT_LABEL = $EXERCISES_MEASUREMENT_SYSTEM === 'metric' ? 'Metric (kg)' : 'Imperial (lbs)';
+$EXERCISES_MEASUREMENT_JS = ppf_measurement_js_config();
+
 // ----------------------------------------------------------------------------
 // CSRF
 // ----------------------------------------------------------------------------
@@ -1147,6 +1151,8 @@ require_once __DIR__ . '/ppf_nav.php';
 </div>
 
 <script>
+const measurementConfig = <?php echo json_encode($EXERCISES_MEASUREMENT_JS, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+window.ppfMeasurement = measurementConfig;
 (function(){
   // -------------------- Row expand/collapse --------------------
   document.querySelectorAll('.exercise-row').forEach(tr=>{
