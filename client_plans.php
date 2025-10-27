@@ -2010,6 +2010,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       }
       .hero__status {
         grid-area: status;
+        padding-inline-end: clamp(32px, 6vw, 64px);
       }
       .toolbar {
         grid-area: toolbar;
