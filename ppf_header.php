@@ -263,6 +263,14 @@ body.ppf-themed table {
 body.ppf-themed th {
   background: color-mix(in srgb, var(--panel-elevated) 82%, var(--theme-swatch-2, var(--brand)) 18%);
   color: color-mix(in srgb, var(--muted) 78%, var(--text) 22%);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+body.ppf-themed .sort-btn {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: .01em;
 }
 body.ppf-themed .sort-btn {
   font-size: 18px;
