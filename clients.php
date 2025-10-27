@@ -1538,7 +1538,7 @@ if ($rs = $conn->query($sqlPlans)) {
 
 // --- Rendering helpers ---
 function render_clients_table(array $clients, string $csrf, string $whichTab): void {
-  global $USER_ROLE;
+  global $USER_ROLE, $CLIENT_HEIGHT_LABEL, $CLIENT_WEIGHT_LABEL, $CLIENT_WEIGHT_PLACEHOLDER, $CLIENT_MEASUREMENT_IS_METRIC;
   $tableId = 'clientsTable-' . $whichTab;
   $searchId = 'clientSearch-' . $whichTab;
   $bulkSelectId = 'clientBulkSelect-' . $whichTab;
