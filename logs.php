@@ -351,7 +351,7 @@ if ($stmt = $conn->prepare($sql)) {
     .span-2{grid-column:span 2}
     .span-3{grid-column:span 3}
     .span-4{grid-column:span 4}
-    .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:transparent;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer;box-shadow:none;-webkit-appearance:none;appearance:none;border-radius:0}
+    .sort-btn{all:unset;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit}
     .sort-btn:hover .sort-indicator{opacity:0.8}
     .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
     .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}

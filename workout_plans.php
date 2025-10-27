@@ -866,7 +866,7 @@ require_once __DIR__ . '/ppf_nav.php';
   .table-tools__search{flex:1 1 260px;max-width:420px}
   .table-tools__search .search-input{width:100%}
   .table-tools__search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text)}
-  .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:transparent;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer;box-shadow:none;-webkit-appearance:none;appearance:none;border-radius:0}
+  .sort-btn{all:unset;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit}
   .sort-btn:hover .sort-indicator{opacity:0.8}
   .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
   .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}

@@ -167,7 +167,7 @@ if ($res = $conn->query($sql)) {
     th,td{padding:12px 12px;border-bottom:1px solid var(--line);vertical-align:top}
     th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
     tr:last-child td{border-bottom:none}
-    .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:transparent;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer;box-shadow:none;-webkit-appearance:none;appearance:none;border-radius:0}
+    .sort-btn{all:unset;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit}
     .sort-btn:hover .sort-indicator{opacity:0.8}
     .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
     .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}
