@@ -39,6 +39,8 @@ $categories = ppf_notification_categories();
 $types = ppf_notifications_types();
 $priorities = ppf_notifications_priorities();
 
+ppf_notifications_seed_defaults($conn, $tenantId, $userId);
+
 function ppf_notifications_api_csrf_required(): void
 {
     $sessionToken = (string)($_SESSION['csrf_token'] ?? '');

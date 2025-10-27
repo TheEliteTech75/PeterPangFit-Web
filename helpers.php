@@ -558,6 +558,7 @@ if (!function_exists('ppf_notifications_fetch_recent')) {
   function ppf_notifications_fetch_recent(mysqli $conn, int $userId, int $limit = 10, bool $forBadge = false): array {
     $tenantId = ppf_current_tenant_id();
     ppf_notifications_bootstrap($conn);
+    ppf_notifications_seed_defaults($conn, $tenantId, $userId);
     $settings = ppf_notifications_settings_get($conn, $tenantId, $userId);
     $limit = max(1, min(25, $limit));
     $stmt = $conn->prepare("SELECT * FROM notifications WHERE tenant_id = ? AND user_id = ? AND is_archived = 0 ORDER BY created_at DESC LIMIT ?");
@@ -591,6 +592,7 @@ if (!function_exists('ppf_notifications_fetch_recent')) {
 if (!function_exists('ppf_notifications_unread_count')) {
   function ppf_notifications_unread_count(mysqli $conn, int $tenantId, int $userId, ?array $settings = null): int {
     ppf_notifications_bootstrap($conn);
+    ppf_notifications_seed_defaults($conn, $tenantId, $userId);
     if ($settings === null) {
       $settings = ppf_notifications_settings_get($conn, $tenantId, $userId);
     }
@@ -627,6 +629,7 @@ if (!function_exists('ppf_notifications_staff_can_manage')) {
 if (!function_exists('ppf_notifications_query')) {
   function ppf_notifications_query(mysqli $conn, int $tenantId, int $userId, array $filters, array $options = []): array {
     ppf_notifications_bootstrap($conn);
+    ppf_notifications_seed_defaults($conn, $tenantId, $userId);
     $settings = ppf_notifications_settings_get($conn, $tenantId, $userId);
     $where = ['tenant_id = ?', 'user_id = ?'];
     $params = [$tenantId, $userId];
@@ -922,60 +925,189 @@ if (!function_exists('ppf_notifications_catalog')) {
     }
     $catalog = [
       'security.password_changed' => [
-        'title' => 'Password changed',
-        'body' => 'Your account password was updated successfully.',
+        'title' => 'Password change alerts',
+        'body' => 'We will alert you whenever your password is changed.',
         'type' => 'system',
         'priority' => 1,
         'category' => 'security',
         'immutable' => true,
+        'send_email' => true,
+        'channels' => ['center' => true, 'email' => true],
+        'preconfigured' => true,
       ],
       'security.passkey_added' => [
-        'title' => 'Passkey added',
-        'body' => 'A new passkey was registered for your account.',
+        'title' => 'Passkey added alerts',
+        'body' => 'Get notified when a passkey is added to your account.',
         'type' => 'system',
         'priority' => 1,
         'category' => 'security',
         'immutable' => true,
+        'send_email' => true,
+        'channels' => ['center' => true, 'email' => true],
+        'preconfigured' => true,
       ],
       'security.passkey_removed' => [
-        'title' => 'Passkey removed',
-        'body' => 'A passkey was removed from your account.',
+        'title' => 'Passkey removal alerts',
+        'body' => 'Get notified when a passkey is removed from your account.',
         'type' => 'system',
         'priority' => 1,
         'category' => 'security',
         'immutable' => true,
+        'send_email' => true,
+        'channels' => ['center' => true, 'email' => true],
+        'preconfigured' => true,
+      ],
+      'security.passkey_renamed' => [
+        'title' => 'Passkey renamed alerts',
+        'body' => 'Get notified when a passkey on your account is renamed.',
+        'type' => 'system',
+        'priority' => 1,
+        'category' => 'security',
+        'immutable' => true,
+        'send_email' => true,
+        'channels' => ['center' => true, 'email' => true],
+        'preconfigured' => true,
       ],
       'security.account_locked' => [
-        'title' => 'Account locked',
-        'body' => 'Too many failed sign-in attempts locked your account.',
+        'title' => 'Account lock alerts',
+        'body' => 'We will message you if your account becomes locked after failed sign-ins.',
         'type' => 'system',
         'priority' => 1,
         'category' => 'security',
         'immutable' => true,
+        'send_email' => true,
+        'channels' => ['center' => true, 'email' => true],
+        'preconfigured' => true,
       ],
       'billing.sessions_purchased' => [
-        'title' => 'Sessions purchased',
-        'body' => 'A session package was purchased for your account.',
+        'title' => 'Session purchase alerts',
+        'body' => 'Receive a confirmation whenever training sessions are purchased for you.',
         'type' => 'success',
         'priority' => 0,
         'category' => 'billing',
+        'send_email' => true,
+        'channels' => ['center' => true, 'email' => true],
+        'preconfigured' => true,
       ],
       'billing.sessions_refunded' => [
-        'title' => 'Sessions refunded',
-        'body' => 'A refund was processed for session credits.',
+        'title' => 'Session refund alerts',
+        'body' => 'Get notified if session credits are refunded or removed.',
         'type' => 'warning',
         'priority' => 0,
         'category' => 'billing',
+        'send_email' => true,
+        'channels' => ['center' => true, 'email' => true],
+        'preconfigured' => true,
+      ],
+      'billing.payment_recorded' => [
+        'title' => 'Payment recorded alerts',
+        'body' => 'Hear when a payment is recorded toward your sessions.',
+        'type' => 'info',
+        'priority' => 0,
+        'category' => 'billing',
+        'send_email' => true,
+        'channels' => ['center' => true, 'email' => true],
+        'preconfigured' => true,
+      ],
+      'billing.refund_recorded' => [
+        'title' => 'Refund recorded alerts',
+        'body' => 'Receive an alert when a refund is recorded on your account.',
+        'type' => 'warning',
+        'priority' => 0,
+        'category' => 'billing',
+        'send_email' => true,
+        'channels' => ['center' => true, 'email' => true],
+        'preconfigured' => true,
       ],
       'workouts.plan_assigned' => [
-        'title' => 'New plan assigned',
-        'body' => 'Your trainer assigned a new plan.',
+        'title' => 'Plan assigned alerts',
+        'body' => 'Get a heads-up when your trainer assigns you a new plan.',
         'type' => 'info',
         'priority' => 0,
         'category' => 'workouts',
+        'send_email' => false,
+        'channels' => ['center' => true, 'email' => false],
+        'preconfigured' => true,
       ],
     ];
     return $catalog;
+  }
+}
+
+if (!function_exists('ppf_notifications_seed_defaults')) {
+  function ppf_notifications_seed_defaults(mysqli $conn, int $tenantId, int $userId): void {
+    if ($userId <= 0) {
+      return;
+    }
+    ppf_notifications_bootstrap($conn);
+    $catalog = ppf_notifications_catalog();
+    $preconfigured = [];
+    foreach ($catalog as $typeKey => $definition) {
+      if (!empty($definition['preconfigured'])) {
+        $preconfigured[$typeKey] = $definition;
+      }
+    }
+    if (empty($preconfigured)) {
+      return;
+    }
+
+    $existing = [];
+    if ($stmt = $conn->prepare('SELECT id, metadata FROM notifications WHERE tenant_id = ? AND user_id = ?')) {
+      $stmt->bind_param('ii', $tenantId, $userId);
+      $stmt->execute();
+      if ($res = $stmt->get_result()) {
+        while ($row = $res->fetch_assoc()) {
+          $meta = [];
+          if (!empty($row['metadata'])) {
+            $decoded = json_decode($row['metadata'], true);
+            if (is_array($decoded)) {
+              $meta = $decoded;
+            }
+          }
+          $key = (string)($meta['type_key'] ?? '');
+          if ($key !== '') {
+            $existing[$key] = (int)$row['id'];
+          }
+        }
+      }
+      $stmt->close();
+    }
+
+    foreach ($preconfigured as $typeKey => $definition) {
+      if (isset($existing[$typeKey])) {
+        continue;
+      }
+      $channels = ['center' => true, 'email' => false];
+      if (!empty($definition['channels']) && is_array($definition['channels'])) {
+        $channels = array_merge($channels, $definition['channels']);
+      } elseif (!empty($definition['send_email'])) {
+        $channels['email'] = true;
+      }
+      $sendEmail = isset($definition['send_email']) ? (bool)$definition['send_email'] : !empty($channels['email']);
+      $metadata = ['preconfigured' => true];
+      if (!empty($definition['immutable'])) {
+        $metadata['immutable'] = true;
+      }
+      try {
+        $newId = ppf_notifications_record($conn, $userId, [
+          'type_key' => $typeKey,
+          'title' => $definition['title'] ?? 'Notification',
+          'body' => $definition['body'] ?? '',
+          'type' => $definition['type'] ?? 'info',
+          'priority' => $definition['priority'] ?? 0,
+          'category' => $definition['category'] ?? 'system',
+          'send_email' => $sendEmail,
+          'channels' => $channels,
+          'metadata' => $metadata,
+        ]);
+        if ($newId) {
+          ppf_notifications_set_read($conn, $userId, $newId, true);
+        }
+      } catch (Throwable $e) {
+        // Failing to seed defaults should not block the request.
+        continue;
+      }
+    }
   }
 }
 
@@ -1068,9 +1200,19 @@ if (!function_exists('ppf_notifications_upsert')) {
 if (!function_exists('ppf_notifications_record')) {
   function ppf_notifications_record(mysqli $conn, int $userId, array $data): ?int {
     $catalog = ppf_notifications_catalog();
-    $typeKey = (string)($data['type_key'] ?? 'custom.manual');
+    $payloadData = $data;
+    $typeKey = '';
+    if (isset($payloadData['type_key'])) {
+      $typeKey = (string)$payloadData['type_key'];
+    } elseif (isset($payloadData['type']) && is_string($payloadData['type']) && isset($catalog[$payloadData['type']])) {
+      $typeKey = (string)$payloadData['type'];
+      unset($payloadData['type']);
+    }
+    if ($typeKey === '') {
+      $typeKey = 'custom.manual';
+    }
     $defaults = $catalog[$typeKey] ?? [];
-    $payload = array_merge($defaults, $data);
+    $payload = array_merge($defaults, $payloadData);
     if (isset($defaults['immutable']) && !isset($payload['immutable'])) {
       $payload['immutable'] = (bool)$defaults['immutable'];
     }

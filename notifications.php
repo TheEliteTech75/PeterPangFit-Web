@@ -15,6 +15,8 @@ $types = ppf_notifications_types();
 $priorities = ppf_notifications_priorities();
 $catalog = ppf_notifications_catalog();
 
+ppf_notifications_seed_defaults($conn, $tenantId, $userId);
+
 $catalogGrouped = [];
 foreach ($categories as $key => $meta) {
   $catalogGrouped[$key] = [];
