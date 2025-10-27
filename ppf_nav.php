@@ -246,6 +246,9 @@ if ($isAdmin) {
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  .ppf-sidenav-body > * {
+    flex: 0 0 auto;
+  }
 
   /* Links */
   .ppf-nav-link {
