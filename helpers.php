@@ -641,6 +641,38 @@ if (!function_exists('ppf_notifications_bootstrap')) {
           KEY idx_notification_events_user (tenant_id, user_id, created_at DESC)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
       }
+
+      if (!table_exists($conn, 'notification_migrations')) {
+        @$conn->query("CREATE TABLE notification_migrations (
+          migration_key VARCHAR(191) NOT NULL PRIMARY KEY,
+          details JSON NULL,
+          applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+      }
+
+      $purgeKey = '20240424_initial_notifications_clear';
+      $purgeApplied = false;
+      if ($stmt = $conn->prepare('SELECT migration_key FROM notification_migrations WHERE migration_key = ? LIMIT 1')) {
+        $stmt->bind_param('s', $purgeKey);
+        $stmt->execute();
+        if ($res = $stmt->get_result()) {
+          $purgeApplied = (bool)$res->fetch_row();
+          $res->close();
+        }
+        $stmt->close();
+      }
+
+      if (!$purgeApplied) {
+        @$conn->query('TRUNCATE TABLE notification_messages');
+        @$conn->query('TRUNCATE TABLE notification_events');
+        @$conn->query('TRUNCATE TABLE notification_rules');
+        if ($stmt = $conn->prepare('INSERT INTO notification_migrations (migration_key, details) VALUES (?, ?)')) {
+          $details = json_encode(['reason' => 'initial clear after notifications redesign']);
+          $stmt->bind_param('ss', $purgeKey, $details);
+          $stmt->execute();
+          $stmt->close();
+        }
+      }
     } catch (Throwable $e) {
       // schema bootstrap errors are non-fatal
     }
