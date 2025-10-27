@@ -50,6 +50,19 @@ if (empty($_SESSION['user_id'])):
     exit;
 endif;
 
+// Ensure the current member always has the preconfigured notification rules.
+try {
+    if (isset($conn) && $conn instanceof mysqli) {
+        $seedTenantId = ppf_current_tenant_id();
+        $seedUserId = (int)($_SESSION['user_id'] ?? 0);
+        if ($seedUserId > 0) {
+            ppf_notifications_seed_defaults($conn, $seedTenantId, $seedUserId);
+        }
+    }
+} catch (Throwable $e) {
+    // Non-fatal: notifications are optional for auth bootstrap.
+}
+
 /* 2) Resolve inactivity limit (seconds)
    Priority: session cache -> users.inactivity_timeout_seconds -> default (7200) */
 $DEFAULT_INACTIVITY = 7200; // 2 hours default
