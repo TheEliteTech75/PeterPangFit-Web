@@ -156,6 +156,14 @@ if (!function_exists('ppf_register_login_failure')) {
 
           // Log event
           ppf_log($conn, $userId, $email, $role, 'account_locked', 'security', null, "duration_minutes={$mins}");
+          $untilLabel = function_exists('ppf_format_user_datetime')
+            ? ppf_format_user_datetime($until, ['fallback' => $until])
+            : $until;
+          ppf_notifications_record($conn, $userId, [
+            'type' => 'security.account_locked',
+            'message' => 'Your account was locked until ' . $untilLabel . '.',
+            'send_email' => true,
+          ]);
         } else {
           // Just log failed attempt with current count
           ppf_log($conn, $userId, $email, $role, 'login_failed', 'auth', null, "count={$cnt}");

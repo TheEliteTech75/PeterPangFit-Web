@@ -99,6 +99,11 @@ if ($st = $conn->prepare("SELECT name FROM passkeys WHERE id=? AND user_id=? LIM
 if ($after && (string)$after['name'] === $name) {
   ppf_log($conn, $uid, ($_SESSION['email'] ?? null), ($_SESSION['role'] ?? null),
     'passkey_renamed', 'user', (string)$uid, 'id='.$pid.';old='.$currentName.';new='.$name);
+  ppf_notifications_record($conn, $uid, [
+    'type' => 'security.passkey_renamed',
+    'message' => 'Passkey "' . $currentName . '" renamed to "' . $name . '" on ' . ppf_format_user_datetime(date('c'), ['fallback' => date('Y-m-d H:i:s')]) . '.',
+    'send_email' => false,
+  ]);
   if ($isAjax) {
     header('Content-Type: application/json');
     echo json_encode(['ok' => true]);

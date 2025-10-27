@@ -57,6 +57,33 @@ $demoAlerts = [];
 if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['demo_alerts']) && ppf_is_admin_role($role)) {
   $demoAlerts = array_values(array_unique(array_map('strval', $_SESSION['demo_alerts'])));
 }
+$headerCsrf = '';
+if (session_status() === PHP_SESSION_ACTIVE) {
+  if (empty($_SESSION['csrf_token'])) {
+    try {
+      $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    } catch (Throwable $e) {
+      $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
+    }
+  }
+  $headerCsrf = $_SESSION['csrf_token'];
+}
+$headerUserId = (int)($_SESSION['user_id'] ?? 0);
+$headerNotifications = ['items' => [], 'unread' => 0];
+if ($headerUserId > 0 && isset($conn) && $conn instanceof mysqli) {
+  try {
+    $headerNotifications = ppf_notifications_fetch_recent($conn, $headerUserId, 10);
+  } catch (Throwable $e) {
+    $headerNotifications = ['items' => [], 'unread' => 0];
+  }
+}
+$headerNotifItems = $headerNotifications['items'] ?? [];
+$headerNotifUnread = (int)($headerNotifications['unread'] ?? 0);
+$headerNotifSubtitle = $headerNotifUnread === 0
+  ? 'You are all caught up.'
+  : ($headerNotifUnread === 1
+      ? '1 unread notification'
+      : ($headerNotifUnread . ' unread notifications'));
 $showDemoBanner = false;
 if (ppf_is_admin_role($role)) {
   try {
@@ -170,7 +197,109 @@ if (isset($conn) && $conn instanceof mysqli && function_exists('ppf_log_page_vie
   outline-offset:4px;
   border-radius:10px;
 }
-.ppf-user { margin-left:auto;position:relative;display:flex;align-items:center; z-index: 3200; }
+.ppf-user { margin-left:auto;position:relative;display:flex;align-items:center; gap:16px; z-index: 3200; }
+.ppf-notify { position:relative; }
+.ppf-notify__button {
+  position:relative;
+  width:44px;
+  height:44px;
+  border-radius:50%;
+  border:1px solid var(--chip-border);
+  background:color-mix(in srgb, var(--chip-bg) 85%, rgba(255,255,255,0.08) 15%);
+  color:var(--text);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  transition:transform .25s ease, box-shadow .25s ease, background .25s ease;
+  box-shadow:0 12px 24px color-mix(in srgb, var(--chip-border) 35%, transparent 65%);
+}
+.ppf-notify__button:hover,
+.ppf-notify__button:focus-visible {
+  transform:translateY(-1px);
+  outline:none;
+  background:color-mix(in srgb, var(--chip-bg) 75%, var(--theme-swatch-2, var(--brand)) 25%);
+}
+.ppf-notify__button svg { width:22px; height:22px; }
+.ppf-notify__button.has-unread svg { color:var(--brand-strong, var(--brand)); }
+.ppf-notify__dot {
+  position:absolute;
+  top:9px;
+  right:11px;
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:var(--danger, #ef4444);
+  box-shadow:0 0 0 2px var(--panel-elevated);
+}
+.ppf-notify__panel {
+  position:absolute;
+  top:52px;
+  right:0;
+  width:360px;
+  max-width:min(360px, calc(100vw - 32px));
+  background:var(--panel-elevated);
+  border:1px solid var(--card-border);
+  border-radius:18px;
+  box-shadow:0 18px 40px rgba(15,23,42,0.45);
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  z-index:4000;
+}
+.ppf-notify__panel[hidden] { display:none; }
+.ppf-notify__header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.ppf-notify__header h3 { margin:0; font-size:16px; font-weight:700; letter-spacing:.01em; }
+.ppf-notify__header p { margin:4px 0 0; font-size:12px; color:color-mix(in srgb, var(--muted) 70%, var(--text) 30%); }
+.ppf-notify__mark-all {
+  border:1px solid var(--chip-border);
+  background:transparent;
+  color:var(--text);
+  font-size:12px;
+  padding:6px 10px;
+  border-radius:999px;
+  cursor:pointer;
+  transition:background .2s ease, color .2s ease, border-color .2s ease;
+}
+.ppf-notify__mark-all:hover:not([disabled]),
+.ppf-notify__mark-all:focus-visible:not([disabled]) {
+  background:color-mix(in srgb, var(--chip-bg) 70%, var(--theme-swatch-2, var(--brand)) 30%);
+}
+.ppf-notify__mark-all[disabled] {
+  opacity:.55;
+  cursor:not-allowed;
+}
+.ppf-notify__list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px; max-height:360px; overflow:auto; }
+.ppf-notify__item {
+  border:1px solid color-mix(in srgb, var(--card-border) 70%, transparent 30%);
+  border-radius:14px;
+  padding:12px;
+  background:color-mix(in srgb, var(--panel) 88%, rgba(255,255,255,0.05) 12%);
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.ppf-notify__item.is-unread {
+  border-color:color-mix(in srgb, var(--brand) 65%, var(--card-border) 35%);
+  background:color-mix(in srgb, var(--panel) 78%, rgba(56,189,248,0.2) 22%);
+}
+.ppf-notify__title { font-size:14px; font-weight:600; color:var(--text); }
+.ppf-notify__message { font-size:13px; color:color-mix(in srgb, var(--text) 88%, var(--muted) 12%); line-height:1.4; }
+.ppf-notify__meta { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; color:color-mix(in srgb, var(--muted) 75%, var(--text) 25%); }
+.ppf-notify__mark {
+  background:transparent;
+  border:0;
+  color:var(--brand, #38bdf8);
+  font-size:12px;
+  cursor:pointer;
+  padding:4px 0;
+  text-decoration:underline;
+}
+.ppf-notify__footer { text-align:right; font-size:13px; }
+.ppf-notify__footer a { color:var(--brand); text-decoration:none; font-weight:600; }
+.ppf-notify__footer a:hover { text-decoration:underline; }
+.ppf-notify__empty { font-size:13px; color:color-mix(in srgb, var(--muted) 75%, var(--text) 25%); text-align:center; padding:28px 0; }
 .ppf-chip {
   display:flex;align-items:center;gap:10px;
   background:var(--chip-bg);
@@ -328,6 +457,53 @@ body.ppf-themed .dash-settings-toggle {
   <?php endif; ?>
   <a class="ppf-brand" href="/index.php">Peter Pang Fit</a>
   <div class="ppf-user">
+    <?php if ($headerUserId > 0): ?>
+    <div class="ppf-notify" data-ppf-notify>
+      <button type="button" class="ppf-notify__button<?php echo $headerNotifUnread > 0 ? ' has-unread' : ''; ?>" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" data-ppf-notify-toggle>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+          <path d="M13.73 21a2 2 0 01-3.46 0"></path>
+        </svg>
+        <?php if ($headerNotifUnread > 0): ?><span class="ppf-notify__dot" aria-hidden="true"></span><?php endif; ?>
+      </button>
+      <div class="ppf-notify__panel" id="ppfNotifyPanel" role="dialog" aria-label="Notifications" hidden data-csrf="<?php echo h($headerCsrf); ?>" data-unread="<?php echo (int)$headerNotifUnread; ?>">
+        <div class="ppf-notify__header">
+          <div>
+            <h3>Notifications</h3>
+            <p data-ppf-notify-count><?php echo h($headerNotifSubtitle); ?></p>
+          </div>
+          <button type="button" class="ppf-notify__mark-all" data-ppf-notify-mark-all<?php echo $headerNotifUnread > 0 ? '' : ' disabled'; ?>>Mark all as read</button>
+        </div>
+        <ul class="ppf-notify__list" data-ppf-notify-list>
+          <?php if (empty($headerNotifItems)): ?>
+            <li class="ppf-notify__empty">You're all caught up. View the Notification Center to configure alerts.</li>
+          <?php else: ?>
+            <?php foreach ($headerNotifItems as $item):
+              $itemId = (int)($item['id'] ?? 0);
+              $isRead = (int)($item['is_read'] ?? 0) === 1;
+              $createdRaw = $item['created_at'] ?? null;
+              $createdLabel = function_exists('ppf_format_user_datetime')
+                ? ppf_format_user_datetime($createdRaw, ['fallback' => ''])
+                : fmt_when($createdRaw);
+              $message = trim((string)($item['message'] ?? ''));
+            ?>
+            <li class="ppf-notify__item<?php echo $isRead ? ' is-read' : ' is-unread'; ?>" data-id="<?php echo $itemId; ?>" data-read="<?php echo $isRead ? '1' : '0'; ?>">
+              <div class="ppf-notify__title"><?php echo h($item['title'] ?? 'Notification'); ?></div>
+              <?php if ($message !== ''): ?>
+                <div class="ppf-notify__message"><?php echo nl2br(h($message), false); ?></div>
+              <?php endif; ?>
+              <div class="ppf-notify__meta">
+                <span><?php echo h($createdLabel); ?></span>
+                <button type="button" class="ppf-notify__mark" data-ppf-notify-mark="<?php echo $isRead ? '0' : '1'; ?>"><?php echo $isRead ? 'Mark unread' : 'Mark read'; ?></button>
+              </div>
+            </li>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </ul>
+        <div class="ppf-notify__footer"><a href="notifications.php">Open Notification Center</a></div>
+      </div>
+    </div>
+    <?php endif; ?>
     <div class="ppf-chip" id="ppfUserChip" aria-haspopup="true" aria-expanded="false">
       <div class="ppf-avatar">
         <?php if ($photo): ?>
@@ -368,4 +544,128 @@ body.ppf-themed .dash-settings-toggle {
   document.addEventListener('click',function(e){ if(!menu.contains(e.target)&&!chip.contains(e.target)){closeM();} });
   window.addEventListener('keydown',function(e){ if(e.key==='Escape'){closeM();} });
 })();
+(function(){
+  var container=document.querySelector('[data-ppf-notify]');
+  if(!container) return;
+  var button=container.querySelector('[data-ppf-notify-toggle]');
+  var panel=container.querySelector('.ppf-notify__panel');
+  if(!button||!panel) return;
+  var list=panel.querySelector('[data-ppf-notify-list]');
+  var countEl=panel.querySelector('[data-ppf-notify-count]');
+  var markAllBtn=panel.querySelector('[data-ppf-notify-mark-all]');
+  var csrf=panel.getAttribute('data-csrf')||'';
+  var isOpen=false;
+
+  function ensureDot(unread){
+    var dot=container.querySelector('.ppf-notify__dot');
+    if(unread>0 && !dot){
+      dot=document.createElement('span');
+      dot.className='ppf-notify__dot';
+      dot.setAttribute('aria-hidden','true');
+      button.appendChild(dot);
+    }
+    if(dot){ dot.style.display=unread>0?'':'none'; }
+    if(button){ button.classList.toggle('has-unread', unread>0); button.setAttribute('aria-expanded', isOpen?'true':'false'); }
+  }
+
+  function updateSubtitle(subtitle, unread){
+    if(countEl && typeof subtitle==='string'){ countEl.textContent=subtitle; }
+    if(markAllBtn){ markAllBtn.disabled = !(unread>0); }
+    if(panel){ panel.setAttribute('data-unread', String(unread)); }
+    ensureDot(unread);
+  }
+
+  function setOpen(open){
+    isOpen=!!open;
+    if(isOpen){
+      panel.hidden=false;
+      button.setAttribute('aria-expanded','true');
+    } else {
+      panel.hidden=true;
+      button.setAttribute('aria-expanded','false');
+    }
+  }
+
+  button.addEventListener('click',function(e){ e.stopPropagation(); setOpen(!isOpen); });
+  document.addEventListener('click',function(e){ if(!container.contains(e.target)){ setOpen(false); } });
+  window.addEventListener('keydown',function(e){ if(e.key==='Escape'){ setOpen(false); } });
+
+  function post(action, payload){
+    var body=new URLSearchParams();
+    body.append('action', action);
+    body.append('csrf_token', csrf);
+    if(payload){
+      Object.keys(payload).forEach(function(key){ if(payload[key]!==undefined && payload[key]!==null){ body.append(key, payload[key]); }});
+    }
+    return fetch('notifications_actions.php', {
+      method:'POST',
+      headers:{'X-Requested-With':'XMLHttpRequest'},
+      body:body
+    }).then(function(res){
+      if(!res.ok) throw new Error('Request failed');
+      return res.json();
+    });
+  }
+
+  function refreshItemState(item, read){
+    if(!item) return;
+    item.dataset.read=read?'1':'0';
+    item.classList.toggle('is-read', read);
+    item.classList.toggle('is-unread', !read);
+    var btn=item.querySelector('[data-ppf-notify-mark]');
+    if(btn){
+      btn.dataset.ppfNotifyMark = read ? '0' : '1';
+      btn.textContent = read ? 'Mark unread' : 'Mark read';
+    }
+  }
+
+  if(list){
+    list.addEventListener('click',function(e){
+      var target=e.target.closest('[data-ppf-notify-mark]');
+      if(!target) return;
+      var item=target.closest('.ppf-notify__item');
+      if(!item) return;
+      var id=item.getAttribute('data-id');
+      if(!id) return;
+      var markValue=target.getAttribute('data-ppf-notify-mark')==='1';
+      target.disabled=true;
+      post('mark', { id:id, read: markValue ? '1' : '0' }).then(function(json){
+        if(json && json.ok){
+          refreshItemState(item, markValue);
+          var unreadCount=parseInt(json.unread || '0',10);
+          var subtitle=typeof json.subtitle==='string'?json.subtitle:'';
+          updateSubtitle(subtitle, unreadCount);
+        }
+      }).catch(function(){
+        // swallow
+      }).finally(function(){ target.disabled=false; });
+    });
+  }
+
+  if(markAllBtn){
+    markAllBtn.addEventListener('click',function(){
+      if(markAllBtn.disabled) return;
+      markAllBtn.disabled=true;
+      post('mark_all').then(function(json){
+        if(json && json.ok){
+          var unreadCount=parseInt(json.unread || '0',10);
+          if(list){
+            list.querySelectorAll('.ppf-notify__item').forEach(function(item){ refreshItemState(item, true); });
+          }
+          var subtitle=typeof json.subtitle==='string'?json.subtitle:'';
+          updateSubtitle(subtitle, unreadCount);
+        } else {
+          markAllBtn.disabled=false;
+        }
+      }).catch(function(){
+        markAllBtn.disabled=false;
+      });
+    });
+  }
+
+  ensureDot(parseInt(panel.getAttribute('data-unread') || '<?php echo (int)$headerNotifUnread; ?>',10));
+})();
+if(typeof window!=='undefined'){
+  window.__CSRF = window.__CSRF || '<?php echo h($headerCsrf); ?>';
+}
 </script>

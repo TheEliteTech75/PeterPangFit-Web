@@ -65,6 +65,11 @@ if ($d = $conn->prepare("DELETE FROM passkeys WHERE id=? AND user_id=?")) {
     $fullName = trim(((string)$urow['first_name']) . ' ' . ((string)$urow['last_name']));
     $recipientName = $fullName !== '' ? $fullName : $email;
     @send_plain_email($email, $recipientName, 'Passkey Deleted', "A passkey named '{$name}' was deleted from your account. If this was not you, please review your security settings.");
+    ppf_notifications_record($conn, $uid, [
+      'type' => 'security.passkey_removed',
+      'message' => 'The passkey ' . ($name !== '' ? '"' . $name . '" ' : '') . 'was removed on ' . ppf_format_user_datetime(date('c'), ['fallback' => date('Y-m-d H:i:s')]) . '.',
+      'send_email' => true,
+    ]);
 
     $_SESSION['settings_flash'] = [
       'type' => 'success',

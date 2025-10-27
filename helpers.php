@@ -198,6 +198,586 @@ if (!function_exists('ppf_measurement_set_session')) {
   }
 }
 
+/* -------------------- Notification helpers -------------------- */
+
+if (!function_exists('ppf_notification_categories')) {
+  function ppf_notification_categories(): array {
+    return [
+      'security' => [
+        'label' => 'Security',
+        'description' => 'Account safety and access alerts',
+      ],
+      'workouts' => [
+        'label' => 'Workouts',
+        'description' => 'Workout assignments, updates, and coaching notes',
+      ],
+      'billing' => [
+        'label' => 'Billing',
+        'description' => 'Purchases, refunds, and payment activity',
+      ],
+      'system' => [
+        'label' => 'System',
+        'description' => 'Product announcements and global notices',
+      ],
+      'custom' => [
+        'label' => 'Custom',
+        'description' => 'Reminders you create for yourself',
+      ],
+    ];
+  }
+}
+
+if (!function_exists('ppf_notifications_catalog')) {
+  function ppf_notifications_catalog(): array {
+    static $catalog = null;
+    if ($catalog !== null) {
+      return $catalog;
+    }
+    $catalog = [
+      'security.password_changed' => [
+        'category' => 'security',
+        'title' => 'Password changed',
+        'message' => 'Your account password was updated successfully.',
+        'is_mutable' => false,
+        'allow_email' => false,
+        'send_email_default' => true,
+        'email_subject' => 'Your Peter Pang Fit password was changed',
+        'email_body' => "Your password was just changed. If this was not you, please secure your account immediately.",
+      ],
+      'security.passkey_added' => [
+        'category' => 'security',
+        'title' => 'New passkey added',
+        'message' => 'A new passkey was registered on your account.',
+        'is_mutable' => false,
+        'allow_email' => false,
+        'send_email_default' => true,
+      ],
+      'security.passkey_removed' => [
+        'category' => 'security',
+        'title' => 'Passkey removed',
+        'message' => 'One of your passkeys was removed.',
+        'is_mutable' => false,
+        'allow_email' => false,
+        'send_email_default' => true,
+      ],
+      'security.passkey_renamed' => [
+        'category' => 'security',
+        'title' => 'Passkey renamed',
+        'message' => 'One of your passkeys was renamed.',
+        'is_mutable' => false,
+        'allow_email' => false,
+      ],
+      'security.account_locked' => [
+        'category' => 'security',
+        'title' => 'Account locked',
+        'message' => 'Your account was locked after too many unsuccessful sign-in attempts.',
+        'is_mutable' => false,
+        'allow_email' => false,
+        'send_email_default' => true,
+      ],
+      'billing.sessions_purchased' => [
+        'category' => 'billing',
+        'title' => 'Sessions purchased',
+        'message' => 'New training sessions were added to your account.',
+        'is_mutable' => false,
+        'allow_email' => true,
+        'send_email_default' => false,
+      ],
+      'billing.payment_recorded' => [
+        'category' => 'billing',
+        'title' => 'Payment recorded',
+        'message' => 'A payment was recorded on your account.',
+        'is_mutable' => false,
+        'allow_email' => true,
+        'send_email_default' => false,
+      ],
+      'billing.refund_recorded' => [
+        'category' => 'billing',
+        'title' => 'Refund processed',
+        'message' => 'A refund was processed for one of your sessions.',
+        'is_mutable' => false,
+        'allow_email' => true,
+        'send_email_default' => true,
+      ],
+      'workouts.plan_assigned' => [
+        'category' => 'workouts',
+        'title' => 'New workout plan assigned',
+        'message' => 'A trainer assigned a new workout plan to you.',
+        'is_mutable' => false,
+        'allow_email' => true,
+        'send_email_default' => false,
+      ],
+    ];
+    return $catalog;
+  }
+}
+
+if (!function_exists('ppf_notifications_valid_category')) {
+  function ppf_notifications_valid_category(string $category): string {
+    $category = strtolower(trim($category));
+    $map = ppf_notification_categories();
+    return array_key_exists($category, $map) ? $category : 'system';
+  }
+}
+
+if (!function_exists('ppf_notifications_ensure_schema')) {
+  function ppf_notifications_ensure_schema(mysqli $conn): void {
+    static $ensured = false;
+    if ($ensured) {
+      return;
+    }
+    $ensured = true;
+    try {
+      $ddl = "CREATE TABLE IF NOT EXISTS user_notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        type_key VARCHAR(100) NOT NULL DEFAULT '',
+        category VARCHAR(40) NOT NULL DEFAULT 'system',
+        title VARCHAR(255) NOT NULL,
+        message TEXT NULL,
+        is_read TINYINT(1) NOT NULL DEFAULT 0,
+        is_mutable TINYINT(1) NOT NULL DEFAULT 1,
+        allow_email TINYINT(1) NOT NULL DEFAULT 1,
+        send_email TINYINT(1) NOT NULL DEFAULT 0,
+        email_sent_at DATETIME NULL DEFAULT NULL,
+        context TEXT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_user_read (user_id, is_read),
+        KEY idx_user_created (user_id, created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+      @$conn->query($ddl);
+
+      $columns = [
+        'type_key' => "ALTER TABLE user_notifications ADD COLUMN type_key VARCHAR(100) NOT NULL DEFAULT '' AFTER user_id",
+        'category' => "ALTER TABLE user_notifications ADD COLUMN category VARCHAR(40) NOT NULL DEFAULT 'system' AFTER type_key",
+        'title' => "ALTER TABLE user_notifications ADD COLUMN title VARCHAR(255) NOT NULL AFTER category",
+        'message' => "ALTER TABLE user_notifications ADD COLUMN message TEXT NULL AFTER title",
+        'is_read' => "ALTER TABLE user_notifications ADD COLUMN is_read TINYINT(1) NOT NULL DEFAULT 0 AFTER message",
+        'is_mutable' => "ALTER TABLE user_notifications ADD COLUMN is_mutable TINYINT(1) NOT NULL DEFAULT 1 AFTER is_read",
+        'allow_email' => "ALTER TABLE user_notifications ADD COLUMN allow_email TINYINT(1) NOT NULL DEFAULT 1 AFTER is_mutable",
+        'send_email' => "ALTER TABLE user_notifications ADD COLUMN send_email TINYINT(1) NOT NULL DEFAULT 0 AFTER allow_email",
+        'email_sent_at' => "ALTER TABLE user_notifications ADD COLUMN email_sent_at DATETIME NULL DEFAULT NULL AFTER send_email",
+        'context' => "ALTER TABLE user_notifications ADD COLUMN context TEXT NULL AFTER email_sent_at",
+        'created_at' => "ALTER TABLE user_notifications ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER context",
+        'updated_at' => "ALTER TABLE user_notifications ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at",
+      ];
+      foreach ($columns as $col => $sql) {
+        if (!column_exists($conn, 'user_notifications', $col)) {
+          @$conn->query($sql);
+        }
+      }
+    } catch (Throwable $e) {
+      // Non-fatal; schema may be managed externally.
+    }
+  }
+}
+
+if (!function_exists('ppf_notifications_fetch_recent')) {
+  function ppf_notifications_fetch_recent(mysqli $conn, int $userId, int $limit = 10): array {
+    $out = ['items' => [], 'unread' => 0];
+    if ($userId <= 0) {
+      return $out;
+    }
+    ppf_notifications_ensure_schema($conn);
+    try {
+      if ($stmt = $conn->prepare("SELECT id, title, message, category, is_read, send_email, created_at, type_key FROM user_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT ?")) {
+        $stmt->bind_param('ii', $userId, $limit);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($res && ($row = $res->fetch_assoc())) {
+          $row['id'] = (int)$row['id'];
+          $row['is_read'] = (int)($row['is_read'] ?? 0);
+          $out['items'][] = $row;
+          if ($row['is_read'] === 0) {
+            $out['unread']++;
+          }
+        }
+        $stmt->close();
+      }
+    } catch (Throwable $e) {
+      // ignore
+    }
+    if ($out['unread'] === 0) {
+      try {
+        if ($stmt = $conn->prepare('SELECT COUNT(*) AS c FROM user_notifications WHERE user_id=? AND is_read=0')) {
+          $stmt->bind_param('i', $userId);
+          $stmt->execute();
+          $res = $stmt->get_result();
+          if ($res && ($row = $res->fetch_assoc())) {
+            $out['unread'] = (int)($row['c'] ?? 0);
+          }
+          $stmt->close();
+        }
+      } catch (Throwable $e) {
+        // ignore
+      }
+    }
+    return $out;
+  }
+}
+
+if (!function_exists('ppf_notifications_fetch_all')) {
+  function ppf_notifications_fetch_all(mysqli $conn, int $userId): array {
+    $grouped = [];
+    if ($userId <= 0) {
+      return $grouped;
+    }
+    ppf_notifications_ensure_schema($conn);
+    $cats = ppf_notification_categories();
+    foreach ($cats as $key => $_) {
+      $grouped[$key] = [];
+    }
+    try {
+      if ($stmt = $conn->prepare("SELECT id, type_key, category, title, message, is_read, is_mutable, allow_email, send_email, email_sent_at, created_at, updated_at FROM user_notifications WHERE user_id=? ORDER BY created_at DESC")) {
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($res && ($row = $res->fetch_assoc())) {
+          $cat = ppf_notifications_valid_category((string)($row['category'] ?? ''));
+          $row['id'] = (int)$row['id'];
+          $row['is_read'] = (int)($row['is_read'] ?? 0);
+          $row['is_mutable'] = (int)($row['is_mutable'] ?? 0);
+          $row['allow_email'] = (int)($row['allow_email'] ?? 0);
+          $row['send_email'] = (int)($row['send_email'] ?? 0);
+          $grouped[$cat][] = $row;
+        }
+        $stmt->close();
+      }
+    } catch (Throwable $e) {
+      // ignore fetch issues
+    }
+    return $grouped;
+  }
+}
+
+if (!function_exists('ppf_notifications_load_one')) {
+  function ppf_notifications_load_one(mysqli $conn, int $userId, int $notificationId): ?array {
+    if ($userId <= 0 || $notificationId <= 0) {
+      return null;
+    }
+    ppf_notifications_ensure_schema($conn);
+    try {
+      if ($stmt = $conn->prepare("SELECT id, type_key, category, title, message, is_read, is_mutable, allow_email, send_email, email_sent_at, context, created_at, updated_at FROM user_notifications WHERE user_id=? AND id=? LIMIT 1")) {
+        $stmt->bind_param('ii', $userId, $notificationId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+        if ($row) {
+          $row['id'] = (int)$row['id'];
+          $row['is_read'] = (int)($row['is_read'] ?? 0);
+          $row['is_mutable'] = (int)($row['is_mutable'] ?? 0);
+          $row['allow_email'] = (int)($row['allow_email'] ?? 0);
+          $row['send_email'] = (int)($row['send_email'] ?? 0);
+          return $row;
+        }
+      }
+    } catch (Throwable $e) {
+      // ignore
+    }
+    return null;
+  }
+}
+
+if (!function_exists('ppf_notifications_delete')) {
+  function ppf_notifications_delete(mysqli $conn, int $userId, int $notificationId): bool {
+    if ($userId <= 0 || $notificationId <= 0) {
+      return false;
+    }
+    ppf_notifications_ensure_schema($conn);
+    try {
+      if ($stmt = $conn->prepare('DELETE FROM user_notifications WHERE user_id=? AND id=? AND is_mutable=1')) {
+        $stmt->bind_param('ii', $userId, $notificationId);
+        $stmt->execute();
+        $ok = $stmt->affected_rows > 0;
+        $stmt->close();
+        return $ok;
+      }
+    } catch (Throwable $e) {
+      // ignore
+    }
+    return false;
+  }
+}
+
+if (!function_exists('ppf_notifications_set_read')) {
+  function ppf_notifications_set_read(mysqli $conn, int $userId, int $notificationId, bool $read): bool {
+    if ($userId <= 0 || $notificationId <= 0) {
+      return false;
+    }
+    ppf_notifications_ensure_schema($conn);
+    try {
+      if ($stmt = $conn->prepare('UPDATE user_notifications SET is_read=? WHERE user_id=? AND id=?')) {
+        $flag = $read ? 1 : 0;
+        $stmt->bind_param('iii', $flag, $userId, $notificationId);
+        $stmt->execute();
+        $ok = $stmt->affected_rows >= 0;
+        $stmt->close();
+        return $ok;
+      }
+    } catch (Throwable $e) {
+      // ignore
+    }
+    return false;
+  }
+}
+
+if (!function_exists('ppf_notifications_mark_all_read')) {
+  function ppf_notifications_mark_all_read(mysqli $conn, int $userId): bool {
+    if ($userId <= 0) {
+      return false;
+    }
+    ppf_notifications_ensure_schema($conn);
+    try {
+      if ($stmt = $conn->prepare('UPDATE user_notifications SET is_read=1 WHERE user_id=? AND is_read=0')) {
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $stmt->close();
+        return true;
+      }
+    } catch (Throwable $e) {
+      // ignore
+    }
+    return false;
+  }
+}
+
+if (!function_exists('ppf_notifications_upsert')) {
+  function ppf_notifications_upsert(mysqli $conn, int $userId, array $data, ?int $notificationId = null): ?int {
+    if ($userId <= 0) {
+      return null;
+    }
+    ppf_notifications_ensure_schema($conn);
+    $title = trim((string)($data['title'] ?? ''));
+    $message = trim((string)($data['message'] ?? ''));
+    if ($title === '') {
+      $title = 'Notification';
+    }
+    $category = ppf_notifications_valid_category((string)($data['category'] ?? 'system'));
+    $sendEmail = !empty($data['send_email']);
+    $allowEmail = isset($data['allow_email']) ? (bool)$data['allow_email'] : true;
+    $context = isset($data['context']) ? (string)$data['context'] : null;
+    $typeKey = strtolower(trim((string)($data['type_key'] ?? '')));
+    if ($notificationId !== null) {
+      $existing = ppf_notifications_load_one($conn, $userId, $notificationId);
+      if (!$existing || (int)$existing['is_mutable'] !== 1) {
+        return null;
+      }
+      $sendEmailChanged = $sendEmail && (int)($existing['send_email'] ?? 0) !== 1;
+      try {
+        if ($stmt = $conn->prepare('UPDATE user_notifications SET title=?, message=?, category=?, send_email=?, allow_email=?, context=?, updated_at=NOW() WHERE user_id=? AND id=? AND is_mutable=1')) {
+          $send = $sendEmail ? 1 : 0;
+          $allow = $allowEmail ? 1 : 0;
+          $ctx = $context !== null && $context !== '' ? $context : null;
+          $stmt->bind_param('sssiisii', $title, $message, $category, $send, $allow, $ctx, $userId, $notificationId);
+          $stmt->execute();
+          $stmt->close();
+        }
+      } catch (Throwable $e) {
+        return null;
+      }
+      if ($sendEmailChanged) {
+        ppf_notifications_send_email_if_requested($conn, $userId, $notificationId, [
+          'title' => $title,
+          'message' => $message,
+          'email_subject' => $data['email_subject'] ?? null,
+          'email_body' => $data['email_body'] ?? null,
+        ]);
+      }
+      return $notificationId;
+    }
+
+    try {
+      if ($stmt = $conn->prepare('INSERT INTO user_notifications (user_id, type_key, category, title, message, is_read, is_mutable, allow_email, send_email, context, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?, ?, NOW(), NOW())')) {
+        $type = $typeKey;
+        $allow = $allowEmail ? 1 : 0;
+        $send = $sendEmail ? 1 : 0;
+        $ctx = $context !== null && $context !== '' ? $context : null;
+        $stmt->bind_param('issssiis', $userId, $type, $category, $title, $message, $allow, $send, $ctx);
+        $stmt->execute();
+        $id = (int)$stmt->insert_id;
+        $stmt->close();
+        if ($sendEmail) {
+          ppf_notifications_send_email_if_requested($conn, $userId, $id, [
+            'title' => $title,
+            'message' => $message,
+            'email_subject' => $data['email_subject'] ?? null,
+            'email_body' => $data['email_body'] ?? null,
+          ]);
+        }
+        return $id;
+      }
+    } catch (Throwable $e) {
+      return null;
+    }
+    return null;
+  }
+}
+
+if (!function_exists('ppf_notifications_send_email_if_requested')) {
+  function ppf_notifications_send_email_if_requested(mysqli $conn, int $userId, int $notificationId, array $meta): void {
+    try {
+      if ($stmt = $conn->prepare('SELECT send_email, email_sent_at FROM user_notifications WHERE id=? AND user_id=? LIMIT 1')) {
+        $stmt->bind_param('ii', $notificationId, $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+        if (!$row || (int)($row['send_email'] ?? 0) !== 1 || !empty($row['email_sent_at'])) {
+          return;
+        }
+      } else {
+        return;
+      }
+    } catch (Throwable $e) {
+      return;
+    }
+
+    try {
+      if ($stmt = $conn->prepare('SELECT email, first_name, last_name FROM users WHERE id=? LIMIT 1')) {
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $user = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+      } else {
+        $user = null;
+      }
+    } catch (Throwable $e) {
+      $user = null;
+    }
+
+    if (!$user || empty($user['email'])) {
+      return;
+    }
+
+    $toEmail = (string)$user['email'];
+    $toName = trim(((string)($user['first_name'] ?? '')) . ' ' . ((string)($user['last_name'] ?? '')));
+    if ($toName === '') {
+      $toName = $toEmail;
+    }
+
+    $subject = trim((string)($meta['email_subject'] ?? $meta['title'] ?? 'Notification Update'));
+    $body = trim((string)($meta['email_body'] ?? $meta['message'] ?? 'You have a new notification.'));
+
+    if (!function_exists('send_plain_email')) {
+      $sendPath = __DIR__ . '/send_email.php';
+      if (file_exists($sendPath)) {
+        require_once $sendPath;
+      }
+    }
+    $sent = false;
+    try {
+      if (function_exists('send_plain_email')) {
+        $sent = @send_plain_email($toEmail, $toName, $subject, $body);
+      }
+    } catch (Throwable $e) {
+      $sent = false;
+    }
+
+    if ($sent) {
+      try {
+        if ($stmt = $conn->prepare('UPDATE user_notifications SET email_sent_at=NOW() WHERE id=? AND user_id=?')) {
+          $stmt->bind_param('ii', $notificationId, $userId);
+          $stmt->execute();
+          $stmt->close();
+        }
+      } catch (Throwable $e) {
+        // ignore
+      }
+    }
+  }
+}
+
+if (!function_exists('ppf_notifications_record')) {
+  function ppf_notifications_record(mysqli $conn, int $userId, array $data): ?int {
+    if ($userId <= 0) {
+      return null;
+    }
+    ppf_notifications_ensure_schema($conn);
+    $catalog = ppf_notifications_catalog();
+    $typeKey = strtolower(trim((string)($data['type'] ?? ($data['type_key'] ?? ''))));
+    $base = $typeKey !== '' && isset($catalog[$typeKey]) ? $catalog[$typeKey] : [];
+    $category = ppf_notifications_valid_category((string)($data['category'] ?? ($base['category'] ?? 'system')));
+    $title = trim((string)($data['title'] ?? ($base['title'] ?? 'Notification')));
+    $message = trim((string)($data['message'] ?? $data['body'] ?? ($base['message'] ?? '')));
+    $context = isset($data['context']) ? (string)$data['context'] : null;
+    $isMutable = isset($data['is_mutable']) ? (bool)$data['is_mutable'] : (bool)($base['is_mutable'] ?? false);
+    $allowEmail = isset($data['allow_email']) ? (bool)$data['allow_email'] : (bool)($base['allow_email'] ?? true);
+    $sendEmail = isset($data['send_email']) ? (bool)$data['send_email'] : (bool)($base['send_email_default'] ?? true);
+    $markRead = isset($data['is_read']) ? (bool)$data['is_read'] : false;
+    if ($title === '') {
+      $title = 'Notification';
+    }
+
+    $isRead = $markRead ? 1 : 0;
+    try {
+      if ($stmt = $conn->prepare('INSERT INTO user_notifications (user_id, type_key, category, title, message, is_read, is_mutable, allow_email, send_email, context, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())')) {
+        $type = $typeKey;
+        $mutable = $isMutable ? 1 : 0;
+        $allow = $allowEmail ? 1 : 0;
+        $send = $sendEmail ? 1 : 0;
+        $ctx = $context !== null && $context !== '' ? $context : null;
+        $stmt->bind_param('issssiiiis', $userId, $type, $category, $title, $message, $isRead, $mutable, $allow, $send, $ctx);
+        $stmt->execute();
+        $id = (int)$stmt->insert_id;
+        $stmt->close();
+      } else {
+        return null;
+      }
+    } catch (Throwable $e) {
+      return null;
+    }
+
+    $id = $id ?? null;
+    if ($id !== null && $sendEmail) {
+      $subject = $data['email_subject'] ?? ($base['email_subject'] ?? $title);
+      $body = $data['email_body'] ?? ($base['email_body'] ?? $message);
+      ppf_notifications_send_email_if_requested($conn, $userId, $id, [
+        'title' => $title,
+        'message' => $message,
+        'email_subject' => $subject,
+        'email_body' => $body,
+      ]);
+    }
+    return $id;
+  }
+}
+
+if (!function_exists('ppf_notifications_toggle_email')) {
+  function ppf_notifications_toggle_email(mysqli $conn, int $userId, int $notificationId, bool $sendEmail): bool {
+    if ($userId <= 0 || $notificationId <= 0) {
+      return false;
+    }
+    ppf_notifications_ensure_schema($conn);
+    $existing = ppf_notifications_load_one($conn, $userId, $notificationId);
+    if (!$existing) {
+      return false;
+    }
+    if ((int)($existing['allow_email'] ?? 0) !== 1) {
+      return false;
+    }
+    try {
+      if ($stmt = $conn->prepare('UPDATE user_notifications SET send_email=?, email_sent_at=NULL WHERE user_id=? AND id=?')) {
+        $flag = $sendEmail ? 1 : 0;
+        $stmt->bind_param('iii', $flag, $userId, $notificationId);
+        $stmt->execute();
+        $stmt->close();
+      }
+    } catch (Throwable $e) {
+      return false;
+    }
+    if ($sendEmail) {
+      ppf_notifications_send_email_if_requested($conn, $userId, $notificationId, [
+        'title' => $existing['title'] ?? 'Notification',
+        'message' => $existing['message'] ?? 'You have a new notification.',
+      ]);
+    }
+    return true;
+  }
+}
+
 if (!function_exists('ppf_measurement_user_system')) {
   function ppf_measurement_user_system(): string {
     if (session_status() === PHP_SESSION_ACTIVE) {
