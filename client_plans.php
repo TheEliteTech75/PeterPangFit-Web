@@ -603,6 +603,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     .hero {
       position: relative;
       padding: clamp(32px, 6vw, 64px);
+      margin: clamp(24px, 5vw, 60px) auto;
+      max-width: min(1220px, calc(100% - clamp(36px, 8vw, 120px)));
       border-radius: clamp(22px, 7vw, 36px);
       overflow: hidden;
       background:
