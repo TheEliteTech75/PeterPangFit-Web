@@ -148,6 +148,166 @@ if (!function_exists('ppf_time_ensure_columns')) {
   }
 }
 
+if (!function_exists('ppf_measurement_default_system')) {
+  function ppf_measurement_default_system(): string {
+    return 'imperial';
+  }
+}
+
+if (!function_exists('ppf_measurement_normalize_system')) {
+  function ppf_measurement_normalize_system($value): ?string {
+    $raw = strtolower(trim((string)$value));
+    if ($raw === '') {
+      return null;
+    }
+    if (in_array($raw, ['imperial', 'sae', 'standard', 'us'], true)) {
+      return 'imperial';
+    }
+    if (in_array($raw, ['metric', 'si'], true)) {
+      return 'metric';
+    }
+    return null;
+  }
+}
+
+if (!function_exists('ppf_measurement_ensure_columns')) {
+  function ppf_measurement_ensure_columns(mysqli $conn): void {
+    static $checked = false;
+    if ($checked) {
+      return;
+    }
+    $checked = true;
+    try {
+      if (!column_exists($conn, 'users', 'measurement_system')) {
+        @$conn->query("ALTER TABLE users ADD COLUMN measurement_system VARCHAR(16) NULL DEFAULT NULL");
+      }
+    } catch (Throwable $e) {
+      // Non-fatal; schema may be managed externally.
+    }
+  }
+}
+
+if (!function_exists('ppf_measurement_set_session')) {
+  function ppf_measurement_set_session(string $system): void {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+      return;
+    }
+    $normalized = ppf_measurement_normalize_system($system) ?? ppf_measurement_default_system();
+    $_SESSION['user_measurement_system'] = $normalized;
+    $_SESSION['measurement_system'] = $normalized;
+  }
+}
+
+if (!function_exists('ppf_measurement_user_system')) {
+  function ppf_measurement_user_system(): string {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+      $sessVal = $_SESSION['user_measurement_system'] ?? ($_SESSION['measurement_system'] ?? null);
+      $norm = ppf_measurement_normalize_system($sessVal);
+      if ($norm !== null) {
+        return $norm;
+      }
+    }
+    return ppf_measurement_default_system();
+  }
+}
+
+if (!function_exists('ppf_measurement_trim_number')) {
+  function ppf_measurement_trim_number(float $value, int $precision = 2): string {
+    $formatted = number_format($value, $precision, '.', '');
+    $formatted = rtrim(rtrim($formatted, '0'), '.');
+    return $formatted === '' ? '0' : $formatted;
+  }
+}
+
+if (!function_exists('ppf_measurement_weight_unit')) {
+  function ppf_measurement_weight_unit(bool $plural = true): string {
+    $system = ppf_measurement_user_system();
+    if ($system === 'metric') {
+      return 'kg';
+    }
+    return $plural ? 'lbs' : 'lb';
+  }
+}
+
+if (!function_exists('ppf_measurement_weight_label')) {
+  function ppf_measurement_weight_label(): string {
+    $unit = ppf_measurement_user_system() === 'metric' ? 'kg' : 'lb';
+    return 'Weight (' . $unit . ')';
+  }
+}
+
+if (!function_exists('ppf_measurement_weight_placeholder')) {
+  function ppf_measurement_weight_placeholder(): string {
+    $unit = ppf_measurement_user_system() === 'metric' ? 'kg' : 'lbs';
+    return 'Weight (' . $unit . ')';
+  }
+}
+
+if (!function_exists('ppf_measurement_format_weight')) {
+  function ppf_measurement_format_weight($lbsValue, bool $withUnits = true, int $precision = 1): ?string {
+    if ($lbsValue === null || $lbsValue === '') {
+      return null;
+    }
+    if (!is_numeric($lbsValue)) {
+      return null;
+    }
+    $lbs = (float)$lbsValue;
+    if ($lbs <= 0) {
+      return null;
+    }
+    $system = ppf_measurement_user_system();
+    if ($system === 'metric') {
+      $value = $lbs * 0.45359237;
+      $text = ppf_measurement_trim_number($value, $precision);
+      return $withUnits ? ($text . ' kg') : $text;
+    }
+    $text = ppf_measurement_trim_number($lbs, $precision);
+    return $withUnits ? ($text . ' lbs') : $text;
+  }
+}
+
+if (!function_exists('ppf_measurement_weight_value_for_input')) {
+  function ppf_measurement_weight_value_for_input($lbsValue, int $precision = 1): string {
+    $formatted = ppf_measurement_format_weight($lbsValue, false, $precision);
+    return $formatted ?? '';
+  }
+}
+
+if (!function_exists('ppf_measurement_parse_weight_input')) {
+  function ppf_measurement_parse_weight_input($input): ?float {
+    $raw = trim((string)$input);
+    if ($raw === '') {
+      return null;
+    }
+    if (!is_numeric($raw)) {
+      return null;
+    }
+    $value = (float)$raw;
+    if ($value <= 0) {
+      return null;
+    }
+    $system = ppf_measurement_user_system();
+    if ($system === 'metric') {
+      $value = $value / 0.45359237;
+    }
+    return $value;
+  }
+}
+
+if (!function_exists('ppf_measurement_js_config')) {
+  function ppf_measurement_js_config(): array {
+    $system = ppf_measurement_user_system();
+    $unitPlural = ppf_measurement_weight_unit(true);
+    $unitSingular = ppf_measurement_weight_unit(false);
+    return [
+      'system' => $system,
+      'unitPlural' => $unitPlural,
+      'unitSingular' => $unitSingular,
+      'kgPerLb' => 0.45359237,
+    ];
+  }
+}
+
 if (!function_exists('ppf_time_user_timezone_id')) {
   function ppf_time_user_timezone_id(): string {
     $sessionTz = null;

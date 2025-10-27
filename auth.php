@@ -12,6 +12,7 @@ require_once __DIR__ . '/ppf_theme.php'; // Theme helpers (color palettes)
 require_once __DIR__ . '/helpers.php';
 
 ppf_time_ensure_columns($conn);
+ppf_measurement_ensure_columns($conn);
 
 // Capture any Demo Mode alerts and log them for auditing.
 if (!empty($GLOBALS['PPF_DEMO_ALERTS_BUFFER']) && session_status() === PHP_SESSION_ACTIVE) {
@@ -149,10 +150,11 @@ if (session_status() === PHP_SESSION_ACTIVE) {
     $normalizedSessionTz = ppf_time_normalize_timezone($sessionTzRaw);
     $needsTimezone = ($normalizedSessionTz === null);
     $needsFormat = !isset($_SESSION['user_time_24h']);
+    $needsMeasurement = !isset($_SESSION['user_measurement_system']);
 
-    if (($needsTimezone || $needsFormat) && $uid > 0 && isset($conn) && $conn instanceof mysqli) {
+    if (($needsTimezone || $needsFormat || $needsMeasurement) && $uid > 0 && isset($conn) && $conn instanceof mysqli) {
         try {
-            if ($st = $conn->prepare('SELECT timezone, time_format_24h FROM users WHERE id=? LIMIT 1')) {
+            if ($st = $conn->prepare('SELECT timezone, time_format_24h, measurement_system FROM users WHERE id=? LIMIT 1')) {
                 $st->bind_param('i', $uid);
                 $st->execute();
                 $res = $st->get_result();
@@ -162,6 +164,12 @@ if (session_status() === PHP_SESSION_ACTIVE) {
                     }
                     if ($needsFormat && isset($row['time_format_24h'])) {
                         $_SESSION['user_time_24h'] = (int)$row['time_format_24h'] === 1 ? 1 : 0;
+                    }
+                    if ($needsMeasurement) {
+                        $normalizedMeasurement = ppf_measurement_normalize_system($row['measurement_system'] ?? null);
+                        if ($normalizedMeasurement !== null) {
+                            ppf_measurement_set_session($normalizedMeasurement);
+                        }
                     }
                 }
                 $st->close();
@@ -182,6 +190,12 @@ if (session_status() === PHP_SESSION_ACTIVE) {
     }
     $_SESSION['user_time_24h'] = (int)$_SESSION['user_time_24h'] === 1 ? 1 : 0;
     $_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
+
+    if (!isset($_SESSION['user_measurement_system'])) {
+        ppf_measurement_set_session(ppf_measurement_default_system());
+    } else {
+        ppf_measurement_set_session($_SESSION['user_measurement_system']);
+    }
 }
 
 /* 5) Expose handy template variables (many pages rely on these) */
@@ -193,6 +207,7 @@ $USER_LAST_NAME  = $_SESSION['last_name']  ?? null;
 $USER_PHOTO_URL  = $_SESSION['photo_url']  ?? null;
 $USER_TIMEZONE   = $_SESSION['user_timezone'] ?? null;
 $USER_TIME_24H   = (int)($_SESSION['user_time_24h'] ?? 0) === 1;
+$USER_MEASUREMENT_SYSTEM = $_SESSION['user_measurement_system'] ?? ppf_measurement_default_system();
 $USER_THEME      = null;
 
 try {
