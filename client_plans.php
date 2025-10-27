@@ -2146,20 +2146,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         </div>
         <?php if ($hasSessionPackages): ?>
           <div class="hero-stat">
-            <span class="hero-stat__label">Sessions purchased</span>
-            <strong id="sessionsTotalPurchased" data-session-total="purchased"><?php echo $sessionTotalsPurchased; ?></strong>
-          </div>
-          <div class="hero-stat">
-            <span class="hero-stat__label">Sessions used</span>
-            <strong id="sessionsTotalUsed" data-session-total="used"><?php echo $sessionTotalsUsed; ?></strong>
-          </div>
-          <div class="hero-stat">
             <span class="hero-stat__label">Sessions scheduled</span>
             <strong id="sessionsTotalScheduled" data-session-total="scheduled"><?php echo $sessionTotalsScheduled; ?></strong>
-          </div>
-          <div class="hero-stat">
-            <span class="hero-stat__label">Sessions remaining</span>
-            <strong id="sessionsTotalRemaining" data-session-total="remaining"><?php echo $sessionTotalsRemaining; ?></strong>
           </div>
         <?php endif; ?>
       </div>
@@ -2213,6 +2201,10 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
           </div>
         </div>
         <div class="session-card__counts" data-package-summary="<?php echo $pkgId; ?>">
+          <div class="session-card__count">
+            <span>Purchased</span>
+            <strong data-package-purchased="<?php echo $pkgId; ?>"><?php echo $purchasedCount; ?></strong>
+          </div>
           <div class="session-card__count">
             <span>Used</span>
             <strong data-package-used="<?php echo $pkgId; ?>"><?php echo $completedCount; ?></strong>
@@ -2970,15 +2962,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     });
   }
 
-  document.querySelectorAll('.hero-stat').forEach(stat => {
-    const label = stat.querySelector('.hero-stat__label');
-    if (!label) return;
-    const text = (label.textContent || label.innerText || '').trim().toLowerCase();
-    if (text === 'sessions scheduled') {
-      stat.remove();
-    }
-  });
-
   const sessionRows = new Map();
   document.querySelectorAll('[data-session-row]').forEach(row => {
     const sessionId = row.dataset.sessionRow;
@@ -2992,17 +2975,23 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
   const csrfToken = document.body && document.body.dataset ? (document.body.dataset.csrf || '') : '';
   const sessionTotalsTargets = {};
-  ['purchased', 'used', 'remaining'].forEach(key => {
+  ['purchased', 'used', 'scheduled', 'remaining'].forEach(key => {
     sessionTotalsTargets[key] = Array.from(document.querySelectorAll(`[data-session-total="${key}"]`));
   });
   const packageTotals = new Map();
   document.querySelectorAll('[data-package-summary]').forEach(el => {
     const pkgId = el.dataset.packageSummary;
     if (!pkgId) return;
+    const purchasedEl = el.querySelector('[data-package-purchased]');
     const usedEl = el.querySelector('[data-package-used]');
     const scheduledEl = el.querySelector('[data-package-scheduled]');
     const remainingEl = el.querySelector('[data-package-remaining]');
-    packageTotals.set(String(pkgId), { used: usedEl, scheduled: scheduledEl, remaining: remainingEl });
+    packageTotals.set(String(pkgId), {
+      purchased: purchasedEl,
+      used: usedEl,
+      scheduled: scheduledEl,
+      remaining: remainingEl,
+    });
   });
 
   const HALF_HOUR_MS = 30 * 60 * 1000;
@@ -3215,6 +3204,9 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
           if (pkgId) {
             const summary = packageTotals.get(pkgId);
             if (summary) {
+              if (summary.purchased && pkgTotals && typeof pkgTotals.purchased !== 'undefined') {
+                summary.purchased.textContent = pkgTotals.purchased;
+              }
               if (summary.used && pkgTotals && typeof pkgTotals.used !== 'undefined') {
                 summary.used.textContent = pkgTotals.used;
               }
