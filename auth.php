@@ -13,6 +13,9 @@ require_once __DIR__ . '/helpers.php';
 
 ppf_time_ensure_columns($conn);
 ppf_measurement_ensure_columns($conn);
+if (isset($conn) && $conn instanceof mysqli) {
+    ppf_notifications_bootstrap($conn);
+}
 
 // Capture any Demo Mode alerts and log them for auditing.
 if (!empty($GLOBALS['PPF_DEMO_ALERTS_BUFFER']) && session_status() === PHP_SESSION_ACTIVE) {

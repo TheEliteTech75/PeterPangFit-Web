@@ -221,6 +221,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flash = $sent ? 'Password updated.' : 'Password updated (email notification could not be sent).';
         $flash_type = 'ok';
         ppf_log_safe($conn, $uid, $userEmail, $userRole, 'password_changed', 'self_service=1');
+        if (isset($conn) && $conn instanceof mysqli) {
+          ppf_notifications_record($conn, $uid, [
+            'type' => 'security.password_changed',
+            'message' => 'Your password was changed on ' . ppf_format_user_datetime(date('c'), ['fallback' => date('Y-m-d H:i:s')]),
+            'send_email' => true,
+          ]);
+        }
 
       } catch (Throwable $e) {
         $flash = $e->getMessage(); $flash_type = 'err';
