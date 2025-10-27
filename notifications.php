@@ -67,12 +67,21 @@ try {
 }
 
 $initialState = [
-  'items' => $initialQuery['data'] ?? [],
-  'pagination' => $initialQuery['pagination'] ?? ['page' => 1, 'per_page' => 25, 'total' => 0],
-  'settings' => $initialQuery['settings'] ?? ppf_notifications_default_settings(),
-  'filters' => $baseFilters,
-  'unread' => $initialUnread,
+  'feed' => [
+    'items' => $initialQuery['data'] ?? [],
+    'pagination' => $initialQuery['pagination'] ?? ['page' => 1, 'per_page' => 25, 'total' => 0],
+    'settings' => $initialQuery['settings'] ?? ppf_notifications_default_settings(),
+    'filters' => $baseFilters,
+    'unread' => $initialUnread,
+  ],
+  'rules' => []
 ];
+
+try {
+  $initialState['rules'] = ppf_notification_rules_list($conn, $tenantId, $userId);
+} catch (Throwable $e) {
+  $initialState['rules'] = [];
+}
 
 $initialStateJson = json_encode($initialState, JSON_UNESCAPED_SLASHES);
 $categoriesJson = json_encode($categories, JSON_UNESCAPED_SLASHES);
@@ -225,6 +234,46 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       display: flex;
       flex-direction: column;
       gap: 4px;
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      padding: 26px 24px 30px;
+      border-radius: 18px;
+      border: 1px solid var(--line, rgba(148,163,184,0.16));
+      background: color-mix(in srgb, var(--panel, rgba(15,23,42,0.82)) 88%, rgba(30,41,59,0.6) 12%);
+      box-shadow: 0 20px 45px rgba(15,23,42,0.34);
+    }
+    .panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+    .panel-title {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .panel-title h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    .panel-title p {
+      margin: 0;
+      color: color-mix(in srgb, var(--muted, #cbd5f5) 82%, var(--text, #f8fafc) 18%);
+      font-size: 13px;
+      max-width: 560px;
+    }
+    .panel-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
     }
     .category-tabs {
       display: flex;
@@ -515,8 +564,14 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       .toolbar-right {
         width: 100%;
       }
-      .toolbar-right {
-        justify-content: flex-end;
+      .panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .panel-actions {
+        width: 100%;
+        justify-content: flex-start;
       }
       .category-header {
         flex-direction: column;
@@ -533,43 +588,62 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         <p>Stay up to date with workouts, billing, security alerts, and your own reminders.</p>
       </div>
       <div class="actions">
-        <button type="button" class="ppf-btn" data-action="mark-all" disabled>Mark all read</button>
-        <button type="button" class="ppf-btn" data-action="refresh">Refresh</button>
-        <button type="button" class="ppf-btn brand" data-action="create">Create</button>
+        <button type="button" class="ppf-btn" data-feed-action="mark-all" disabled>Mark all read</button>
+        <button type="button" class="ppf-btn" data-feed-action="refresh">Refresh</button>
       </div>
     </div>
 
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <label>
-          Status
-          <select data-filter="status">
-            <option value="all">All</option>
-            <option value="unread">Unread</option>
-            <option value="read">Read</option>
-            <option value="archived">Archived</option>
-          </select>
-        </label>
-        <label>
-          Search
-          <input type="search" placeholder="Search notifications" data-filter="search" />
-        </label>
-      </div>
-      <div class="toolbar-right">
+    <section class="panel" data-feed-section>
+      <div class="panel-header">
+        <div class="panel-title">
+          <h2>Inbox</h2>
+          <p>Your latest alerts appear here. Use filters to focus on what's important.</p>
+        </div>
         <div class="status-indicator" data-summary>
           <strong>0</strong> unread notifications
         </div>
       </div>
-    </div>
 
-    <div class="category-tabs" data-category-tabs></div>
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <label>
+            Status
+            <select data-filter="status">
+              <option value="all">All</option>
+              <option value="unread">Unread</option>
+              <option value="read">Read</option>
+              <option value="archived">Archived</option>
+            </select>
+          </label>
+          <label>
+            Search
+            <input type="search" placeholder="Search notifications" data-filter="search" />
+          </label>
+        </div>
+      </div>
 
-    <div data-category-container></div>
+      <div class="category-tabs" data-feed-tabs></div>
+
+      <div data-feed-list></div>
+    </section>
+
+    <section class="panel" data-rules-section>
+      <div class="panel-header">
+        <div class="panel-title">
+          <h2>Notification Rules</h2>
+          <p>Customize which events create alerts and whether email copies are sent.</p>
+        </div>
+        <div class="panel-actions">
+          <button type="button" class="ppf-btn brand" data-rule-action="create">Create rule</button>
+        </div>
+      </div>
+      <div data-rules-container></div>
+    </section>
   </main>
 
   <div class="modal-backdrop" data-modal-backdrop>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="notificationModalTitle">
-      <h2 id="notificationModalTitle">Create notification</h2>
+      <h2 id="notificationModalTitle">Create notification rule</h2>
       <form data-modal-form>
         <label>
           Category
@@ -612,546 +686,689 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       csrf: <?php echo $csrfJson; ?>
     };
   </script>
-  <script>
+    <script>
   (function(){
     var bootstrap = window.__PPF_NOTIFICATION_BOOTSTRAP__ || {};
     var initialState = bootstrap.state || {};
-    var state = {
-      items: Array.isArray(initialState.items) ? initialState.items.slice() : [],
-      pagination: initialState.pagination || { page: 1, per_page: 25, total: 0 },
-      filters: Object.assign({}, initialState.filters || {}),
-      unread: (typeof initialState.unread === 'number') ? initialState.unread : 0,
-      category: 'all',
-      searchTimeout: null,
-      loading: false
-    };
     var categories = bootstrap.categories || {};
     var catalog = bootstrap.catalog || {};
     var types = bootstrap.types || {};
     var csrf = bootstrap.csrf || '';
-    var center = document.querySelector('[data-notification-center]');
-    if (!center) { return; }
-    var tabsContainer = center.querySelector('[data-category-tabs]');
-    var categoryContainer = center.querySelector('[data-category-container]');
-    var statusSelect = center.querySelector('[data-filter="status"]');
-    var searchInput = center.querySelector('[data-filter="search"]');
-    var summaryEl = center.querySelector('[data-summary]');
-    var markAllBtn = center.querySelector('[data-action="mark-all"]');
-    var refreshBtn = center.querySelector('[data-action="refresh"]');
-    var createBtn = center.querySelector('[data-action="create"]');
+    var state = {
+      feed: {
+        items: initialState.feed && Array.isArray(initialState.feed.items) ? initialState.feed.items.slice() : [],
+        pagination: initialState.feed && initialState.feed.pagination ? initialState.feed.pagination : { page: 1, per_page: 25, total: 0 },
+        filters: Object.assign({ status: 'all', type: '', priority: '', q: '', category: 'all' }, initialState.feed && initialState.feed.filters ? initialState.feed.filters : {}),
+        unread: initialState.feed && typeof initialState.feed.unread === 'number' ? initialState.feed.unread : 0,
+        settings: initialState.feed && initialState.feed.settings ? initialState.feed.settings : {},
+        category: 'all',
+        loading: false
+      },
+      rules: Array.isArray(initialState.rules) ? initialState.rules.slice() : [],
+      ruleEditing: null,
+      searchTimeout: null
+    };
 
-    function groupItems(items){
-      var grouped = {};
-      Object.keys(categories).forEach(function(key){ grouped[key] = []; });
-      (items || []).forEach(function(item){
-        var meta = item.metadata || {};
-        var cat = (meta.category || 'system').toLowerCase();
-        if (!grouped[cat]) { grouped[cat] = []; }
-        grouped[cat].push(item);
-      });
-      return grouped;
+    if (state.feed.filters && state.feed.filters.category && state.feed.filters.category !== 'all') {
+      state.feed.category = state.feed.filters.category;
     }
 
-    function formatDate(iso){
+    var center = document.querySelector('[data-notification-center]');
+    if (!center) { return; }
+
+    var feedListEl = center.querySelector('[data-feed-list]');
+    var feedTabsEl = center.querySelector('[data-feed-tabs]');
+    var statusSelect = center.querySelector('select[data-filter="status"]');
+    var searchInput = center.querySelector('input[data-filter="search"]');
+    var markAllBtn = center.querySelector('[data-feed-action="mark-all"]');
+    var refreshBtn = center.querySelector('[data-feed-action="refresh"]');
+    var summaryEl = center.querySelector('[data-summary]');
+    var rulesContainer = center.querySelector('[data-rules-container]');
+    var createRuleBtn = center.querySelector('[data-rule-action="create"]');
+
+    var modalBackdrop = document.querySelector('[data-modal-backdrop]');
+    var modalForm = modalBackdrop ? modalBackdrop.querySelector('[data-modal-form]') : null;
+    var modalTitle = document.getElementById('notificationModalTitle');
+    var modalClose = modalBackdrop ? modalBackdrop.querySelector('[data-modal-close]') : null;
+    var modalSubmit = modalBackdrop ? modalBackdrop.querySelector('[data-modal-submit]') : null;
+    var fieldCategory = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="category"]') : null;
+    var fieldAction = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="action"]') : null;
+    var fieldTitle = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="title"]') : null;
+    var fieldBody = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="body"]') : null;
+    var fieldChannelEmail = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="channel-email"]') : null;
+
+    function formatDate(iso) {
       if (!iso) return '';
-      var date = new Date(iso.replace(' ', 'T'));
+      var date = new Date((iso || '').replace(' ', 'T'));
       if (isNaN(date.getTime())) {
         return iso;
       }
       return date.toLocaleString();
     }
 
-    function renderTabs(){
-      if (!tabsContainer) return;
-      tabsContainer.innerHTML = '';
-      var tabOrder = Object.keys(categories);
+    function groupByCategory(items, extractor) {
+      var grouped = {};
+      Object.keys(categories).forEach(function(key){ grouped[key] = []; });
+      (items || []).forEach(function(item){
+        var key = extractor ? extractor(item) : null;
+        if (!key) {
+          key = (item && item.category) ? item.category : 'system';
+        }
+        key = String(key).toLowerCase();
+        if (!grouped[key]) {
+          grouped[key] = [];
+        }
+        grouped[key].push(item);
+      });
+      return grouped;
+    }
+
+    function renderSummary() {
+      if (!summaryEl) return;
+      var count = state.feed.unread || 0;
+      var label = count === 1 ? 'notification' : 'notifications';
+      summaryEl.innerHTML = '<strong>' + count + '</strong> unread ' + label;
+      if (markAllBtn) {
+        markAllBtn.disabled = !(count > 0);
+      }
+    }
+
+    function renderFeedTabs() {
+      if (!feedTabsEl) return;
+      feedTabsEl.innerHTML = '';
       var fragment = document.createDocumentFragment();
-      var allTab = document.createElement('button');
-      allTab.type = 'button';
-      allTab.className = 'category-tab' + (state.category === 'all' ? ' is-active' : '');
-      allTab.textContent = 'All';
-      allTab.dataset.key = 'all';
-      fragment.appendChild(allTab);
-      tabOrder.forEach(function(key){
+      var allBtn = document.createElement('button');
+      allBtn.type = 'button';
+      allBtn.className = 'category-tab' + (state.feed.category === 'all' ? ' is-active' : '');
+      allBtn.dataset.key = 'all';
+      allBtn.textContent = 'All';
+      fragment.appendChild(allBtn);
+      Object.keys(categories).forEach(function(key){
         var meta = categories[key] || {};
         var btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'category-tab' + (state.category === key ? ' is-active' : '');
-        btn.textContent = meta.label || key;
+        btn.className = 'category-tab' + (state.feed.category === key ? ' is-active' : '');
         btn.dataset.key = key;
+        btn.textContent = meta.label || key;
         fragment.appendChild(btn);
       });
-      tabsContainer.appendChild(fragment);
+      feedTabsEl.appendChild(fragment);
     }
 
-    function renderSummary(){
-      if (!summaryEl) return;
-      var label = state.unread === 1 ? 'notification' : 'notifications';
-      summaryEl.innerHTML = '<strong>' + state.unread + '</strong> unread ' + label;
-      if (markAllBtn) {
-        markAllBtn.disabled = !(state.unread > 0);
+    function renderFeedList() {
+      if (!feedListEl) return;
+      feedListEl.innerHTML = '';
+      var filtered = state.feed.items.slice();
+      if (state.feed.category !== 'all') {
+        filtered = filtered.filter(function(item){
+          var meta = item.metadata || {};
+          var cat = (meta.category || 'system').toLowerCase();
+          return cat === state.feed.category;
+        });
       }
-    }
-
-    function renderList(){
-      if (!categoryContainer) return;
-      categoryContainer.innerHTML = '';
-      var grouped = groupItems(state.items);
-      var categoriesToShow = [];
-      if (state.category === 'all') {
-        categoriesToShow = Object.keys(grouped);
-      } else {
-        categoriesToShow = [state.category];
-      }
+      var grouped = groupByCategory(filtered, function(item){
+        var meta = item.metadata || {};
+        return meta.category || 'system';
+      });
+      var categoriesToShow = state.feed.category === 'all' ? Object.keys(categories) : [state.feed.category];
       var fragment = document.createDocumentFragment();
-      categoriesToShow.forEach(function(catKey){
-        if (!grouped[catKey] || grouped[catKey].length === 0) {
-          if (state.category !== 'all') {
-            var emptyWrap = document.createElement('div');
-            emptyWrap.className = 'empty-state';
-            emptyWrap.textContent = 'No notifications yet for this category.';
-            fragment.appendChild(emptyWrap);
+
+      if (state.feed.loading) {
+        var loading = document.createElement('div');
+        loading.className = 'empty-state';
+        loading.textContent = 'Loading notifications...';
+        fragment.appendChild(loading);
+      } else {
+        categoriesToShow.forEach(function(key){
+          var items = grouped[key] || [];
+          if (!items.length) { return; }
+          var section = document.createElement('section');
+          section.className = 'category-section';
+          var header = document.createElement('div');
+          header.className = 'category-header';
+          var info = document.createElement('div');
+          info.className = 'info';
+          var title = document.createElement('h3');
+          title.textContent = (categories[key] && categories[key].label) || key;
+          info.appendChild(title);
+          if (categories[key] && categories[key].description) {
+            var desc = document.createElement('p');
+            desc.textContent = categories[key].description;
+            info.appendChild(desc);
           }
-          return;
+          header.appendChild(info);
+          section.appendChild(header);
+          var list = document.createElement('div');
+          list.className = 'notification-list';
+          items.forEach(function(item){
+            var card = document.createElement('article');
+            card.className = 'notification-card' + (item.is_read ? '' : ' is-unread');
+            var top = document.createElement('div');
+            top.className = 'notification-top';
+            var titleEl = document.createElement('h3');
+            titleEl.textContent = item.title || 'Notification';
+            top.appendChild(titleEl);
+            var badge = document.createElement('span');
+            badge.className = 'badge';
+            var typeKey = item.type || 'info';
+            badge.dataset.type = typeKey;
+            var typeMeta = types[typeKey] || {};
+            badge.textContent = typeMeta.label || typeKey;
+            top.appendChild(badge);
+            card.appendChild(top);
+            if (item.body) {
+              var body = document.createElement('div');
+              body.className = 'notification-body';
+              body.textContent = item.body;
+              card.appendChild(body);
+            }
+            var metaLine = document.createElement('div');
+            metaLine.className = 'notification-meta';
+            var time = document.createElement('span');
+            time.textContent = formatDate(item.created_at);
+            metaLine.appendChild(time);
+            var actions = document.createElement('div');
+            actions.className = 'notification-actions';
+            var readBtn = document.createElement('button');
+            readBtn.type = 'button';
+            readBtn.className = 'action-link';
+            readBtn.dataset.feedItemAction = 'toggle-read';
+            readBtn.dataset.id = item.id;
+            readBtn.textContent = item.is_read ? 'Mark unread' : 'Mark read';
+            actions.appendChild(readBtn);
+            var archiveBtn = document.createElement('button');
+            archiveBtn.type = 'button';
+            archiveBtn.className = 'action-link';
+            archiveBtn.dataset.feedItemAction = item.is_archived ? 'unarchive' : 'archive';
+            archiveBtn.dataset.id = item.id;
+            archiveBtn.textContent = item.is_archived ? 'Restore' : 'Archive';
+            actions.appendChild(archiveBtn);
+            if (item.url) {
+              var viewLink = document.createElement('a');
+              viewLink.href = item.url;
+              viewLink.target = '_blank';
+              viewLink.rel = 'noopener';
+              viewLink.className = 'action-link';
+              viewLink.textContent = 'View';
+              actions.appendChild(viewLink);
+            }
+            if (item.metadata && item.metadata.channels && item.metadata.channels.email) {
+              var emailPill = document.createElement('span');
+              emailPill.className = 'meta-pill';
+              emailPill.textContent = 'Email copy';
+              actions.appendChild(emailPill);
+            }
+            metaLine.appendChild(actions);
+            card.appendChild(metaLine);
+            list.appendChild(card);
+          });
+          section.appendChild(list);
+          fragment.appendChild(section);
+        });
+
+        if (!fragment.children.length) {
+          var empty = document.createElement('div');
+          empty.className = 'empty-state';
+          empty.textContent = state.feed.category === 'all' ? 'No notifications yet.' : 'No notifications for this category.';
+          fragment.appendChild(empty);
         }
+      }
+      feedListEl.appendChild(fragment);
+    }
+
+    function renderRules() {
+      if (!rulesContainer) return;
+      rulesContainer.innerHTML = '';
+      if (!state.rules.length) {
+        var empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.innerHTML = 'No rules yet. Use <strong>Create rule</strong> to add one.';
+        rulesContainer.appendChild(empty);
+        return;
+      }
+      var grouped = groupByCategory(state.rules, function(rule){ return rule.category || 'system'; });
+      var fragment = document.createDocumentFragment();
+      Object.keys(categories).forEach(function(key){
+        var rules = grouped[key] || [];
+        if (!rules.length) { return; }
         var section = document.createElement('section');
         section.className = 'category-section';
         var header = document.createElement('div');
         header.className = 'category-header';
         var info = document.createElement('div');
         info.className = 'info';
-        var catMeta = categories[catKey] || {};
-        var title = document.createElement('h2');
-        title.textContent = catMeta.label ? String(catMeta.label) : catKey;
-        var desc = document.createElement('p');
-        var descText = catMeta.description ? String(catMeta.description) : '';
-        desc.textContent = descText;
+        var title = document.createElement('h3');
+        title.textContent = (categories[key] && categories[key].label) || key;
         info.appendChild(title);
-        if (descText) { info.appendChild(desc); }
+        if (categories[key] && categories[key].description) {
+          var desc = document.createElement('p');
+          desc.textContent = categories[key].description;
+          info.appendChild(desc);
+        }
         header.appendChild(info);
         section.appendChild(header);
         var list = document.createElement('div');
         list.className = 'notification-list';
-        grouped[catKey].forEach(function(item){
+        rules.forEach(function(rule){
           var card = document.createElement('article');
-          card.className = 'notification-card' + (item.is_read ? '' : ' is-unread');
-          var immutable = !!(item.metadata && item.metadata.immutable);
-          if (immutable) {
+          card.className = 'notification-card';
+          if (rule.immutable) {
             card.classList.add('is-immutable');
           }
           var top = document.createElement('div');
           top.className = 'notification-top';
           var titleEl = document.createElement('h3');
-          titleEl.textContent = item.title || 'Notification';
+          titleEl.textContent = rule.title || 'Notification rule';
+          top.appendChild(titleEl);
           var badge = document.createElement('span');
           badge.className = 'badge';
-          badge.dataset.type = item.type || 'info';
-          var typeInfo = types[item.type || 'info'] || {};
-          badge.textContent = typeInfo.label ? String(typeInfo.label) : (item.type || 'Info');
-          top.appendChild(titleEl);
+          badge.dataset.type = rule.immutable ? 'system' : 'info';
+          badge.textContent = rule.immutable ? 'Protected' : 'Custom';
           top.appendChild(badge);
           card.appendChild(top);
-          if (item.body) {
+          if (rule.body) {
             var body = document.createElement('div');
             body.className = 'notification-body';
-            body.textContent = item.body;
+            body.textContent = rule.body;
             card.appendChild(body);
           }
           var metaLine = document.createElement('div');
           metaLine.className = 'notification-meta';
-          var time = document.createElement('span');
-          time.textContent = formatDate(item.created_at);
-          metaLine.appendChild(time);
-          var metaPills = document.createElement('div');
-          metaPills.className = 'notification-actions';
-          var readBtn = document.createElement('button');
-          readBtn.type = 'button';
-          readBtn.className = 'action-link';
-          readBtn.dataset.action = 'toggle-read';
-          readBtn.dataset.id = item.id;
-          readBtn.textContent = item.is_read ? 'Mark unread' : 'Mark read';
-          metaPills.appendChild(readBtn);
-          var emailBtn = document.createElement('button');
-          emailBtn.type = 'button';
-          emailBtn.className = 'action-link';
-          emailBtn.dataset.action = 'toggle-email';
-          emailBtn.dataset.id = item.id;
-          var sendEmail = !!(item.metadata && item.metadata.send_email);
-          emailBtn.textContent = sendEmail ? 'Email enabled' : 'Email disabled';
-          metaPills.appendChild(emailBtn);
-          if (!immutable) {
+          var channels = document.createElement('span');
+          var channelText = rule.send_email ? 'Notification Center + Email' : 'Notification Center only';
+          channels.textContent = channelText;
+          metaLine.appendChild(channels);
+          var actions = document.createElement('div');
+          actions.className = 'notification-actions';
+          if (!rule.immutable) {
+            var toggleBtn = document.createElement('button');
+            toggleBtn.type = 'button';
+            toggleBtn.className = 'action-link';
+            toggleBtn.dataset.ruleAction = 'toggle-email';
+            toggleBtn.dataset.id = rule.id;
+            toggleBtn.textContent = rule.send_email ? 'Disable email' : 'Enable email';
+            actions.appendChild(toggleBtn);
+
             var editBtn = document.createElement('button');
             editBtn.type = 'button';
             editBtn.className = 'action-link';
-            editBtn.dataset.action = 'edit';
-            editBtn.dataset.id = item.id;
+            editBtn.dataset.ruleAction = 'edit';
+            editBtn.dataset.id = rule.id;
             editBtn.textContent = 'Edit';
-            metaPills.appendChild(editBtn);
+            actions.appendChild(editBtn);
+
             var deleteBtn = document.createElement('button');
             deleteBtn.type = 'button';
             deleteBtn.className = 'action-link';
-            deleteBtn.dataset.action = 'delete';
-            deleteBtn.dataset.id = item.id;
+            deleteBtn.dataset.ruleAction = 'delete';
+            deleteBtn.dataset.id = rule.id;
             deleteBtn.textContent = 'Delete';
-            metaPills.appendChild(deleteBtn);
+            actions.appendChild(deleteBtn);
           } else {
-            var lockPill = document.createElement('span');
-            lockPill.className = 'meta-pill';
-            lockPill.textContent = 'Security policy';
-            metaPills.appendChild(lockPill);
+            var lock = document.createElement('span');
+            lock.className = 'meta-pill';
+            lock.textContent = 'Security policy';
+            actions.appendChild(lock);
           }
-          metaLine.appendChild(metaPills);
+          metaLine.appendChild(actions);
           card.appendChild(metaLine);
           list.appendChild(card);
         });
         section.appendChild(list);
         fragment.appendChild(section);
       });
-      if (!fragment.children.length) {
-        var empty = document.createElement('div');
-        empty.className = 'empty-state';
-        empty.innerHTML = 'No notifications found. Use <strong>Create</strong> to add your first reminder.';
-        fragment.appendChild(empty);
-      }
-      categoryContainer.appendChild(fragment);
+      rulesContainer.appendChild(fragment);
     }
 
-    function renderAll(){
-      renderTabs();
+    function renderAll() {
       renderSummary();
-      renderList();
+      renderFeedTabs();
+      renderFeedList();
+      renderRules();
     }
 
-    function buildParams(){
+    function withCsrfOptions(method, body) {
+      var opts = { method: method || 'POST', headers: {} };
+      if (opts.method !== 'GET') {
+        opts.headers['Content-Type'] = 'application/json';
+        if (csrf) {
+          opts.headers['X-CSRF-Token'] = csrf;
+        }
+      }
+      if (body !== undefined) {
+        opts.body = JSON.stringify(body);
+      }
+      return opts;
+    }
+
+    function fetchJson(url, options) {
+      return fetch(url, options).then(function(res){
+        if (!res.ok) {
+          return res.json().catch(function(){ return {}; }).then(function(json){
+            var message = json && json.error ? json.error : 'Request failed.';
+            throw new Error(message);
+          });
+        }
+        return res.json();
+      });
+    }
+
+    function loadFeed() {
+      state.feed.loading = true;
+      renderFeedList();
       var params = new URLSearchParams();
-      var status = state.filters.status || 'all';
-      if (status && status !== 'all') params.set('status', status);
-      if (state.category && state.category !== 'all') params.set('category', state.category);
-      var search = state.filters.q || '';
-      if (search) params.set('q', search);
-      params.set('page', state.pagination.page || 1);
-      params.set('per_page', state.pagination.per_page || 25);
-      params.set('sort', 'created_at:desc');
-      return params;
-    }
-
-    function fetchNotifications(){
-      state.loading = true;
-      var params = buildParams();
-      return fetch('api/notifications/index.php?' + params.toString(), {
-        headers: { 'Accept': 'application/json' }
-      }).then(function(res){
-        if (!res.ok) throw new Error('Failed to load');
-        return res.json();
-      }).then(function(json){
-        if (!json) return;
-        state.items = Array.isArray(json.data) ? json.data : [];
-        state.pagination = json.pagination || state.pagination;
-        if (json.filters && typeof json.filters.status !== 'undefined') {
-          state.filters.status = json.filters.status || 'all';
-        }
-        if (typeof json.unread === 'number') {
-          state.unread = json.unread;
-        }
+      params.set('status', state.feed.filters.status || 'all');
+      if (state.feed.filters.type) params.set('type', state.feed.filters.type);
+      if (state.feed.filters.priority) params.set('priority', state.feed.filters.priority);
+      if (state.feed.filters.q) params.set('q', state.feed.filters.q);
+      if (state.feed.filters.category) params.set('category', state.feed.filters.category);
+      params.set('page', state.feed.pagination.page || 1);
+      params.set('per_page', state.feed.pagination.per_page || 25);
+      fetchJson('api/notifications/index.php?' + params.toString()).then(function(json){
+        state.feed.items = Array.isArray(json.data) ? json.data : [];
+        state.feed.pagination = json.pagination || state.feed.pagination;
+        state.feed.filters = json.filters || state.feed.filters;
+        state.feed.unread = typeof json.unread === 'number' ? json.unread : state.feed.unread;
         renderAll();
-      }).catch(function(){
-        // silent
+      }).catch(function(err){
+        console.error(err);
       }).finally(function(){
-        state.loading = false;
+        state.feed.loading = false;
+        renderFeedList();
       });
     }
 
-    function postJson(path, method, payload){
-      var headers = { 'Content-Type': 'application/json' };
-      if (csrf) headers['X-CSRF-Token'] = csrf;
-      return fetch(path, {
-        method: method || 'POST',
-        headers: headers,
-        body: payload ? JSON.stringify(payload) : undefined
-      }).then(function(res){
-        if (!res.ok) throw res;
-        return res.json();
+    function loadRules() {
+      fetchJson('api/notifications/index.php/rules').then(function(json){
+        state.rules = Array.isArray(json.rules) ? json.rules : [];
+        renderRules();
+      }).catch(function(err){
+        console.error(err);
       });
     }
 
-    function handleTabClick(event){
-      var btn = event.target.closest('.category-tab');
-      if (!btn) return;
-      var key = btn.dataset.key || 'all';
-      if (state.category === key) return;
-      state.category = key;
-      renderAll();
-      fetchNotifications();
-    }
-
-    function handleStatusChange(){
-      state.filters.status = statusSelect.value;
-      fetchNotifications();
-    }
-
-    function handleSearchInput(){
-      if (state.searchTimeout) {
-        clearTimeout(state.searchTimeout);
+    function updateRuleInState(rule) {
+      var idx = state.rules.findIndex(function(r){ return r.id === rule.id; });
+      if (idx === -1) {
+        state.rules.push(rule);
+      } else {
+        state.rules[idx] = rule;
       }
-      state.searchTimeout = setTimeout(function(){
-        state.filters.q = searchInput.value.trim();
-        fetchNotifications();
-      }, 300);
-    }
-
-    function handleActionClick(event){
-      var btn = event.target.closest('.action-link');
-      if (!btn) return;
-      var id = parseInt(btn.dataset.id || '0', 10);
-      if (!id) return;
-      var action = btn.dataset.action;
-      if (action === 'toggle-read') {
-        var item = state.items.find(function(it){ return it.id === id; });
-        var shouldRead = !(item && item.is_read);
-        postJson('api/notifications/index.php/' + id + '/' + (shouldRead ? 'read' : 'unread'), 'PATCH').then(function(json){
-          if (json && json.data) {
-            state.items = state.items.map(function(entry){ return entry.id === id ? json.data : entry; });
-            state.unread = typeof json.unread === 'number' ? json.unread : state.unread;
-            renderAll();
-          }
-        }).catch(function(){});
-      } else if (action === 'toggle-email') {
-        var item2 = state.items.find(function(it){ return it.id === id; });
-        var next = !(item2 && item2.metadata && item2.metadata.send_email);
-        postJson('api/notifications/index.php/' + id + '/channels', 'PATCH', { email: next }).then(function(json){
-          if (json && json.data) {
-            state.items = state.items.map(function(entry){ return entry.id === id ? json.data : entry; });
-            renderAll();
-          }
-        }).catch(function(){});
-      } else if (action === 'edit') {
-        openModal('edit', id);
-      } else if (action === 'delete') {
-        if (!confirm('Delete this notification?')) return;
-        postJson('api/notifications/index.php/' + id, 'DELETE').then(function(){
-          state.items = state.items.filter(function(entry){ return entry.id !== id; });
-          fetchNotifications();
-        }).catch(function(){});
-      }
-    }
-
-    if (tabsContainer) {
-      tabsContainer.addEventListener('click', handleTabClick);
-    }
-    if (statusSelect) {
-      statusSelect.value = state.filters.status || 'all';
-      statusSelect.addEventListener('change', handleStatusChange);
-    }
-    if (searchInput) {
-      searchInput.value = state.filters.q || '';
-      searchInput.addEventListener('input', handleSearchInput);
-    }
-    if (markAllBtn) {
-      markAllBtn.addEventListener('click', function(){
-        postJson('api/notifications/index.php/bulk', 'PATCH', { scope: 'all', operation: 'read' }).then(function(json){
-          if (json && Array.isArray(json.processed)) {
-            fetchNotifications();
-          }
-        }).catch(function(){});
-      });
-    }
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', function(){
-        fetchNotifications();
-      });
-    }
-
-    var modalBackdrop = document.querySelector('[data-modal-backdrop]');
-    var modalForm = modalBackdrop ? modalBackdrop.querySelector('[data-modal-form]') : null;
-    var modalTitle = modalBackdrop ? modalBackdrop.querySelector('#notificationModalTitle') : null;
-    var categoryField = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="category"]') : null;
-    var actionField = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="action"]') : null;
-    var titleField = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="title"]') : null;
-    var bodyField = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="body"]') : null;
-    var emailField = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="channel-email"]') : null;
-    var modalSubmit = modalBackdrop ? modalBackdrop.querySelector('[data-modal-submit]') : null;
-    var closeBtn = modalBackdrop ? modalBackdrop.querySelector('[data-modal-close]') : null;
-    var currentModalMode = 'create';
-    var editingId = null;
-
-    function populateCategoryField(){
-      if (!categoryField) return;
-      categoryField.innerHTML = '';
-      Object.keys(categories).forEach(function(key){
-        var opt = document.createElement('option');
-        opt.value = key;
-        var meta = categories[key] || {};
-        opt.textContent = meta.label ? String(meta.label) : key;
-        categoryField.appendChild(opt);
-      });
-      if (!categories['custom']) {
-        var opt = document.createElement('option');
-        opt.value = 'custom';
-        opt.textContent = 'Custom';
-        categoryField.appendChild(opt);
-      }
-    }
-
-    function getActionDefinition(catKey, actionKey){
-      var list = catalog[catKey] || [];
-      for (var i = 0; i < list.length; i++) {
-        if (list[i] && list[i].type_key === actionKey) {
-          return list[i];
-        }
-      }
-      return null;
-    }
-
-    function populateActionField(catKey){
-      if (!actionField) return;
-      actionField.innerHTML = '';
-      var options = catalog[catKey] || [];
-      if (catKey === 'custom' || options.length === 0) {
-        var customOpt = document.createElement('option');
-        customOpt.value = 'custom.manual';
-        customOpt.textContent = 'Custom message';
-        actionField.appendChild(customOpt);
-      }
-      options.forEach(function(def){
-        var opt = document.createElement('option');
-        opt.value = def.type_key;
-        opt.textContent = def.title || def.type_key;
-        actionField.appendChild(opt);
-      });
-    }
-
-    function applyActionDefaults(catKey, actionKey){
-      if (!titleField || !bodyField) return;
-      if (!catKey) return;
-      if (actionKey === 'custom.manual') {
-        if (currentModalMode === 'create') {
-          if (!titleField.value) titleField.value = '';
-          if (!bodyField.value) bodyField.value = '';
-        }
-        return;
-      }
-      var def = getActionDefinition(catKey, actionKey);
-      if (!def) return;
-      if (currentModalMode === 'create' || !titleField.value) {
-        titleField.value = def.title || titleField.value;
-      }
-      if (currentModalMode === 'create' || !bodyField.value) {
-        bodyField.value = def.body || bodyField.value;
-      }
-    }
-
-    function openModal(mode, id){
-      currentModalMode = mode || 'create';
-      editingId = id || null;
-      if (!modalBackdrop) return;
-      populateCategoryField();
-      var defaultCategory = 'custom';
-      var defaultAction = 'custom.manual';
-      var defaultTitle = '';
-      var defaultBody = '';
-      var defaultEmail = false;
-      if (mode === 'edit' && id) {
-        var existing = state.items.find(function(it){ return it.id === id; });
-        if (existing) {
-          var meta = existing.metadata || {};
-          defaultCategory = (meta.category || 'system').toLowerCase();
-          defaultAction = meta.type_key || 'custom.manual';
-          defaultTitle = existing.title || '';
-          defaultBody = existing.body || '';
-          defaultEmail = !!meta.send_email;
-        }
-      }
-      if (!categories[defaultCategory]) {
-        defaultCategory = 'custom';
-      }
-      populateActionField(defaultCategory);
-      categoryField.value = defaultCategory;
-      if (Array.from(actionField.options).some(function(opt){ return opt.value === defaultAction; })) {
-        actionField.value = defaultAction;
-      }
-      titleField.value = defaultTitle;
-      bodyField.value = defaultBody;
-      applyActionDefaults(defaultCategory, actionField.value);
-      emailField.checked = !!defaultEmail;
-      if (modalTitle) {
-        modalTitle.textContent = mode === 'edit' ? 'Edit notification' : 'Create notification';
-      }
-      modalBackdrop.classList.add('is-visible');
-      setTimeout(function(){ titleField.focus(); }, 60);
-    }
-
-    function closeModal(){
-      if (!modalBackdrop) return;
-      modalBackdrop.classList.remove('is-visible');
-      editingId = null;
-      currentModalMode = 'create';
-      if (modalForm && typeof modalForm.reset === 'function') {
-        modalForm.reset();
-      }
-    }
-
-    if (createBtn) {
-      createBtn.addEventListener('click', function(){ openModal('create'); });
-    }
-    if (closeBtn) {
-      closeBtn.addEventListener('click', function(){ closeModal(); });
-    }
-    if (modalBackdrop) {
-      modalBackdrop.addEventListener('click', function(evt){
-        if (evt.target === modalBackdrop) {
-          closeModal();
-        }
-      });
-    }
-    if (categoryField) {
-      categoryField.addEventListener('change', function(){
-        var cat = categoryField.value || 'custom';
-        populateActionField(cat);
-        if (actionField.options.length > 0) {
-          actionField.value = actionField.options[0].value;
-        }
-        titleField.value = '';
-        bodyField.value = '';
-        applyActionDefaults(cat, actionField.value);
-      });
-    }
-    if (actionField) {
-      actionField.addEventListener('change', function(){
-        var cat = categoryField.value || 'custom';
-        applyActionDefaults(cat, actionField.value || 'custom.manual');
-      });
-    }
-    if (modalForm) {
-      modalForm.addEventListener('submit', function(evt){
-        evt.preventDefault();
-        var payload = {
-          category: categoryField.value || 'custom',
-          action: actionField.value || 'custom.manual',
-          title: titleField.value.trim(),
-          body: bodyField.value.trim(),
-          send_email: emailField.checked
-        };
-        if (currentModalMode === 'edit' && editingId) {
-          postJson('api/notifications/index.php/' + editingId, 'PATCH', payload).then(function(){
-            closeModal();
-            fetchNotifications();
-          }).catch(function(){});
-        } else {
-          postJson('api/notifications/index.php', 'POST', payload).then(function(){
-            closeModal();
-            fetchNotifications();
-          }).catch(function(){});
-        }
-      });
-    }
-
-    if (categoryContainer) {
-      categoryContainer.addEventListener('click', handleActionClick);
+      renderRules();
     }
 
     renderAll();
-    fetchNotifications();
+
+    if (statusSelect) {
+      statusSelect.value = state.feed.filters.status || 'all';
+      statusSelect.addEventListener('change', function(){
+        state.feed.filters.status = this.value;
+        loadFeed();
+      });
+    }
+
+    if (searchInput) {
+      searchInput.value = state.feed.filters.q || '';
+      searchInput.addEventListener('input', function(){
+        var value = this.value || '';
+        state.feed.filters.q = value;
+        if (state.searchTimeout) {
+          clearTimeout(state.searchTimeout);
+        }
+        state.searchTimeout = setTimeout(function(){
+          loadFeed();
+        }, 350);
+      });
+    }
+
+    if (feedTabsEl) {
+      feedTabsEl.addEventListener('click', function(event){
+        var target = event.target;
+        if (!target || !target.dataset.key) { return; }
+        var key = target.dataset.key;
+        if (key === state.feed.category) { return; }
+        state.feed.category = key;
+        state.feed.filters.category = key === 'all' ? 'all' : key;
+        renderFeedTabs();
+        renderFeedList();
+      });
+    }
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function(){
+        loadFeed();
+      });
+    }
+
+    if (markAllBtn) {
+      markAllBtn.addEventListener('click', function(){
+        fetchJson('api/notifications/index.php/bulk', withCsrfOptions('PATCH', { scope: 'all', operation: 'read' })).then(function(json){
+          state.feed.unread = typeof json.unread === 'number' ? json.unread : 0;
+          state.feed.items = state.feed.items.map(function(item){
+            var clone = Object.assign({}, item);
+            clone.is_read = true;
+            clone.read_at = clone.read_at || new Date().toISOString();
+            return clone;
+          });
+          renderAll();
+        }).catch(function(err){
+          alert(err.message || 'Unable to mark notifications.');
+        });
+      });
+    }
+
+    if (feedListEl) {
+      feedListEl.addEventListener('click', function(event){
+        var target = event.target;
+        if (!target || !target.dataset.feedItemAction) { return; }
+        var id = parseInt(target.dataset.id || '0', 10);
+        if (!id) { return; }
+        var action = target.dataset.feedItemAction;
+        if (action === 'toggle-read') {
+          var item = state.feed.items.find(function(it){ return it.id === id; });
+          var shouldRead = !(item && item.is_read);
+          fetchJson('api/notifications/index.php/' + id + '/' + (shouldRead ? 'read' : 'unread'), withCsrfOptions('PATCH')).then(function(json){
+            if (json && json.data) {
+              state.feed.items = state.feed.items.map(function(entry){ return entry.id === id ? json.data : entry; });
+              state.feed.unread = typeof json.unread === 'number' ? json.unread : state.feed.unread;
+              renderAll();
+            }
+          }).catch(function(err){
+            alert(err.message || 'Unable to update notification.');
+          });
+        } else if (action === 'archive' || action === 'unarchive') {
+          var archived = action === 'archive';
+          fetchJson('api/notifications/index.php/' + id + '/archive', withCsrfOptions('PATCH', { archived: archived })).then(function(json){
+            if (json && json.data) {
+              state.feed.items = state.feed.items.map(function(entry){ return entry.id === id ? json.data : entry; });
+              state.feed.unread = typeof json.unread === 'number' ? json.unread : state.feed.unread;
+              renderAll();
+            }
+          }).catch(function(err){
+            alert(err.message || 'Unable to update notification.');
+          });
+        }
+      });
+    }
+
+    function populateCategoryOptions(selected) {
+      if (!fieldCategory) return;
+      fieldCategory.innerHTML = '';
+      Object.keys(categories).forEach(function(key){
+        var opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = categories[key].label || key;
+        if (selected && selected === key) {
+          opt.selected = true;
+        }
+        fieldCategory.appendChild(opt);
+      });
+      if (!selected && fieldCategory.options.length) {
+        fieldCategory.selectedIndex = 0;
+      }
+    }
+
+    function populateActionOptions(categoryKey, selected) {
+      if (!fieldAction) return;
+      fieldAction.innerHTML = '';
+      var options = catalog[categoryKey] || [];
+      if (!options.length) {
+        var fallback = document.createElement('option');
+        fallback.value = 'custom.manual';
+        fallback.textContent = 'Custom reminder';
+        fieldAction.appendChild(fallback);
+        fieldAction.value = 'custom.manual';
+        return;
+      }
+      options.forEach(function(optDef){
+        var opt = document.createElement('option');
+        opt.value = optDef.type_key || optDef.key || '';
+        opt.textContent = optDef.title || opt.value || 'Notification';
+        if (selected && selected === opt.value) {
+          opt.selected = true;
+        }
+        fieldAction.appendChild(opt);
+      });
+      if (!selected && fieldAction.options.length) {
+        fieldAction.selectedIndex = 0;
+      }
+    }
+
+    function openRuleModal(rule) {
+      if (!modalBackdrop || !modalForm) return;
+      state.ruleEditing = rule ? rule.id : null;
+      if (modalTitle) {
+        modalTitle.textContent = rule ? 'Edit notification rule' : 'Create notification rule';
+      }
+      populateCategoryOptions(rule ? rule.category : null);
+      var category = rule ? rule.category : (fieldCategory && fieldCategory.value ? fieldCategory.value : 'system');
+      populateActionOptions(category, rule ? rule.type_key : null);
+      if (fieldCategory) {
+        fieldCategory.disabled = !!rule;
+      }
+      if (fieldAction) {
+        fieldAction.disabled = !!rule;
+      }
+      if (fieldTitle) {
+        fieldTitle.value = rule ? (rule.title || '') : '';
+      }
+      if (fieldBody) {
+        fieldBody.value = rule ? (rule.body || '') : '';
+      }
+      if (fieldChannelEmail) {
+        fieldChannelEmail.checked = rule ? !!rule.send_email : false;
+      }
+      modalBackdrop.classList.add('is-active');
+      setTimeout(function(){ if (fieldTitle) { fieldTitle.focus(); } }, 60);
+    }
+
+    function closeRuleModal() {
+      if (!modalBackdrop) return;
+      modalBackdrop.classList.remove('is-active');
+      state.ruleEditing = null;
+      if (modalForm) {
+        modalForm.reset();
+      }
+      if (fieldCategory) {
+        fieldCategory.disabled = false;
+      }
+      if (fieldAction) {
+        fieldAction.disabled = false;
+      }
+    }
+
+    if (modalClose) {
+      modalClose.addEventListener('click', function(){
+        closeRuleModal();
+      });
+    }
+
+    if (modalBackdrop) {
+      modalBackdrop.addEventListener('click', function(event){
+        if (event.target === modalBackdrop) {
+          closeRuleModal();
+        }
+      });
+    }
+
+    if (fieldCategory) {
+      fieldCategory.addEventListener('change', function(){
+        populateActionOptions(this.value, null);
+      });
+    }
+
+    if (modalForm) {
+      modalForm.addEventListener('submit', function(event){
+        event.preventDefault();
+        var payload = {
+          category: fieldCategory ? fieldCategory.value : 'custom',
+          action: fieldAction ? fieldAction.value : 'custom.manual',
+          title: fieldTitle ? fieldTitle.value.trim() : '',
+          body: fieldBody ? fieldBody.value.trim() : '',
+          send_email: fieldChannelEmail ? fieldChannelEmail.checked : false
+        };
+        var method = state.ruleEditing ? 'PATCH' : 'POST';
+        var url = state.ruleEditing ? ('api/notifications/index.php/rules/' + state.ruleEditing) : 'api/notifications/index.php/rules';
+        if (modalSubmit) { modalSubmit.disabled = true; }
+        fetchJson(url, withCsrfOptions(method, payload)).then(function(json){
+          if (json && json.data) {
+            updateRuleInState(json.data);
+          } else {
+            loadRules();
+          }
+          closeRuleModal();
+        }).catch(function(err){
+          alert(err.message || 'Unable to save rule.');
+        }).finally(function(){
+          if (modalSubmit) { modalSubmit.disabled = false; }
+        });
+      });
+    }
+
+    if (createRuleBtn) {
+      createRuleBtn.addEventListener('click', function(){
+        openRuleModal(null);
+      });
+    }
+
+    if (rulesContainer) {
+      rulesContainer.addEventListener('click', function(event){
+        var target = event.target;
+        if (!target || !target.dataset.ruleAction) { return; }
+        var id = parseInt(target.dataset.id || '0', 10);
+        if (!id) { return; }
+        var action = target.dataset.ruleAction;
+        if (action === 'edit') {
+          var rule = state.rules.find(function(r){ return r.id === id; });
+          if (rule) {
+            openRuleModal(rule);
+          }
+        } else if (action === 'delete') {
+          if (!confirm('Delete this notification rule?')) { return; }
+          fetchJson('api/notifications/index.php/rules/' + id, withCsrfOptions('DELETE')).then(function(){
+            state.rules = state.rules.filter(function(r){ return r.id !== id; });
+            renderRules();
+          }).catch(function(err){
+            alert(err.message || 'Unable to delete rule.');
+          });
+        } else if (action === 'toggle-email') {
+          var rule = state.rules.find(function(r){ return r.id === id; });
+          if (!rule) { return; }
+          var next = !rule.send_email;
+          fetchJson('api/notifications/index.php/rules/' + id + '/channels', withCsrfOptions('PATCH', { email: next })).then(function(json){
+            if (json && json.data) {
+              updateRuleInState(json.data);
+            }
+          }).catch(function(err){
+            alert(err.message || 'Unable to update rule.');
+          });
+        }
+      });
+    }
+
+    loadRules();
   })();
   </script>
+
 </body>
 </html>
