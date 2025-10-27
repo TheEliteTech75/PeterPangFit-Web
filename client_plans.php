@@ -686,6 +686,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-content: start;
       align-items: stretch;
+      padding-inline-end: clamp(32px, 7vw, 96px);
     }
 
     .hero-highlight {
@@ -1788,6 +1789,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       .hero__status {
         grid-template-columns: minmax(340px, 1.35fr) repeat(2, minmax(260px, 1fr));
         grid-auto-flow: dense;
+        margin-inline-end: clamp(28px, 6vw, 104px);
+        margin-right: clamp(28px, 6vw, 104px);
       }
 
       .hero-highlight--date {
@@ -2010,6 +2013,9 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       }
       .hero__status {
         grid-area: status;
+        padding-inline-end: clamp(56px, 9vw, 144px);
+        margin-inline-end: clamp(40px, 7vw, 140px);
+        margin-right: clamp(40px, 7vw, 140px);
       }
       .toolbar {
         grid-area: toolbar;
@@ -2146,20 +2152,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         </div>
         <?php if ($hasSessionPackages): ?>
           <div class="hero-stat">
-            <span class="hero-stat__label">Sessions purchased</span>
-            <strong id="sessionsTotalPurchased" data-session-total="purchased"><?php echo $sessionTotalsPurchased; ?></strong>
-          </div>
-          <div class="hero-stat">
-            <span class="hero-stat__label">Sessions used</span>
-            <strong id="sessionsTotalUsed" data-session-total="used"><?php echo $sessionTotalsUsed; ?></strong>
-          </div>
-          <div class="hero-stat">
             <span class="hero-stat__label">Sessions scheduled</span>
             <strong id="sessionsTotalScheduled" data-session-total="scheduled"><?php echo $sessionTotalsScheduled; ?></strong>
-          </div>
-          <div class="hero-stat">
-            <span class="hero-stat__label">Sessions remaining</span>
-            <strong id="sessionsTotalRemaining" data-session-total="remaining"><?php echo $sessionTotalsRemaining; ?></strong>
           </div>
         <?php endif; ?>
       </div>
@@ -2171,8 +2165,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         </svg>
         <input id="globalSearch" type="search" placeholder="Search your workouts" autocomplete="off" />
       </div>
-      <span class="chip"><span class="dot blue"></span><span>Plans</span> <strong id="chipPlans"><?php echo count($plans); ?></strong></span>
-      <span class="chip"><span class="dot green"></span><span>Exercises shown</span> <strong id="chipItems" data-total="<?php echo $totalExercises; ?>"><?php echo $totalExercises; ?></strong></span>
       <div class="actions">
         <button class="btn" type="button" id="btnExpandAll">Open all workouts</button>
         <button class="btn" type="button" id="btnCollapseAll">Close all workouts</button>
@@ -2215,6 +2207,10 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
           </div>
         </div>
         <div class="session-card__counts" data-package-summary="<?php echo $pkgId; ?>">
+          <div class="session-card__count">
+            <span>Purchased</span>
+            <strong data-package-purchased="<?php echo $pkgId; ?>"><?php echo $purchasedCount; ?></strong>
+          </div>
           <div class="session-card__count">
             <span>Used</span>
             <strong data-package-used="<?php echo $pkgId; ?>"><?php echo $completedCount; ?></strong>
@@ -2532,8 +2528,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 (function(){
   const plans = Array.from(document.querySelectorAll('[data-plan-id]'));
   const searchInput = document.getElementById('globalSearch');
-  const chipItems = document.getElementById('chipItems');
-  const chipTotal = parseInt(chipItems?.dataset?.total || '0', 10);
   const btnExpand = document.getElementById('btnExpandAll');
   const btnCollapse = document.getElementById('btnCollapseAll');
   const latestPlanTrigger = document.querySelector('[data-latest-plan-target]');
@@ -2889,7 +2883,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
   btnCollapse?.addEventListener('click', () => plans.forEach(section => setPlanVisibility(section, false, { skipAnimation: true })));
 
   function applySearch() {
-    if (!chipItems) return;
     const term = (searchInput?.value || '').trim().toLowerCase();
     let visible = 0;
     plans.forEach(section => {
@@ -2912,11 +2905,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         setPlanVisibility(section, true, { skipAnimation: true });
       }
     });
-    if (term) {
-      chipItems.textContent = visible;
-    } else {
-      chipItems.textContent = chipTotal;
-    }
   }
 
   searchInput?.addEventListener('input', applySearch);
@@ -2980,15 +2968,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     });
   }
 
-  document.querySelectorAll('.hero-stat').forEach(stat => {
-    const label = stat.querySelector('.hero-stat__label');
-    if (!label) return;
-    const text = (label.textContent || label.innerText || '').trim().toLowerCase();
-    if (text === 'sessions scheduled') {
-      stat.remove();
-    }
-  });
-
   const sessionRows = new Map();
   document.querySelectorAll('[data-session-row]').forEach(row => {
     const sessionId = row.dataset.sessionRow;
@@ -3002,17 +2981,23 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
   const csrfToken = document.body && document.body.dataset ? (document.body.dataset.csrf || '') : '';
   const sessionTotalsTargets = {};
-  ['purchased', 'used', 'remaining'].forEach(key => {
+  ['purchased', 'used', 'scheduled', 'remaining'].forEach(key => {
     sessionTotalsTargets[key] = Array.from(document.querySelectorAll(`[data-session-total="${key}"]`));
   });
   const packageTotals = new Map();
   document.querySelectorAll('[data-package-summary]').forEach(el => {
     const pkgId = el.dataset.packageSummary;
     if (!pkgId) return;
+    const purchasedEl = el.querySelector('[data-package-purchased]');
     const usedEl = el.querySelector('[data-package-used]');
     const scheduledEl = el.querySelector('[data-package-scheduled]');
     const remainingEl = el.querySelector('[data-package-remaining]');
-    packageTotals.set(String(pkgId), { used: usedEl, scheduled: scheduledEl, remaining: remainingEl });
+    packageTotals.set(String(pkgId), {
+      purchased: purchasedEl,
+      used: usedEl,
+      scheduled: scheduledEl,
+      remaining: remainingEl,
+    });
   });
 
   const HALF_HOUR_MS = 30 * 60 * 1000;
@@ -3225,6 +3210,9 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
           if (pkgId) {
             const summary = packageTotals.get(pkgId);
             if (summary) {
+              if (summary.purchased && pkgTotals && typeof pkgTotals.purchased !== 'undefined') {
+                summary.purchased.textContent = pkgTotals.purchased;
+              }
               if (summary.used && pkgTotals && typeof pkgTotals.used !== 'undefined') {
                 summary.used.textContent = pkgTotals.used;
               }
