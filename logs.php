@@ -344,14 +344,14 @@ if ($stmt = $conn->prepare($sql)) {
     .btn.brand{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.35)}
     table{width:100%;border-collapse:collapse}
     th,td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
-    th{color:#c3c9d4;font-size:12px;text-transform:uppercase;letter-spacing:.3px;background:rgba(8,13,23,0.95);text-align:left}
+    th{color:#c3c9d4;font-size:12px;letter-spacing:.3px;background:rgba(8,13,23,0.95);text-align:left}
     .muted{color:var(--muted)}
     .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end}
     .filters{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
     .span-2{grid-column:span 2}
     .span-3{grid-column:span 3}
     .span-4{grid-column:span 4}
-    .sort-btn{all:unset;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit}
+    .sort-btn{appearance:none;background:none;border:none;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
     .sort-btn:hover .sort-indicator{opacity:0.8}
     .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
     .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}
