@@ -72,6 +72,14 @@ if (ppf_is_admin_role($role)) {
     $showDemoBanner = false;
   }
 }
+
+if (isset($conn) && $conn instanceof mysqli && function_exists('ppf_log_page_view')) {
+  try {
+    ppf_log_page_view($conn, $_SESSION['user_id'] ?? null, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null);
+  } catch (Throwable $e) {
+    // Never interrupt rendering if logging fails
+  }
+}
 ?>
 <?php echo $themeStyleTag, "\n", $themeInitScript, "\n"; ?>
 <style>
