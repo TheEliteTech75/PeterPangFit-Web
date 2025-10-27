@@ -490,7 +490,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
     .table-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:12px 0}
     .table-tools__search{flex:1 1 260px;max-width:420px}
     .table-tools__search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(8,13,23,0.95);color:#f8fafc}
-    .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:none;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer}
+    .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:transparent;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer;box-shadow:none;-webkit-appearance:none;appearance:none;border-radius:0}
     .sort-btn:hover .sort-indicator{opacity:0.8}
     .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
     .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}
