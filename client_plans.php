@@ -1789,6 +1789,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       .hero__status {
         grid-template-columns: minmax(340px, 1.35fr) repeat(2, minmax(260px, 1fr));
         grid-auto-flow: dense;
+        margin-inline-end: clamp(28px, 6vw, 104px);
+        margin-right: clamp(28px, 6vw, 104px);
       }
 
       .hero-highlight--date {
@@ -2012,6 +2014,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       .hero__status {
         grid-area: status;
         padding-inline-end: clamp(56px, 9vw, 144px);
+        margin-inline-end: clamp(40px, 7vw, 140px);
+        margin-right: clamp(40px, 7vw, 140px);
       }
       .toolbar {
         grid-area: toolbar;
