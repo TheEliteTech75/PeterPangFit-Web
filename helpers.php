@@ -673,6 +673,53 @@ if (!function_exists('ppf_notifications_bootstrap')) {
           $stmt->close();
         }
       }
+
+      $seedKey = '20240424_seed_default_rules';
+      $seedApplied = false;
+      if ($stmt = $conn->prepare('SELECT migration_key FROM notification_migrations WHERE migration_key = ? LIMIT 1')) {
+        $stmt->bind_param('s', $seedKey);
+        $stmt->execute();
+        if ($res = $stmt->get_result()) {
+          $seedApplied = (bool)$res->fetch_row();
+          $res->close();
+        }
+        $stmt->close();
+      }
+
+      if (!$seedApplied) {
+        $seededUsers = 0;
+        $tenantColExists = column_exists($conn, 'users', 'tenant_id');
+        $sql = $tenantColExists
+          ? 'SELECT id, tenant_id FROM users'
+          : 'SELECT id FROM users';
+        if ($res = @$conn->query($sql)) {
+          while ($row = $res->fetch_assoc()) {
+            $userId = (int)($row['id'] ?? 0);
+            if ($userId <= 0) {
+              continue;
+            }
+            $tenantId = $tenantColExists ? (int)($row['tenant_id'] ?? 1) : 1;
+            if ($tenantId <= 0) {
+              $tenantId = 1;
+            }
+            try {
+              ppf_notifications_seed_defaults($conn, $tenantId, $userId);
+              $seededUsers++;
+            } catch (Throwable $inner) {
+              continue;
+            }
+          }
+          if ($res instanceof mysqli_result) {
+            $res->close();
+          }
+        }
+        if ($stmt = $conn->prepare('INSERT INTO notification_migrations (migration_key, details) VALUES (?, ?)')) {
+          $details = json_encode(['seeded_users' => $seededUsers]);
+          $stmt->bind_param('ss', $seedKey, $details);
+          $stmt->execute();
+          $stmt->close();
+        }
+      }
     } catch (Throwable $e) {
       // schema bootstrap errors are non-fatal
     }
