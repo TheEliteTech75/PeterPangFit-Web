@@ -686,6 +686,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-content: start;
       align-items: stretch;
+      padding-inline-end: clamp(22px, 5vw, 60px);
     }
 
     .hero-highlight {
@@ -2010,7 +2011,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       }
       .hero__status {
         grid-area: status;
-        padding-inline-end: clamp(32px, 6vw, 64px);
+        padding-inline-end: clamp(32px, 6vw, 72px);
       }
       .toolbar {
         grid-area: toolbar;
