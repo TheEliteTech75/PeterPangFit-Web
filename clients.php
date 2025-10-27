@@ -1189,7 +1189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
 
         ppf_notifications_record($conn, $uid, [
-          'type' => 'workouts.plan_assigned',
+          'type_key' => 'workouts.plan_assigned',
           'message' => 'The "' . $pname . '" plan was assigned on ' . ppf_format_user_datetime(date('c'), ['fallback' => date('Y-m-d H:i:s')]) . '.',
           'send_email' => false,
         ]);

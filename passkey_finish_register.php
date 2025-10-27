@@ -264,7 +264,7 @@ try {
     // Security log
     ppf_log($conn, (int)$uid, $uemail ?: null, null, 'passkey_added', 'user', (string)$uid, 'name=' . $pkName);
     ppf_notifications_record($conn, (int)$uid, [
-        'type' => 'security.passkey_added',
+        'type_key' => 'security.passkey_added',
         'message' => 'A passkey named "' . $pkName . '" was added on ' . ppf_format_user_datetime(date('c'), ['fallback' => date('Y-m-d H:i:s')]) . '.',
         'send_email' => true,
     ]);
