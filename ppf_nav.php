@@ -176,7 +176,7 @@ if ($isAdmin) {
           ['href' => 'users.php?open=create', 'label' => 'Create User'],
         ],
       ],
-      ['href' => 'sessions.php', 'label' => 'Sessions'],  // ← NEW admin-only link
+      ['href' => 'sessions.php', 'label' => 'Login Sessions'],  // ← NEW admin-only link
       ['href' => 'logs.php',     'label' => 'Logs'],
     ],
   ];
@@ -218,6 +218,7 @@ if ($isAdmin) {
   }
   .ppf-sidenav {
     position: fixed; top: 0; left: 0; height: 100vh; width: 280px;
+    height: 100dvh;
     background: var(--ppf-nav-bg);
     background-color: color-mix(in srgb, var(--ppf-nav-tone-1) 70%, #020617 30%);
     border-right: 1px solid var(--ppf-nav-border);
@@ -226,6 +227,7 @@ if ($isAdmin) {
     z-index: 5000;
     display: flex; flex-direction: column;
     box-shadow: var(--shadow, 0 32px 60px rgba(2,6,23,0.55));
+    overflow: hidden;
   }
   .ppf-sidenav-header {
     display:flex; align-items:center; justify-content:space-between;
@@ -239,6 +241,13 @@ if ($isAdmin) {
   }
   .ppf-sidenav-body {
     padding: 10px 10px 16px; display:flex; flex-direction:column; gap: 10px; overflow:auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .ppf-sidenav-body > * {
+    flex: 0 0 auto;
   }
 
   /* Links */
