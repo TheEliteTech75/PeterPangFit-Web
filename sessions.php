@@ -426,7 +426,7 @@ foreach ($sessions as $s) {
   .table-wrap{overflow-x:auto;border-radius:16px;border:1px solid var(--line);background:rgba(15,23,42,0.65);backdrop-filter:blur(16px);box-shadow:0 22px 45px rgba(2,6,23,0.45);}
   table{width:100%;border-collapse:collapse;min-width:1160px;color:var(--text);}
   th,td{padding:12px;text-align:left;border-bottom:1px solid var(--line)}
-  thead th{position:sticky;top:0;background:rgba(8,13,23,0.95);backdrop-filter:blur(8px);}
+  thead th{position:sticky;top:0;background:rgba(8,13,23,0.95);backdrop-filter:blur(8px);font-size:13px;letter-spacing:.3px;color:#c3c9d4}
 
   .flash{margin:0 0 16px 0;padding:14px;border-radius:14px;border:1px solid var(--line);background:rgba(15,23,42,0.55);box-shadow:0 16px 35px rgba(2,6,23,0.45);}
   .flash.ok{border-color:rgba(34,197,94,0.45);color:#a7f3d0;background:rgba(15,118,110,0.22);}
@@ -451,7 +451,9 @@ foreach ($sessions as $s) {
   .table-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:12px 0}
   .table-tools__search{flex:1 1 260px;max-width:420px}
   .table-tools__search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(8,13,23,0.85);color:var(--text)}
-  .sort-btn{appearance:none;background:none;border:none;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn{appearance:none;-webkit-appearance:none;-moz-appearance:none;background:none;background-color:transparent;border:none;border-radius:0;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn:focus{outline:none}
+  .sort-btn::-moz-focus-inner{border:0;padding:0;margin:0}
   .sort-btn:hover .sort-indicator{opacity:0.8}
   .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
   .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}

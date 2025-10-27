@@ -165,9 +165,11 @@ if ($res = $conn->query($sql)) {
     .table-wrapper{overflow:auto}
     table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:14px;overflow:hidden;border:1px solid var(--line)}
     th,td{padding:12px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px}
+  th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:13px;letter-spacing:.3px}
     tr:last-child td{border-bottom:none}
-  .sort-btn{appearance:none;background:none;border:none;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn{appearance:none;-webkit-appearance:none;-moz-appearance:none;background:none;background-color:transparent;border:none;border-radius:0;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn:focus{outline:none}
+  .sort-btn::-moz-focus-inner{border:0;padding:0;margin:0}
     .sort-btn:hover .sort-indicator{opacity:0.8}
     .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
     .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}

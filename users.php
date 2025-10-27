@@ -434,7 +434,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
       table-layout:auto;
     }
     th,td{padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:top}
-    th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:12px;letter-spacing:.3px}
+    th{background:rgba(8,13,23,0.95);text-align:left;color:#c3c9d4;font-size:13px;letter-spacing:.3px}
     tr:last-child td{border-bottom:none}
     .muted{color:var(--muted)}
     .flash{margin:16px 0 0 0;padding:12px;border-radius:10px;border:1px solid; background:rgba(8,13,23,0.85)}
@@ -490,7 +490,9 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
     .table-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:12px 0}
     .table-tools__search{flex:1 1 260px;max-width:420px}
     .table-tools__search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(8,13,23,0.95);color:#f8fafc}
-    .sort-btn{appearance:none;background:none;border:none;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+    .sort-btn{appearance:none;-webkit-appearance:none;-moz-appearance:none;background:none;background-color:transparent;border:none;border-radius:0;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+    .sort-btn:focus{outline:none}
+    .sort-btn::-moz-focus-inner{border:0;padding:0;margin:0}
     .sort-btn:hover .sort-indicator{opacity:0.8}
     .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
     .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}

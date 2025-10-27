@@ -1875,12 +1875,14 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   table{width:100%;border-collapse:collapse}
   .clients-table{min-width:960px}
   th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:middle}
-  thead th{position:sticky;top:0;background:rgba(8,13,23,0.95);z-index:1}
+  thead th{position:sticky;top:0;background:rgba(8,13,23,0.95);z-index:1;font-size:13px;letter-spacing:.3px;color:#c3c9d4}
   .clients-table thead th{z-index:2}
   .clients-table .select-col{text-align:center;width:48px}
   .clients-table td:first-child{text-align:center}
   .clients-table td:first-child input{margin:0 auto;display:block}
-  .sort-btn{appearance:none;background:none;border:none;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn{appearance:none;-webkit-appearance:none;-moz-appearance:none;background:none;background-color:transparent;border:none;border-radius:0;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn:focus{outline:none}
+  .sort-btn::-moz-focus-inner{border:0;padding:0;margin:0}
   body.ppf-themed .clients-table .sort-btn{background:none;border:none;box-shadow:none}
   .sort-btn:hover .sort-indicator{opacity:0.8}
   .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}

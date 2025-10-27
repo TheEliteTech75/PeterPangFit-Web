@@ -784,7 +784,7 @@ require_once __DIR__ . '/ppf_nav.php';
     background:color-mix(in srgb, var(--panel-elevated) 88%, var(--theme-swatch-2, var(--brand)) 12%);
     text-align:left;
     color:color-mix(in srgb, var(--muted) 80%, var(--text) 20%);
-    font-size:12px;
+    font-size:13px;
     letter-spacing:.3px;
   }
   tr:last-child td{border-bottom:none}
@@ -865,7 +865,9 @@ require_once __DIR__ . '/ppf_nav.php';
   .table-tools__search{flex:1 1 260px;max-width:420px}
   .table-tools__search .search-input{width:100%}
   .table-tools__search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text)}
-  .sort-btn{appearance:none;background:none;border:none;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn{appearance:none;-webkit-appearance:none;-moz-appearance:none;background:none;background-color:transparent;border:none;border-radius:0;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn:focus{outline:none}
+  .sort-btn::-moz-focus-inner{border:0;padding:0;margin:0}
   .sort-btn:hover .sort-indicator{opacity:0.8}
   .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
   .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}
