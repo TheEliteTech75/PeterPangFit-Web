@@ -515,6 +515,42 @@ if (!function_exists('ppf_notifications_default_settings')) {
   }
 }
 
+if (!function_exists('ppf_notifications_json_column_type')) {
+  function ppf_notifications_json_column_type(mysqli $conn): string {
+    static $cache = [];
+    $key = spl_object_hash($conn);
+    if (isset($cache[$key])) {
+      return $cache[$key];
+    }
+    try {
+      $result = @$conn->query('SELECT JSON_EXTRACT(\'{"t":1}\', \'$.t\') AS j');
+      if ($result instanceof mysqli_result) {
+        $result->close();
+        return $cache[$key] = 'JSON';
+      }
+    } catch (Throwable $e) {
+      // Fall through to LONGTEXT fallback below.
+    }
+    return $cache[$key] = 'LONGTEXT';
+  }
+}
+
+if (!function_exists('ppf_notifications_json_column_defs')) {
+  function ppf_notifications_json_column_defs(mysqli $conn): array {
+    $type = ppf_notifications_json_column_type($conn);
+    if ($type === 'JSON') {
+      return [
+        'nullable' => 'JSON',
+        'not_null' => 'JSON NOT NULL',
+      ];
+    }
+    return [
+      'nullable' => 'LONGTEXT',
+      'not_null' => 'LONGTEXT NOT NULL',
+    ];
+  }
+}
+
 if (!function_exists('ppf_notifications_bootstrap')) {
   function ppf_notifications_bootstrap(mysqli $conn): void {
     static $bootstrapped = false;
@@ -527,6 +563,9 @@ if (!function_exists('ppf_notifications_bootstrap')) {
     }
     $bootstrapped = true;
     try {
+      $jsonDefs = ppf_notifications_json_column_defs($conn);
+      $jsonNullable = $jsonDefs['nullable'];
+      $jsonNotNull = $jsonDefs['not_null'];
       if (table_exists($conn, 'notifications') && !table_exists($conn, 'notification_rules')) {
         @$conn->query('RENAME TABLE notifications TO notification_rules');
       }
@@ -540,11 +579,11 @@ if (!function_exists('ppf_notifications_bootstrap')) {
           title VARCHAR(160) NOT NULL,
           body TEXT NULL,
           category VARCHAR(48) NOT NULL,
-          channels JSON NULL,
+          channels $jsonNullable,
           send_email TINYINT(1) NOT NULL DEFAULT 0,
           priority TINYINT(1) NOT NULL DEFAULT 0,
           immutable TINYINT(1) NOT NULL DEFAULT 0,
-          metadata JSON NULL,
+          metadata $jsonNullable,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY uq_notification_rules_user_key (tenant_id, user_id, type_key),
@@ -559,7 +598,7 @@ if (!function_exists('ppf_notifications_bootstrap')) {
           @$conn->query("ALTER TABLE notification_rules ADD COLUMN category VARCHAR(48) NOT NULL DEFAULT 'system' AFTER body");
         }
         if (!column_exists($conn, 'notification_rules', 'channels')) {
-          @$conn->query("ALTER TABLE notification_rules ADD COLUMN channels JSON NULL AFTER category");
+          @$conn->query("ALTER TABLE notification_rules ADD COLUMN channels $jsonNullable AFTER category");
         }
         if (!column_exists($conn, 'notification_rules', 'send_email')) {
           @$conn->query("ALTER TABLE notification_rules ADD COLUMN send_email TINYINT(1) NOT NULL DEFAULT 0 AFTER channels");
@@ -585,7 +624,7 @@ if (!function_exists('ppf_notifications_bootstrap')) {
           read_at DATETIME NULL DEFAULT NULL,
           is_archived TINYINT(1) NOT NULL DEFAULT 0,
           archived_at DATETIME NULL DEFAULT NULL,
-          metadata JSON NULL,
+          metadata $jsonNullable,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           KEY idx_notification_messages_user (tenant_id, user_id, is_archived, created_at DESC),
@@ -599,10 +638,10 @@ if (!function_exists('ppf_notifications_bootstrap')) {
         if (!column_exists($conn, 'notification_messages', 'type_key')) {
           @$conn->query("ALTER TABLE notification_messages ADD COLUMN type_key VARCHAR(191) NULL DEFAULT NULL AFTER rule_id");
         }
-      if (!column_exists($conn, 'notification_messages', 'metadata')) {
-        @$conn->query("ALTER TABLE notification_messages ADD COLUMN metadata JSON NULL AFTER archived_at");
+        if (!column_exists($conn, 'notification_messages', 'metadata')) {
+          @$conn->query("ALTER TABLE notification_messages ADD COLUMN metadata $jsonNullable AFTER archived_at");
+        }
       }
-    }
 
       if (column_exists($conn, 'notification_rules', 'is_read')) {
         $res = @$conn->query('SELECT COUNT(*) AS c FROM notification_rules');
@@ -620,8 +659,8 @@ if (!function_exists('ppf_notifications_bootstrap')) {
           id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
           tenant_id BIGINT UNSIGNED NOT NULL,
           user_id BIGINT UNSIGNED NOT NULL,
-          delivery_prefs JSON NOT NULL,
-          types_muted JSON NOT NULL,
+          delivery_prefs $jsonNotNull,
+          types_muted $jsonNotNull,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY uq_notification_settings_user (tenant_id, user_id)
@@ -636,7 +675,7 @@ if (!function_exists('ppf_notifications_bootstrap')) {
           notification_id BIGINT UNSIGNED NOT NULL,
           event_type VARCHAR(32) NOT NULL,
           actor_user_id BIGINT UNSIGNED NULL DEFAULT NULL,
-          context JSON NULL,
+          context $jsonNullable,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           KEY idx_notification_events_user (tenant_id, user_id, created_at DESC)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
@@ -645,7 +684,7 @@ if (!function_exists('ppf_notifications_bootstrap')) {
       if (!table_exists($conn, 'notification_migrations')) {
         @$conn->query("CREATE TABLE notification_migrations (
           migration_key VARCHAR(191) NOT NULL PRIMARY KEY,
-          details JSON NULL,
+          details $jsonNullable,
           applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
       }
