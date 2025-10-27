@@ -604,7 +604,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       position: relative;
       --hero-radius: clamp(22px, 7vw, 36px);
       padding: clamp(32px, 6vw, 64px);
-      margin: clamp(24px, 5vw, 60px) clamp(18px, 5vw, 72px);
+      margin: clamp(24px, 5vw, 60px) var(--page-pad-x);
       max-width: none;
       border-radius: var(--hero-radius);
       background:
@@ -2161,12 +2161,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
           <span class="hero-stat__label">First plan posted</span>
           <strong><?php echo h($firstDate); ?></strong>
         </div>
-        <?php if ($hasSessionPackages): ?>
-          <div class="hero-stat">
-            <span class="hero-stat__label">Sessions scheduled</span>
-            <strong id="sessionsTotalScheduled" data-session-total="scheduled"><?php echo $sessionTotalsScheduled; ?></strong>
-          </div>
-        <?php endif; ?>
       </div>
     </div>
     <div class="toolbar">
