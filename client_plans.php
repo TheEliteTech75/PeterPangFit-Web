@@ -636,6 +636,9 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       z-index: 1;
       display: grid;
       gap: clamp(24px, 5vw, 40px);
+      width: 100%;
+      max-width: clamp(320px, 92vw, 1120px);
+      margin: 0 auto;
     }
 
     .hero__intro {
@@ -686,7 +689,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-content: start;
       align-items: stretch;
-      padding-inline-end: clamp(32px, 7vw, 96px);
+      padding-inline-end: calc(clamp(32px, 7vw, 96px) + env(safe-area-inset-right, 0px));
     }
 
     .hero-highlight {
@@ -2013,7 +2016,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       }
       .hero__status {
         grid-area: status;
-        padding-inline-end: clamp(56px, 9vw, 144px);
+        padding-inline-end: calc(clamp(56px, 9vw, 144px) + env(safe-area-inset-right, 0px));
         margin-inline-end: clamp(40px, 7vw, 140px);
         margin-right: clamp(40px, 7vw, 140px);
       }
