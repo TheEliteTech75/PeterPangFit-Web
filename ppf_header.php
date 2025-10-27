@@ -216,7 +216,7 @@ body.ppf-themed .alert {
   color: var(--text);
 }
 body.ppf-themed .btn,
-body.ppf-themed button,
+body.ppf-themed button:not(.sort-btn),
 body.ppf-themed input[type="submit"],
 body.ppf-themed .pill,
 body.ppf-themed .chip,
