@@ -252,7 +252,7 @@ if (!function_exists('ppf_measurement_format_weight')) {
       return null;
     }
     $lbs = (float)$lbsValue;
-    if ($lbs <= 0) {
+    if ($lbs < 0) {
       return null;
     }
     $system = ppf_measurement_user_system();
@@ -283,7 +283,7 @@ if (!function_exists('ppf_measurement_parse_weight_input')) {
       return null;
     }
     $value = (float)$raw;
-    if ($value <= 0) {
+    if ($value < 0) {
       return null;
     }
     $system = ppf_measurement_user_system();
@@ -291,6 +291,94 @@ if (!function_exists('ppf_measurement_parse_weight_input')) {
       $value = $value / 0.45359237;
     }
     return $value;
+  }
+}
+
+if (!function_exists('ppf_measurement_height_to_inches')) {
+  function ppf_measurement_height_to_inches($feet, $inches): ?float {
+    $ft = null;
+    $in = null;
+    if ($feet !== null && $feet !== '' && is_numeric($feet)) {
+      $ft = (int)$feet;
+    }
+    if ($inches !== null && $inches !== '' && is_numeric($inches)) {
+      $in = (int)$inches;
+    }
+    if ($ft === null && $in === null) {
+      return null;
+    }
+    $total = 0;
+    if ($ft !== null) {
+      $total += $ft * 12;
+    }
+    if ($in !== null) {
+      $total += $in;
+    }
+    return $total >= 0 ? (float)$total : null;
+  }
+}
+
+if (!function_exists('ppf_measurement_height_metric_value')) {
+  function ppf_measurement_height_metric_value($feet, $inches, int $precision = 1): string {
+    $inchesTotal = ppf_measurement_height_to_inches($feet, $inches);
+    if ($inchesTotal === null) {
+      return '';
+    }
+    $cm = $inchesTotal * 2.54;
+    return ppf_measurement_trim_number($cm, $precision);
+  }
+}
+
+if (!function_exists('ppf_measurement_height_components_from_cm')) {
+  function ppf_measurement_height_components_from_cm($cmInput): array {
+    $raw = trim((string)$cmInput);
+    if ($raw === '') {
+      return [null, null];
+    }
+    if (!is_numeric($raw)) {
+      return [null, null];
+    }
+    $cm = (float)$raw;
+    if ($cm < 0) {
+      return [null, null];
+    }
+    $totalInches = $cm / 2.54;
+    if ($totalInches < 0) {
+      return [null, null];
+    }
+    $feet = (int)floor($totalInches / 12);
+    $remInches = round($totalInches - ($feet * 12));
+    if ($remInches >= 12) {
+      $feet += 1;
+      $remInches -= 12;
+    }
+    return [$feet, (int)$remInches];
+  }
+}
+
+if (!function_exists('ppf_measurement_format_height')) {
+  function ppf_measurement_format_height($feet, $inches): ?string {
+    $ft = ($feet !== null && $feet !== '' && is_numeric($feet)) ? (int)$feet : null;
+    $in = ($inches !== null && $inches !== '' && is_numeric($inches)) ? (int)$inches : null;
+    if ($ft === null && $in === null) {
+      return null;
+    }
+    $system = ppf_measurement_user_system();
+    if ($system === 'metric') {
+      $cm = ppf_measurement_height_metric_value($ft, $in);
+      return $cm === '' ? null : ($cm . ' cm');
+    }
+    $parts = [];
+    if ($ft !== null) {
+      $parts[] = $ft . ' ft';
+    }
+    if ($in !== null) {
+      $parts[] = $in . ' in';
+    }
+    if (!$parts) {
+      return null;
+    }
+    return implode(' ', $parts);
   }
 }
 

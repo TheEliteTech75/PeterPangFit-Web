@@ -17,6 +17,13 @@ if (!is_trainer_admin($USER_ROLE ?? null)) {
   exit;
 }
 
+$CLIENT_MEASUREMENT_SYSTEM = ppf_measurement_user_system();
+$CLIENT_MEASUREMENT_IS_METRIC = ($CLIENT_MEASUREMENT_SYSTEM === 'metric');
+$CLIENT_WEIGHT_LABEL = ppf_measurement_weight_label();
+$CLIENT_WEIGHT_PLACEHOLDER = ppf_measurement_weight_placeholder();
+$CLIENT_MEASUREMENT_JS = ppf_measurement_js_config();
+$CLIENT_HEIGHT_LABEL = $CLIENT_MEASUREMENT_IS_METRIC ? 'Height (cm)' : 'Height';
+
 if (!function_exists('ppf_clients_log_encode')) {
   function ppf_clients_log_encode(array $details): ?string {
     if (!$details) return json_encode((object)[], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -226,10 +233,8 @@ function ppf_trim_number(float $value, int $precision = 2): string {
 }
 
 function ppf_format_weight_lbs($value): ?string {
-  if ($value === null || $value === '') return null;
-  if (!is_numeric($value)) return null;
-  $num = (float)$value;
-  return ppf_trim_number($num) . ' lbs';
+  $formatted = ppf_measurement_format_weight($value);
+  return $formatted === null ? null : $formatted;
 }
 
 function ppf_format_duration_display($seconds): ?string {
@@ -249,10 +254,8 @@ function ppf_format_duration_display($seconds): ?string {
 }
 
 function ppf_parse_weight_to_float($input): ?float {
-  $s = trim((string)$input);
-  if ($s === '') return null;
-  if (!preg_match('/^\d+(\.\d+)?$/', $s)) return null;
-  return (float)$s;
+  $lbs = ppf_measurement_parse_weight_input($input);
+  return $lbs === null ? null : (float)$lbs;
 }
 
 function ppf_parse_category_concat(string $raw): array {
@@ -358,6 +361,7 @@ function ppf_clients_enrich_set_details(array $rows): array {
       'set_number' => ($row['set_number'] ?? ($idx + 1)),
       'reps' => $row['reps'] ?? null,
       'weight_value' => ($weightVal !== null) ? (float)$weightVal : null,
+      'weight_input' => ($weightVal !== null) ? ppf_measurement_weight_value_for_input($weightVal) : '',
       'weight_display' => ($weightVal !== null) ? ppf_format_weight_lbs((float)$weightVal) : null,
       'duration_seconds' => ($durationVal !== null) ? (int)$durationVal : null,
       'duration_display' => ($durationVal !== null) ? ppf_format_duration_display((int)$durationVal) : null,
@@ -494,7 +498,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
           $height_ft  = isset($_POST['height_ft'])  ? trim($_POST['height_ft'])  : '';
           $height_in  = isset($_POST['height_in'])  ? trim($_POST['height_in'])  : '';
-          $weight_lbs = isset($_POST['weight_lbs']) ? trim($_POST['weight_lbs']) : '';
+          $height_cm_input = $CLIENT_MEASUREMENT_IS_METRIC ? trim($_POST['height_cm'] ?? '') : '';
+          $weight_input = isset($_POST['weight_lbs']) ? trim($_POST['weight_lbs']) : '';
 
           if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new Exception('Valid email required.');
           if ($birthdate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $birthdate)) throw new Exception('Birthdate must be YYYY-MM-DD.');
@@ -505,12 +510,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if ($stmt->num_rows > 0) { $stmt->close(); throw new Exception('Email already in use by another user.'); }
           $stmt->close();
 
-          $hf = ($height_ft === '' ? null : (int)$height_ft);
-          $hi = ($height_in === '' ? null : (int)$height_in);
+          if ($CLIENT_MEASUREMENT_IS_METRIC) {
+            if ($height_cm_input === '') {
+              $hf = null;
+              $hi = null;
+            } else {
+              if (!is_numeric($height_cm_input)) {
+                throw new Exception('Height must be numeric.');
+              }
+              $cmValue = (float)$height_cm_input;
+              if ($cmValue < 0) {
+                throw new Exception('Height cannot be negative.');
+              }
+              [$hf, $hi] = ppf_measurement_height_components_from_cm($cmValue);
+            }
+          } else {
+            $hf = ($height_ft === '' ? null : (int)$height_ft);
+            $hi = ($height_in === '' ? null : (int)$height_in);
+          }
           if ($hi !== null) { if ($hi < 0) $hi = 0; if ($hi > 11) $hi = 11; }
           if ($hf !== null) { if ($hf < 0) $hf = 0; if ($hf > 8) $hf = 8; }
-          $wl = ($weight_lbs === '' ? null : (float)$weight_lbs);
-          if ($wl !== null && $wl <= 0) $wl = null;
+          $wl = ppf_measurement_parse_weight_input($weight_input);
 
           $stmt = $conn->prepare("
             UPDATE users
@@ -1068,6 +1088,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'sets_count' => $setsCount,
                 'reps' => $repsVal,
                 'weight_value' => $wtVal,
+                'weight_input' => ppf_measurement_weight_value_for_input($wtVal),
                 'weight_display' => $weightDisplay,
                 'duration_seconds' => $durVal,
                 'duration_display' => $durationDisplay,
@@ -1440,6 +1461,7 @@ if ($rs = $conn->query($sqlUserEx)) {
       'sets_count'       => $setsCount,
       'reps'             => $repsDisplay,
       'weight_value'     => $weightValue,
+      'weight_input'     => $weightValue !== null ? ppf_measurement_weight_value_for_input($weightValue) : '',
       'weight_display'   => $weightDisplay,
       'duration_seconds' => $durationSeconds,
       'duration_display' => $durationDisplay,
@@ -1569,8 +1591,8 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
             <th data-sort-key="birthdate"><button type="button" class="sort-btn" data-sort-key="birthdate" data-state="off">Birthdate<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="age"><button type="button" class="sort-btn" data-sort-key="age" data-state="off">Age<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="gender"><button type="button" class="sort-btn" data-sort-key="gender" data-state="off">Gender<span class="sort-indicator" aria-hidden="true"></span></button></th>
-            <th data-sort-key="height"><button type="button" class="sort-btn" data-sort-key="height" data-state="off">Height<span class="sort-indicator" aria-hidden="true"></span></button></th>
-            <th data-sort-key="weight"><button type="button" class="sort-btn" data-sort-key="weight" data-state="off">Weight<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="height"><button type="button" class="sort-btn" data-sort-key="height" data-state="off"><?php echo h($CLIENT_HEIGHT_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="weight"><button type="button" class="sort-btn" data-sort-key="weight" data-state="off"><?php echo h($CLIENT_WEIGHT_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="plans"><button type="button" class="sort-btn" data-sort-key="plans" data-state="off">Plans<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th>Actions</th>
           </tr>
@@ -1684,31 +1706,29 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 
             <td>
               <?php if ($editing): ?>
-                <div style="display:flex;gap:6px;align-items:center">
-                  <input class="input" type="number" min="0" max="8" step="1" name="height_ft" value="<?php echo h($c['height_ft']); ?>" style="width:60px"> <span>ft</span>
-                  <input class="input" type="number" min="0" max="11" step="1" name="height_in" value="<?php echo h($c['height_in']); ?>" style="width:70px"> <span>in</span>
-                </div>
+                <?php if ($CLIENT_MEASUREMENT_IS_METRIC): ?>
+                  <input class="input" type="number" min="0" step="0.1" name="height_cm" value="<?php echo h(ppf_measurement_height_metric_value($c['height_ft'] ?? null, $c['height_in'] ?? null)); ?>" style="width:140px" placeholder="Height (cm)">
+                <?php else: ?>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <input class="input" type="number" min="0" max="8" step="1" name="height_ft" value="<?php echo h($c['height_ft']); ?>" style="width:60px"> <span>ft</span>
+                    <input class="input" type="number" min="0" max="11" step="1" name="height_in" value="<?php echo h($c['height_in']); ?>" style="width:70px"> <span>in</span>
+                  </div>
+                <?php endif; ?>
               <?php else: ?>
                 <?php
-                  $ft = $c['height_ft'] ?? null;
-                  $in = $c['height_in'] ?? null;
-                  if (($ft === null || $ft === '') && ($in === null || $in === '')) echo '—';
-                  else echo h((int)$ft . "'" . (int)$in . '"');
+                  $heightDisplay = ppf_measurement_format_height($c['height_ft'] ?? null, $c['height_in'] ?? null);
+                  echo $heightDisplay ? h($heightDisplay) : '—';
                 ?>
               <?php endif; ?>
             </td>
 
             <td>
               <?php if ($editing): ?>
-                <input class="input" type="number" min="0" step="0.1" name="weight_lbs" value="<?php echo h($c['weight_lbs']); ?>" style="width:110px">
+                <input class="input" type="number" min="0" step="0.1" name="weight_lbs" value="<?php echo h(ppf_measurement_weight_value_for_input($c['weight_lbs'] ?? null)); ?>" style="width:130px" placeholder="<?php echo h($CLIENT_WEIGHT_PLACEHOLDER); ?>">
               <?php else: ?>
                 <?php
-                  $lbs = $c['weight_lbs'] ?? null;
-                  if ($lbs === null || $lbs === '' || (is_numeric($lbs) && (float)$lbs <= 0)) echo '—';
-                  else {
-                    $val = is_numeric($lbs) ? (float)$lbs : null;
-                    echo h(($val === null) ? $lbs : ((floor($val)===$val) ? (intval($val).' lbs') : ($val.' lbs')));
-                  }
+                  $weightDisplay = ppf_measurement_format_weight($c['weight_lbs'] ?? null);
+                  echo $weightDisplay ? h($weightDisplay) : '—';
                 ?>
               <?php endif; ?>
             </td>
@@ -2068,6 +2088,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 </div>
 
 <script>
+const measurementConfig = <?php echo json_encode($CLIENT_MEASUREMENT_JS, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+window.ppfMeasurement = measurementConfig;
+const measurementWeightPlaceholder = <?php echo json_encode($CLIENT_WEIGHT_PLACEHOLDER, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 // phone input formatting (existing)
 document.addEventListener('input', function(e){
   if (e.target && e.target.name === 'phone') {
@@ -2960,13 +2983,15 @@ function eeBuildSetRow(detail = {}){
   row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap';
 
   const repsVal = detail.reps != null ? String(detail.reps) : '';
-  const weightVal = detail.weight_value != null ? String(detail.weight_value) : '';
+  const weightVal = (detail.weight_input != null && detail.weight_input !== '')
+    ? String(detail.weight_input)
+    : (detail.weight_value != null ? formatWeightValueForInput(detail.weight_value) : '');
   const durationVal = detail.duration_seconds != null ? formatDurationForInput(detail.duration_seconds) : '';
 
   row.innerHTML = `
     <span class="fine" style="min-width:48px;margin-top:6px">Set <span data-set-index></span></span>
     <input class="input ee-set-input" data-field="reps" type="text" placeholder="Reps" value="${escapeHtml(repsVal)}" style="width:90px">
-    <input class="input ee-set-input" data-field="weight" type="number" step="0.1" min="0" placeholder="Weight (lbs)" value="${escapeHtml(weightVal)}" style="width:130px">
+    <input class="input ee-set-input" data-field="weight" type="number" step="0.1" min="0" placeholder="${escapeHtml(measurementWeightPlaceholder)}" value="${escapeHtml(weightVal)}" style="width:130px">
     <input class="input ee-set-input" data-field="duration" type="text" placeholder="Duration (e.g., 1:30)" value="${escapeHtml(durationVal)}" style="width:140px">
     <button class="btn small" type="button" data-remove-set style="margin-top:4px">Remove</button>
   `;
@@ -3140,13 +3165,36 @@ function toNumberOrNull(value){
   return Number.isFinite(num) ? num : null;
 }
 
+function trimNumberForDisplay(value, precision = 2){
+  if (!Number.isFinite(value)) return '';
+  const factor = Math.pow(10, precision);
+  const rounded = Math.round(value * factor) / factor;
+  let text = rounded.toFixed(precision);
+  text = text.replace(/\.0+$/,'').replace(/\.$/,'');
+  if (text === '' || text === '-0') text = '0';
+  return text;
+}
+
+function formatWeightValueForInput(lbs){
+  const num = toNumberOrNull(lbs);
+  if (num === null) return '';
+  const converted = measurementConfig.system === 'metric'
+    ? num * measurementConfig.kgPerLb
+    : num;
+  return trimNumberForDisplay(converted, 1);
+}
+
 function computeWeightDisplay(raw, provided){
   if (provided) return String(provided);
   if (raw === null || raw === undefined || raw === '') return null;
   const num = Number(raw);
   if (!Number.isFinite(num)) return String(raw);
-  const fixed = Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.0+$/, '').replace(/\.$/, '');
-  return `${fixed} lbs`;
+  const converted = measurementConfig.system === 'metric'
+    ? num * measurementConfig.kgPerLb
+    : num;
+  const fixed = trimNumberForDisplay(converted, 1);
+  const unit = (Math.abs(converted - 1) < 1e-9) ? measurementConfig.unitSingular : measurementConfig.unitPlural;
+  return `${fixed} ${unit}`;
 }
 
 function computeDurationDisplay(raw, provided){
@@ -3393,6 +3441,7 @@ function applyUserExerciseData(tr, data){
     set_number: row && row.set_number != null ? row.set_number : (idx + 1),
     reps: row && row.reps != null ? row.reps : null,
     weight_value: row && row.weight_value != null ? Number(row.weight_value) : null,
+    weight_input: row && row.weight_input != null ? row.weight_input : null,
     weight_display: row && row.weight_display != null ? row.weight_display : null,
     duration_seconds: row && row.duration_seconds != null ? Number(row.duration_seconds) : null,
     duration_display: row && row.duration_display != null ? row.duration_display : null,
@@ -3490,6 +3539,18 @@ function applyUserExerciseData(tr, data){
   const normalizedWeightDisplay = (weightDisplay !== undefined)
     ? normalizeEmpty(weightDisplay) ?? computeWeightDisplay(normalizedWeightValue, weightDisplay)
     : (existing.weight_display ?? ((existing.weight_value !== undefined && existing.weight_value !== null) ? computeWeightDisplay(existing.weight_value, existing.weight_display) : null));
+  const normalizedWeightInput = (() => {
+    if (setDetailsIncoming.length > 0) {
+      const first = setDetailsIncoming[0];
+      if (first && first.weight_input != null && first.weight_input !== '') {
+        return String(first.weight_input);
+      }
+    }
+    if (normalizedWeightValue !== null && normalizedWeightValue !== undefined) {
+      return formatWeightValueForInput(normalizedWeightValue);
+    }
+    return existing.weight_input ?? '';
+  })();
 
   const normalizedDurationValue = (durationRaw !== undefined) ? normalizeEmpty(durationRaw) : (existing.duration_seconds ?? null);
   const normalizedDurationDisplay = (durationDisplay !== undefined)
@@ -3508,6 +3569,7 @@ function applyUserExerciseData(tr, data){
     set_details_json: ('set_details_json' in data) ? (data.set_details_json ?? null) : (existing.set_details_json ?? null),
     reps: normalizedReps,
     weight_value: normalizedWeightValue,
+    weight_input: normalizedWeightInput,
     weight_display: normalizedWeightDisplay,
     duration_seconds: normalizedDurationValue,
     duration_display: normalizedDurationDisplay,
@@ -3542,6 +3604,9 @@ function getStoredExerciseData(context){
 
 function detailWeightValue(detail){
   if (!detail || typeof detail !== 'object') return '';
+  if (detail.weight_input !== undefined && detail.weight_input !== null && detail.weight_input !== '') {
+    return detail.weight_input;
+  }
   if (detail.weight_value !== undefined && detail.weight_value !== null && detail.weight_value !== '') {
     return detail.weight_value;
   }
