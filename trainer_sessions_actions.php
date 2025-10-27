@@ -129,14 +129,14 @@ if ($action === 'create_package') {
 
     $sessionPhrase = $purchased === 1 ? '1 session' : ($purchased . ' sessions');
     ppf_notifications_record($conn, $clientId, [
-        'type' => 'billing.sessions_purchased',
+        'type_key' => 'billing.sessions_purchased',
         'message' => $sessionPhrase . ' were added to the "' . $name . '" package.',
         'send_email' => false,
     ]);
     if ($initialPayment > 0) {
         $amountDisplay = '$' . number_format($initialPayment, 2);
         ppf_notifications_record($conn, $clientId, [
-            'type' => 'billing.payment_recorded',
+            'type_key' => 'billing.payment_recorded',
             'message' => 'An initial payment of ' . $amountDisplay . ' was recorded for "' . $name . '".',
             'send_email' => false,
         ]);
@@ -196,14 +196,14 @@ if ($action === 'adjust_sessions') {
             $sessionPhrase = $count === 1 ? '1 session' : ($count . ' sessions');
             $newTotalLabel = $newTotal === 1 ? '1 session total' : ($newTotal . ' sessions total');
             ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
-                'type' => 'billing.sessions_purchased',
+                'type_key' => 'billing.sessions_purchased',
                 'message' => $sessionPhrase . ' were added to "' . $pkgName . '". You now have ' . $newTotalLabel . '.',
                 'send_email' => false,
             ]);
         } elseif ($direction === 'remove') {
             $sessionPhrase = $count === 1 ? '1 session' : ($count . ' sessions');
             ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
-                'type' => 'billing.refund_recorded',
+                'type_key' => 'billing.refund_recorded',
                 'message' => $sessionPhrase . ' were removed from "' . $pkgName . '".' . ($refundAmount > 0 ? ' A refund is being recorded.' : ''),
                 'send_email' => true,
             ]);
@@ -252,14 +252,14 @@ if ($action === 'adjust_sessions') {
         if ($direction === 'payment') {
             $amountDisplay = '$' . number_format($amount, 2);
             ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
-                'type' => 'billing.payment_recorded',
+                'type_key' => 'billing.payment_recorded',
                 'message' => 'A payment of ' . $amountDisplay . ' was recorded for "' . $pkgName . '".',
                 'send_email' => false,
             ]);
         } else {
             $amountDisplay = '$' . number_format($amount, 2);
             ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
-                'type' => 'billing.refund_recorded',
+                'type_key' => 'billing.refund_recorded',
                 'message' => 'A refund of ' . $amountDisplay . ' was processed for "' . $pkgName . '".',
                 'send_email' => true,
             ]);
