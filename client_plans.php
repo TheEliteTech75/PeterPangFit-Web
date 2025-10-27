@@ -2171,8 +2171,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         </svg>
         <input id="globalSearch" type="search" placeholder="Search your workouts" autocomplete="off" />
       </div>
-      <span class="chip"><span class="dot blue"></span><span>Plans</span> <strong id="chipPlans"><?php echo count($plans); ?></strong></span>
-      <span class="chip"><span class="dot green"></span><span>Exercises shown</span> <strong id="chipItems" data-total="<?php echo $totalExercises; ?>"><?php echo $totalExercises; ?></strong></span>
       <div class="actions">
         <button class="btn" type="button" id="btnExpandAll">Open all workouts</button>
         <button class="btn" type="button" id="btnCollapseAll">Close all workouts</button>
@@ -2532,8 +2530,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 (function(){
   const plans = Array.from(document.querySelectorAll('[data-plan-id]'));
   const searchInput = document.getElementById('globalSearch');
-  const chipItems = document.getElementById('chipItems');
-  const chipTotal = parseInt(chipItems?.dataset?.total || '0', 10);
   const btnExpand = document.getElementById('btnExpandAll');
   const btnCollapse = document.getElementById('btnCollapseAll');
   const latestPlanTrigger = document.querySelector('[data-latest-plan-target]');
@@ -2889,7 +2885,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
   btnCollapse?.addEventListener('click', () => plans.forEach(section => setPlanVisibility(section, false, { skipAnimation: true })));
 
   function applySearch() {
-    if (!chipItems) return;
     const term = (searchInput?.value || '').trim().toLowerCase();
     let visible = 0;
     plans.forEach(section => {
@@ -2912,11 +2907,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         setPlanVisibility(section, true, { skipAnimation: true });
       }
     });
-    if (term) {
-      chipItems.textContent = visible;
-    } else {
-      chipItems.textContent = chipTotal;
-    }
   }
 
   searchInput?.addEventListener('input', applySearch);
