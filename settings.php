@@ -44,6 +44,7 @@ ppf_td_ensure_table($conn);
 ppf_seed_lockout_defaults($conn);
 ppf_theme_ensure_column($conn);
 ppf_time_ensure_columns($conn);
+ppf_measurement_ensure_columns($conn);
 
 $demoPrimaryConn = null;
 $demoModeEnabled = false;
@@ -257,11 +258,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $use24h = $modeInput === '24';
 
-            if ($st = $conn->prepare("UPDATE users SET timezone=?, time_format_24h=? WHERE id=?")) {
-                $timeFormat = $use24h ? 1 : 0;
+            $measurementInput = trim((string)($_POST['measurement_system'] ?? ''));
+            $normalizedMeasurement = ppf_measurement_normalize_system($measurementInput);
+            if ($normalizedMeasurement === null) {
+                redirect_with_flash('error', 'Choose a valid measurement system.', 'formatting');
+            }
+
+            $timeFormat = $use24h ? 1 : 0;
+            if ($st = $conn->prepare("UPDATE users SET timezone=?, time_format_24h=?, measurement_system=? WHERE id=?")) {
+                $st->bind_param('sisi', $normalizedTz, $timeFormat, $normalizedMeasurement, $uid);
+                $st->execute();
+                $st->close();
+            } elseif ($st = $conn->prepare("UPDATE users SET timezone=?, time_format_24h=? WHERE id=?")) {
                 $st->bind_param('sii', $normalizedTz, $timeFormat, $uid);
                 $st->execute();
                 $st->close();
+                if ($st2 = $conn->prepare("UPDATE users SET measurement_system=? WHERE id=?")) {
+                    $st2->bind_param('si', $normalizedMeasurement, $uid);
+                    $st2->execute();
+                    $st2->close();
+                }
             } else {
                 redirect_with_flash('error', 'We couldn\'t save your formatting preferences. Please try again.', 'formatting');
             }
@@ -270,11 +286,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['timezone']      = $normalizedTz;
             $_SESSION['user_time_24h'] = $use24h ? 1 : 0;
             $_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
+            ppf_measurement_set_session($normalizedMeasurement);
 
             if (function_exists('ppf_log')) {
                 $details = json_encode([
                     'timezone' => $normalizedTz,
                     'time_format_24h' => $use24h ? '1' : '0',
+                    'measurement_system' => $normalizedMeasurement,
                 ]);
                 ppf_log($conn, $uid, $email ?: null, $role ?: null, 'time_preferences_updated', 'user', (string)$uid, $details);
             }
@@ -612,7 +630,7 @@ if (!$flash && $msgKey !== '') {
 
 // ---------- load user + security data ----------
 $userRow = null;
-if ($st = $conn->prepare("SELECT email, first_name, last_name, role, theme, timezone, time_format_24h, twofa_email_enabled, twofa_app_enabled, twofa_secret FROM users WHERE id=? LIMIT 1")) {
+if ($st = $conn->prepare("SELECT email, first_name, last_name, role, theme, timezone, time_format_24h, measurement_system, twofa_email_enabled, twofa_app_enabled, twofa_secret FROM users WHERE id=? LIMIT 1")) {
     $st->bind_param('i', $uid);
     $st->execute();
     $res = $st->get_result();
@@ -626,12 +644,24 @@ $twofaSecret       = strtoupper(preg_replace('/\s+/', '', (string)($userRow['two
 
 $formattingTimezone = ppf_time_normalize_timezone($userRow['timezone'] ?? ($_SESSION['user_timezone'] ?? null)) ?? ppf_time_default_timezone();
 $formattingUse24h   = (int)($userRow['time_format_24h'] ?? ($_SESSION['user_time_24h'] ?? 0)) === 1;
+$formattingMeasurement = ppf_measurement_normalize_system($userRow['measurement_system'] ?? ($_SESSION['user_measurement_system'] ?? null)) ?? ppf_measurement_default_system();
 $_SESSION['user_timezone'] = $formattingTimezone;
 $_SESSION['timezone']      = $formattingTimezone;
 $_SESSION['user_time_24h'] = $formattingUse24h ? 1 : 0;
 $_SESSION['time_format_24h'] = $_SESSION['user_time_24h'];
+ppf_measurement_set_session($formattingMeasurement);
 $formattingPreviewDate = ppf_format_user_datetime(ppf_time_user_now(), ['type' => 'date_long']);
 $formattingPreviewTime = ppf_format_user_datetime(ppf_time_user_now(), ['type' => 'time']);
+$measurementOptions = [
+    'imperial' => [
+        'label' => 'Imperial',
+        'example' => 'e.g., 150 lb, 5\'10"',
+    ],
+    'metric' => [
+        'label' => 'Metric',
+        'example' => 'e.g., 68 kg, 178 cm',
+    ],
+];
 
 $themeCatalog     = ppf_theme_catalog();
 $currentThemeKey  = ppf_theme_sanitize_key((string)($userRow['theme'] ?? ($_SESSION['theme'] ?? '')));
@@ -1911,6 +1941,13 @@ if ($demoModeControlsAvailable) {
               <input type="radio" name="time_mode" value="24"<?php if ($formattingUse24h) echo ' checked'; ?>>
               <span>24-hour (e.g., <?php echo h(ppf_format_user_datetime(ppf_time_user_now(), ['type' => 'time', 'format' => 'H:i'])); ?>)</span>
             </label>
+            <h3 style="margin-top:20px;">Measurements</h3>
+            <?php foreach ($measurementOptions as $key => $opt): ?>
+            <label class="formatting-option">
+              <input type="radio" name="measurement_system" value="<?php echo h($key); ?>"<?php if ($key === $formattingMeasurement) echo ' checked'; ?>>
+              <span><?php echo h($opt['label']); ?> <span class="muted">(<?php echo h($opt['example']); ?>)</span></span>
+            </label>
+            <?php endforeach; ?>
             <div class="formatting-preview">
               <strong><?php echo h($formattingPreviewDate); ?></strong>
               <div><?php echo h($formattingPreviewTime); ?> · <?php echo h(str_replace('_', ' ', $formattingTimezone)); ?></div>
