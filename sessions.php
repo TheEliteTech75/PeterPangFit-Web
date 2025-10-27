@@ -91,6 +91,173 @@ function ppf_icloud_cached_only(mysqli $conn, ?string $ip): ?bool {
   return null;
 }
 
+if (!function_exists('ppf_sessions_pretty_join')) {
+  function ppf_sessions_pretty_join(array $items): string {
+    $clean = [];
+    foreach ($items as $item) {
+      $t = trim((string)$item);
+      if ($t !== '') $clean[] = $t;
+    }
+    $count = count($clean);
+    if ($count === 0) return '';
+    if ($count === 1) return $clean[0];
+    if ($count === 2) return $clean[0] . ' and ' . $clean[1];
+    $last = array_pop($clean);
+    return implode(', ', $clean) . ', and ' . $last;
+  }
+}
+
+if (!function_exists('ppf_sessions_humanize')) {
+  function ppf_sessions_humanize(string $action): string {
+    $action = trim(strtolower(str_replace('_', ' ', $action)));
+    if ($action === '') return '';
+    return ucwords(preg_replace('/\s+/', ' ', $action));
+  }
+}
+
+if (!function_exists('ppf_sessions_format_activity')) {
+  function ppf_sessions_format_activity(array $log): array {
+    $action = (string)($log['action'] ?? '');
+    $detailsRaw = (string)($log['details'] ?? '');
+    $detailsTrim = trim($detailsRaw);
+    $parsedDetails = null;
+    if ($detailsTrim !== '') {
+      $decoded = json_decode($detailsTrim, true);
+      if (json_last_error() === JSON_ERROR_NONE) {
+        $parsedDetails = $decoded;
+      }
+    }
+
+    $contextPage = trim((string)($log['context_page'] ?? ''));
+    $targetType = trim((string)($log['target_type'] ?? ''));
+    $targetId   = trim((string)($log['target_id'] ?? ''));
+    $page = $contextPage !== '' ? $contextPage : (($targetType === 'page' && $targetId !== '') ? $targetId : '');
+
+    $isPageView = false;
+    $text = '';
+
+    switch ($action) {
+      case 'page_view': {
+        $pageName = $page !== '' ? $page : ($targetId !== '' ? $targetId : 'page');
+        $text = 'Visited ' . $pageName;
+        $isPageView = true;
+        break;
+      }
+      case 'profile_updated': {
+        if (is_array($parsedDetails) && isset($parsedDetails['changed']) && is_array($parsedDetails['changed']) && $parsedDetails['changed']) {
+          $fields = array_keys($parsedDetails['changed']);
+          $pretty = array_map(function($f){ return ucwords(str_replace('_', ' ', (string)$f)); }, $fields);
+          $pretty = array_values(array_filter($pretty, function($s){ return trim((string)$s) !== ''; }));
+          $cnt = count($pretty);
+          if ($cnt === 1) {
+            $text = 'Updated profile ' . $pretty[0];
+          } elseif ($cnt === 2) {
+            $text = 'Updated profile ' . ppf_sessions_pretty_join([$pretty[0], $pretty[1]]);
+          } elseif ($cnt > 2) {
+            $text = 'Updated profile ' . $pretty[0] . ', ' . $pretty[1] . ', and others';
+          }
+        }
+        if ($text === '') $text = 'Updated profile';
+        break;
+      }
+      case 'login_success':
+      case 'login_success_passkey':
+        $text = 'Signed in';
+        break;
+      case 'logout_manual':
+        $text = 'Signed out';
+        break;
+      case 'logout_timeout':
+        $text = 'Signed out due to inactivity';
+        break;
+      case 'trainer_session_scheduled':
+        $text = 'Scheduled training session';
+        break;
+      case 'trainer_session_rescheduled':
+        $text = 'Rescheduled training session';
+        break;
+      case 'trainer_session_cancelled':
+        $text = 'Cancelled training session';
+        break;
+      case 'trainer_session_completed':
+        $text = 'Completed training session';
+        break;
+      case 'trainer_session_started':
+        $text = 'Started training session';
+        break;
+      case 'trainer_session_reopened':
+        $text = 'Reopened training session';
+        break;
+      case 'trusted_device_added':
+        $text = 'Added trusted device';
+        break;
+      case 'trusted_device_deleted':
+        $text = 'Removed trusted device';
+        break;
+      case 'theme_updated':
+        $text = 'Updated theme';
+        break;
+      case 'time_preferences_updated':
+        $text = 'Updated time preferences';
+        break;
+      case 'twofa_app_enabled':
+        $text = 'Enabled authenticator app';
+        break;
+      case 'twofa_app_disabled':
+        $text = 'Disabled authenticator app';
+        break;
+      case 'twofa_app_code_valid_login':
+        $text = 'Validated authenticator code';
+        break;
+      case 'twofa_email_code_sent_login':
+      case 'twofa_email_code_sent':
+        $text = 'Requested email verification code';
+        break;
+      default:
+        break;
+    }
+
+    if ($text === '' && is_array($parsedDetails) && isset($parsedDetails['message'])) {
+      $text = trim((string)$parsedDetails['message']);
+    }
+
+    if ($text === '' && $parsedDetails === null && $detailsTrim !== '') {
+      $text = $detailsTrim;
+    }
+
+    if ($text === '' && $action !== '') {
+      $text = ppf_sessions_humanize($action);
+    }
+
+    $text = trim($text);
+    if ($text === '') {
+      return ['text' => null, 'created_at' => $log['created_at'] ?? null, 'is_page_view' => $isPageView];
+    }
+
+    $base = rtrim($text, ". \t\r\n");
+    if ($base === '') {
+      return ['text' => null, 'created_at' => $log['created_at'] ?? null, 'is_page_view' => $isPageView];
+    }
+
+    if ($isPageView) {
+      $final = $base . '.';
+    } else {
+      $final = $base;
+      if ($page !== '') {
+        $final .= ' in ' . $page;
+      }
+      $final .= '.';
+    }
+
+    return [
+      'text' => $final,
+      'created_at' => $log['created_at'] ?? null,
+      'is_page_view' => $isPageView,
+    ];
+  }
+}
+
+
 if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 $csrf = $_SESSION['csrf_token'];
 
@@ -174,6 +341,39 @@ if ($rs = $conn->query($sql)) {
   }
   $rs->close();
 }
+
+
+$sessionActivities = [];
+if ($sessions) {
+  $sessionIds = [];
+  foreach ($sessions as $sessRow) {
+    $sidTmp = (string)($sessRow['session_id'] ?? '');
+    if ($sidTmp !== '') {
+      $sessionIds[$sidTmp] = $sidTmp;
+    }
+  }
+  if ($sessionIds) {
+    $sessionIds = array_values($sessionIds);
+    $placeholders = implode(',', array_fill(0, count($sessionIds), '?'));
+    $types = str_repeat('s', count($sessionIds));
+    $sqlLogs = "SELECT id, session_id, action, details, target_type, target_id, context_page, created_at FROM system_logs WHERE session_id IS NOT NULL AND session_id IN ($placeholders) ORDER BY created_at DESC, id DESC";
+    if ($stmt = $conn->prepare($sqlLogs)) {
+      $stmt->bind_param($types, ...$sessionIds);
+      $stmt->execute();
+      if ($res = $stmt->get_result()) {
+        while ($logRow = $res->fetch_assoc()) {
+          $sidVal = (string)($logRow['session_id'] ?? '');
+          if ($sidVal === '') continue;
+          if (!isset($sessionActivities[$sidVal])) {
+            $sessionActivities[$sidVal] = ppf_sessions_format_activity($logRow);
+          }
+        }
+      }
+      $stmt->close();
+    }
+  }
+}
+
 
 /* ---------- Counts ---------- */
 $counts = ['total'=>0,'current'=>0,'active'=>0,'inactive'=>0,'expired'=>0,'revoked'=>0,'icloud'=>0,'vpn'=>0];
@@ -287,6 +487,7 @@ foreach ($sessions as $s) {
               <th>IP Address</th>
               <th>Browser</th>
               <th>Operating System</th>
+              <th>Last Activity</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -351,6 +552,23 @@ foreach ($sessions as $s) {
 
               <td class="muted"><?php echo h($s['browser_disp'] ?: 'Unknown'); ?></td>
               <td class="muted"><?php echo h($s['platform_disp'] ?: 'Unknown'); ?></td>
+              <td class="muted">
+                <?php
+                  $activity = $sessionActivities[$s['session_id']] ?? null;
+                  if ($activity && !empty($activity['text'])):
+                    $actText = (string)$activity['text'];
+                    $actTs   = !empty($activity['created_at']) ? strtotime((string)$activity['created_at']) : 0;
+                ?>
+                  <div><?php echo h($actText); ?></div>
+                  <?php if ($actTs): ?>
+                    <div style="font-size:12px;margin-top:4px;">
+                      <?php echo h(date('M j, Y g:i A', $actTs)); ?>
+                    </div>
+                  <?php endif; ?>
+                <?php else: ?>
+                  —
+                <?php endif; ?>
+              </td>
               <td>
                 <?php if ($canSignOut): ?>
                   <button class="btn" onclick="return openRevoke(this)">Sign Out</button>

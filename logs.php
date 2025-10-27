@@ -13,6 +13,8 @@
 //   target_type VARCHAR(64) NULL
 //   target_id VARCHAR(64) NULL   <-- no longer displayed/filtered in UI
 //   details TEXT NULL
+//   session_id VARCHAR(128) NULL
+//   context_page VARCHAR(128) NULL
 
 // -------------- Reusable helpers (NO auth/db required for inclusion) --------------
 
@@ -26,6 +28,37 @@ if ($is_direct_request) {
   if (!ppf_is_admin_role($role)) {
     require_once __DIR__ . '/access_denied.php';
     exit;
+  }
+}
+
+if (!function_exists('ppf_log_page_view')) {
+  function ppf_log_page_view(mysqli $conn, ?int $user_id = null, ?string $email = null, ?string $role = null, ?string $script = null): void {
+    if (!function_exists('ppf_log')) return;
+
+    if ($script === null) {
+      $script = isset($_SERVER['SCRIPT_NAME']) ? basename((string)$_SERVER['SCRIPT_NAME']) : '';
+    } else {
+      $script = basename((string)$script);
+    }
+    $script = trim($script);
+    if ($script === '') return;
+
+    static $logged = [];
+    $sid = (session_status() === PHP_SESSION_ACTIVE) ? session_id() : '';
+    $key = $script . '|' . ($sid ?: 'nosid');
+    if (isset($logged[$key])) return;
+    $logged[$key] = true;
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+      $_SESSION['last_page_script'] = $script;
+    }
+
+    $details = 'Visited ' . $script . '.';
+    try {
+      @ppf_log($conn, $user_id, $email, $role, 'page_view', 'page', $script, $details, null, $script);
+    } catch (\Throwable $e) {
+      // Page view logging is best-effort; never break the request.
+    }
   }
 }
 
@@ -90,13 +123,23 @@ if (!function_exists('ppf_ensure_system_logs_table')) {
         target_type VARCHAR(64) NULL,
         target_id VARCHAR(64) NULL,
         details TEXT NULL,
+        session_id VARCHAR(128) NULL,
+        context_page VARCHAR(128) NULL,
         INDEX (created_at),
         INDEX (action),
         INDEX (user_id),
         INDEX (actor_role),
-        INDEX (target_type)
+        INDEX (target_type),
+        INDEX idx_logs_session (session_id(64)),
+        INDEX idx_logs_page (context_page(64))
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+
+    // Attempt to upgrade legacy installs with missing columns/indexes
+    try { $conn->query("ALTER TABLE system_logs ADD COLUMN session_id VARCHAR(128) NULL AFTER details"); } catch (\Throwable $e) {}
+    try { $conn->query("ALTER TABLE system_logs ADD COLUMN context_page VARCHAR(128) NULL AFTER session_id"); } catch (\Throwable $e) {}
+    try { $conn->query("CREATE INDEX idx_logs_session ON system_logs (session_id(64))"); } catch (\Throwable $e) {}
+    try { $conn->query("CREATE INDEX idx_logs_page ON system_logs (context_page(64))"); } catch (\Throwable $e) {}
   }
 }
 
@@ -114,7 +157,9 @@ if (!function_exists('ppf_log')) {
     string $action,
     ?string $target_type = null,
     ?string $target_id = null,
-    ?string $details = null
+    ?string $details = null,
+    ?string $session_id = null,
+    ?string $context_page = null
   ): void {
     static $checked = false;
     if (!$checked) { ppf_ensure_system_logs_table($conn); $checked = true; }
@@ -124,14 +169,54 @@ if (!function_exists('ppf_log')) {
     if ($actor_email === null&& isset($_SESSION['email']))    { $actor_email = (string)$_SESSION['email']; }
     if ($actor_role === null && isset($_SESSION['role']))     { $actor_role  = (string)$_SESSION['role']; }
 
+    if ($session_id === null && session_status() === PHP_SESSION_ACTIVE) {
+      $sid = session_id();
+      if (is_string($sid) && $sid !== '') {
+        $session_id = substr($sid, 0, 128);
+      }
+    } elseif ($session_id !== null) {
+      $session_id = substr((string)$session_id, 0, 128);
+    }
+
+    $scriptBase = '';
+    if (isset($_SERVER['SCRIPT_NAME']) && is_string($_SERVER['SCRIPT_NAME'])) {
+      $scriptBase = basename((string)$_SERVER['SCRIPT_NAME']);
+    }
+
+    if ($context_page !== null) {
+      $context_page = trim((string)$context_page);
+      if ($context_page !== '') {
+        $context_page = basename($context_page);
+      }
+    }
+
+    if (($context_page === null || $context_page === '') && $scriptBase !== '') {
+      $context_page = $scriptBase;
+    }
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+      $lastPage = $_SESSION['last_page_script'] ?? '';
+      if (!is_string($lastPage)) { $lastPage = ''; }
+      if ($context_page === null || $context_page === '') {
+        if ($lastPage !== '') { $context_page = $lastPage; }
+      } elseif (substr($context_page, -12) === '_actions.php' && $lastPage !== '') {
+        $context_page = $lastPage;
+      }
+    }
+
+    if ($context_page !== null) {
+      $context_page = substr($context_page, -128);
+      if ($context_page === '') { $context_page = null; }
+    }
+
     $ip = ppf_client_ip();
 
     $sql = "INSERT INTO system_logs
-      (user_id, actor_email, actor_role, ip_address, action, target_type, target_id, details)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+      (user_id, actor_email, actor_role, ip_address, action, target_type, target_id, details, session_id, context_page)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     if ($stmt = $conn->prepare($sql)) {
       $stmt->bind_param(
-        "isssssss",
+        "isssssssss",
         $actor_id,
         $actor_email,
         $actor_role,
@@ -139,7 +224,9 @@ if (!function_exists('ppf_log')) {
         $action,
         $target_type,
         $target_id,
-        $details
+        $details,
+        $session_id,
+        $context_page
       );
       $stmt->execute();
       $stmt->close();

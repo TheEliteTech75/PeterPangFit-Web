@@ -593,15 +593,19 @@ CREATE TABLE IF NOT EXISTS system_logs (
   target_type VARCHAR(64) NULL,
   target_id VARCHAR(64) NULL,
   details TEXT NULL,
+  session_id VARCHAR(128) NULL,
+  context_page VARCHAR(128) NULL,
   PRIMARY KEY (id),
   KEY idx_logs_created (created_at),
   KEY idx_logs_action (action),
-  KEY idx_logs_user (user_id)
+  KEY idx_logs_user (user_id),
+  KEY idx_logs_session (session_id(64)),
+  KEY idx_logs_page (context_page(64))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO system_logs (user_id, actor_email, actor_role, ip_address, action, target_type, target_id, details, created_at)
+INSERT INTO system_logs (user_id, actor_email, actor_role, ip_address, action, target_type, target_id, details, session_id, context_page, created_at)
 VALUES
-  (1, 'demo.admin@example.com', 'admin', '203.0.113.10', 'demo_mode_reset', 'system', 'demo', 'Demo sandbox reset to baseline dataset.', '2023-09-10 09:16:00'),
-  (2, 'demo.trainer@example.com', 'trainer', '203.0.113.20', 'workout_plan_created', 'workout_plan', '1', 'Initial strength plan authored for Jordan Parker.', '2023-06-10 08:00:00');
+  (1, 'demo.admin@example.com', 'admin', '203.0.113.10', 'demo_mode_reset', 'system', 'demo', 'Demo sandbox reset to baseline dataset.', 'demo-admin-session', 'dashboard.php', '2023-09-10 09:16:00'),
+  (2, 'demo.trainer@example.com', 'trainer', '203.0.113.20', 'workout_plan_created', 'workout_plan', '1', 'Initial strength plan authored for Jordan Parker.', 'trainer-session-demo', 'trainer_sessions.php', '2023-06-10 08:00:00');
 
 SET FOREIGN_KEY_CHECKS = 1;
