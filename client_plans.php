@@ -917,12 +917,13 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       display: flex;
       gap: 12px;
       min-width: 260px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       justify-content: center;
     }
 
     .session-card__count {
-      flex: 1 1 120px;
+      flex: 1 1 0;
+      min-width: 0;
       text-align: center;
       display: flex;
       flex-direction: column;
