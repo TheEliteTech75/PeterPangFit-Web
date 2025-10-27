@@ -80,7 +80,12 @@
 
       handle.addEventListener('mousedown', (ev) => {
         if (ev.button !== 0) return;
-        if (ev.detail && ev.detail > 1) return;
+        if (ev.detail && ev.detail > 1) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          autoSizeColumn(index);
+          return;
+        }
         ev.preventDefault();
         ev.stopPropagation();
         const startX = ev.clientX;
@@ -112,7 +117,6 @@
         document.addEventListener('mouseup', onUp);
         document.body.style.cursor = 'col-resize';
       });
-
       handle.addEventListener('dblclick', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
