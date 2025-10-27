@@ -217,9 +217,7 @@ function cp_trim_number(float $value, int $precision = 2): string {
 }
 
 function cp_format_weight_lbs($value): ?string {
-  if ($value === null || $value === '') return null;
-  if (!is_numeric($value)) return null;
-  return cp_trim_number((float)$value) . ' lbs';
+  return ppf_measurement_format_weight($value);
 }
 
 function cp_decode_set_details(?string $json): array {
@@ -460,7 +458,7 @@ foreach ($plans as $p) {
   }
 }
 
-$weightLabel = $WEIGHT_COL === 'weight_lbs' ? 'Weight (lb)' : ($WEIGHT_COL ? 'Weight' : 'Weight');
+$weightLabel = $WEIGHT_COL === 'weight_lbs' ? ppf_measurement_weight_label() : ($WEIGHT_COL ? 'Weight' : 'Weight');
 
 $clientName = trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''));
 $clientFirst = trim((string)($client['first_name'] ?? ''));
