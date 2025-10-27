@@ -1148,6 +1148,14 @@ require_once __DIR__ . '/ppf_nav.php';
 
 <script>
 (function(){
+  // Remove any lingering measurement chips from the subheader.
+  document.querySelectorAll('.subheader .chip').forEach(chip => {
+    const text = (chip.textContent || '').toLowerCase();
+    if (text.includes('measure') || text.includes('imperial') || text.includes('metric')) {
+      chip.remove();
+    }
+  });
+
   // -------------------- Row expand/collapse --------------------
   document.querySelectorAll('.exercise-row').forEach(tr=>{
     tr.addEventListener('click', (e)=>{
