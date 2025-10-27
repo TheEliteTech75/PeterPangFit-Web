@@ -15,6 +15,50 @@ $types = ppf_notifications_types();
 $priorities = ppf_notifications_priorities();
 $catalog = ppf_notifications_catalog();
 
+$preconfiguredRules = [];
+if ($userId > 0) {
+  foreach ($catalog as $typeKey => $definition) {
+    if (empty($definition['preconfigured'])) {
+      continue;
+    }
+    $channels = ['center' => true, 'email' => false];
+    if (!empty($definition['channels']) && is_array($definition['channels'])) {
+      $channels = array_merge($channels, $definition['channels']);
+    } elseif (!empty($definition['send_email'])) {
+      $channels['email'] = true;
+    }
+    $categoryKey = ppf_notifications_valid_category((string)($definition['category'] ?? 'system'));
+    $sendEmail = isset($definition['send_email']) ? (bool)$definition['send_email'] : !empty($channels['email']);
+    $immutable = !empty($definition['immutable']);
+    $metadata = [
+      'preconfigured' => true,
+      'type_key' => $typeKey,
+      'category' => $categoryKey,
+      'channels' => $channels,
+      'send_email' => $sendEmail,
+    ];
+    if ($immutable) {
+      $metadata['immutable'] = true;
+    }
+    $preconfiguredRules[$typeKey] = [
+      'id' => null,
+      'tenant_id' => $tenantId,
+      'user_id' => $userId,
+      'type_key' => $typeKey,
+      'title' => (string)($definition['title'] ?? 'Notification'),
+      'body' => (string)($definition['body'] ?? ''),
+      'category' => $categoryKey,
+      'channels' => $channels,
+      'send_email' => $sendEmail,
+      'priority' => (int)($definition['priority'] ?? 0),
+      'immutable' => $immutable,
+      'metadata' => $metadata,
+      'created_at' => null,
+      'updated_at' => null,
+    ];
+  }
+}
+
 ppf_notifications_seed_defaults($conn, $tenantId, $userId);
 
 $catalogGrouped = [];
@@ -81,6 +125,43 @@ try {
   $initialState['rules'] = ppf_notification_rules_list($conn, $tenantId, $userId);
 } catch (Throwable $e) {
   $initialState['rules'] = [];
+}
+
+if (!is_array($initialState['rules'])) {
+  $initialState['rules'] = [];
+}
+
+if (!empty($preconfiguredRules)) {
+  $existingRuleKeys = [];
+  foreach ($initialState['rules'] as $rule) {
+    $key = isset($rule['type_key']) ? (string)$rule['type_key'] : '';
+    if ($key !== '') {
+      $existingRuleKeys[$key] = true;
+    }
+  }
+  foreach ($preconfiguredRules as $typeKey => $rule) {
+    if (!isset($existingRuleKeys[$typeKey])) {
+      $initialState['rules'][] = $rule;
+    }
+  }
+  if (!empty($initialState['rules'])) {
+    usort($initialState['rules'], function ($a, $b) {
+      $catA = strtolower((string)($a['category'] ?? ''));
+      $catB = strtolower((string)($b['category'] ?? ''));
+      if ($catA !== $catB) {
+        return $catA <=> $catB;
+      }
+      $priorityA = (int)($a['priority'] ?? 0);
+      $priorityB = (int)($b['priority'] ?? 0);
+      if ($priorityA !== $priorityB) {
+        return $priorityB <=> $priorityA;
+      }
+      $titleA = (string)($a['title'] ?? '');
+      $titleB = (string)($b['title'] ?? '');
+      return $titleA <=> $titleB;
+    });
+    $initialState['rules'] = array_values($initialState['rules']);
+  }
 }
 
 $initialStateJson = json_encode($initialState, JSON_UNESCAPED_SLASHES);
