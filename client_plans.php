@@ -817,7 +817,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       align-items: center;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 16px 20px;
-      margin-top: clamp(18px, 4vw, 30px);
+      margin-top: clamp(10px, 3vw, 22px);
       width: min(100%, 920px);
       margin-inline: 0 auto;
       padding: clamp(14px, 3.5vw, 22px);
