@@ -604,7 +604,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       position: relative;
       --hero-radius: clamp(22px, 7vw, 36px);
       padding: clamp(32px, 6vw, 64px);
-      margin: clamp(24px, 5vw, 60px) var(--page-pad-x);
+      margin: clamp(24px, 5vw, 60px) calc(var(--page-pad-x) - clamp(4px, 1vw, 8px));
       max-width: none;
       border-radius: var(--hero-radius);
       background:
@@ -697,7 +697,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-content: start;
       align-items: stretch;
-      padding-inline-end: calc(clamp(28px, 6vw, 96px) + env(safe-area-inset-right, 0px));
+      padding-inline-end: calc(clamp(18px, 4.6vw, 72px) + env(safe-area-inset-right, 0px));
     }
 
     .hero-highlight {
