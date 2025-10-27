@@ -643,7 +643,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       position: relative;
       z-index: 1;
       display: grid;
-      gap: clamp(24px, 5vw, 40px);
+      gap: clamp(20px, 4.2vw, 36px);
       width: 100%;
       max-width: none;
       margin: 0;
@@ -693,11 +693,11 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
     .hero__status {
       display: grid;
-      gap: clamp(16px, 4vw, 28px);
+      gap: clamp(16px, 3.6vw, 24px);
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-content: start;
       align-items: stretch;
-      padding-inline-end: calc(clamp(36px, 8vw, 120px) + env(safe-area-inset-right, 0px));
+      padding-inline-end: calc(clamp(28px, 6vw, 96px) + env(safe-area-inset-right, 0px));
     }
 
     .hero-highlight {
@@ -1800,10 +1800,10 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
     @media (min-width: 1101px) {
       .hero__status {
-        grid-template-columns: minmax(340px, 1.35fr) repeat(2, minmax(260px, 1fr));
+        grid-template-columns: minmax(320px, 1.28fr) repeat(2, minmax(260px, 1fr));
         grid-auto-flow: dense;
-        margin-inline-end: clamp(28px, 6vw, 104px);
-        margin-right: clamp(28px, 6vw, 104px);
+        margin-inline-end: clamp(20px, 5vw, 84px);
+        margin-right: clamp(20px, 5vw, 84px);
       }
 
       .hero-highlight--date {
@@ -2020,15 +2020,17 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         grid-template-areas:
           'intro status'
           'toolbar status';
+        column-gap: clamp(18px, 3.5vw, 30px);
+        row-gap: clamp(22px, 4.5vw, 36px);
       }
       .hero__intro {
         grid-area: intro;
       }
       .hero__status {
         grid-area: status;
-        padding-inline-end: calc(clamp(56px, 9vw, 144px) + env(safe-area-inset-right, 0px));
-        margin-inline-end: clamp(40px, 7vw, 140px);
-        margin-right: clamp(40px, 7vw, 140px);
+        padding-inline-end: calc(clamp(40px, 7vw, 120px) + env(safe-area-inset-right, 0px));
+        margin-inline-end: clamp(26px, 6vw, 110px);
+        margin-right: clamp(26px, 6vw, 110px);
       }
       .toolbar {
         grid-area: toolbar;
