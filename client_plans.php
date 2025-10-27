@@ -602,35 +602,41 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
     .hero {
       position: relative;
+      --hero-radius: clamp(22px, 7vw, 36px);
       padding: clamp(32px, 6vw, 64px);
-      margin: clamp(24px, 5vw, 60px) auto;
-      max-width: min(1220px, calc(100% - clamp(36px, 8vw, 120px)));
-      border-radius: clamp(22px, 7vw, 36px);
-      overflow: hidden;
+      margin: clamp(24px, 5vw, 60px) var(--page-pad-x);
+      max-width: none;
+      border-radius: var(--hero-radius);
       background:
         linear-gradient(145deg, rgba(0, 191, 255, 0.22), rgba(0, 0, 0, 0.35)),
         var(--surface-alt, #111111);
       border: 1px solid var(--card-border-subtle, rgba(255, 255, 255, 0.08));
       box-shadow: var(--shadow, var(--card-shadow, 0 28px 50px rgba(0, 0, 0, 0.55)));
+      overflow: visible;
+      isolation: isolate;
     }
 
     .hero::before {
       content: '';
       position: absolute;
-      inset: -60px -120px;
+      inset: -1px;
+      border-radius: inherit;
       background:
-        radial-gradient(circle at 15% 20%, rgba(0, 191, 255, 0.36), transparent 60%),
-        radial-gradient(circle at 82% 28%, rgba(255, 76, 76, 0.18), transparent 60%);
+        radial-gradient(circle at 15% 20%, rgba(0, 191, 255, 0.36), transparent 58%),
+        radial-gradient(circle at 82% 28%, rgba(255, 76, 76, 0.18), transparent 62%);
       opacity: 0.65;
-      z-index: 0;
+      z-index: -1;
+      pointer-events: none;
     }
 
     .hero::after {
       content: '';
       position: absolute;
       inset: 0;
+      border-radius: inherit;
       background: linear-gradient(120deg, rgba(0, 0, 0, 0.75), transparent 70%);
-      z-index: 0;
+      z-index: -1;
+      pointer-events: none;
     }
 
     .hero__wrap {
@@ -639,8 +645,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       display: grid;
       gap: clamp(24px, 5vw, 40px);
       width: 100%;
-      max-width: clamp(320px, 92vw, 1120px);
-      margin: 0 auto;
+      max-width: none;
+      margin: 0;
     }
 
     .hero__intro {
@@ -691,7 +697,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       align-content: start;
       align-items: stretch;
-      padding-inline-end: calc(clamp(32px, 7vw, 96px) + env(safe-area-inset-right, 0px));
+      padding-inline-end: calc(clamp(36px, 8vw, 120px) + env(safe-area-inset-right, 0px));
     }
 
     .hero-highlight {
@@ -2155,12 +2161,6 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
           <span class="hero-stat__label">First plan posted</span>
           <strong><?php echo h($firstDate); ?></strong>
         </div>
-        <?php if ($hasSessionPackages): ?>
-          <div class="hero-stat">
-            <span class="hero-stat__label">Sessions scheduled</span>
-            <strong id="sessionsTotalScheduled" data-session-total="scheduled"><?php echo $sessionTotalsScheduled; ?></strong>
-          </div>
-        <?php endif; ?>
       </div>
     </div>
     <div class="toolbar">
