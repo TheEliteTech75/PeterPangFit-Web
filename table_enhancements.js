@@ -15,6 +15,12 @@
     const headers = Array.from(table.querySelectorAll('thead th'));
     if (!headers.length) return;
     const minWidth = (options && options.minColumnWidth) || 56;
+    const doubleClickBuffer = (options && typeof options.resizeEdgeBuffer === 'number')
+      ? Math.max(2, options.resizeEdgeBuffer)
+      : 6;
+    const doubleClickDelay = (options && typeof options.resizeDoubleClickDelay === 'number')
+      ? Math.max(200, options.resizeDoubleClickDelay)
+      : 400;
     const parsePx = (value) => {
       const num = parseFloat(value);
       return Number.isNaN(num) ? 0 : num;
@@ -74,65 +80,121 @@
     let lastHandleClickTime = 0;
     let lastHandleClickIndex = -1;
 
+    function beginResize(ev, columnIndex) {
+      const header = headers[columnIndex];
+      if (!header) return;
+      if (ev.button !== 0) return;
+
+      const now = ev.timeStamp || Date.now();
+      const isDoubleClick =
+        lastHandleClickIndex === columnIndex &&
+        (now - lastHandleClickTime) <= doubleClickDelay;
+      lastHandleClickTime = now;
+      lastHandleClickIndex = columnIndex;
+
+      if (isDoubleClick || (ev.detail && ev.detail > 1)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        autoSizeColumn(columnIndex);
+        lastHandleClickTime = 0;
+        lastHandleClickIndex = -1;
+        return;
+      }
+
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      const startX = ev.clientX;
+      const col = cols[columnIndex] || null;
+      const rect = header.getBoundingClientRect();
+      const startWidth = col && col.style.width
+        ? parseFloat(col.style.width)
+        : rect.width;
+
+      const applyWidth = (width) => {
+        if (col) {
+          col.style.width = `${width}px`;
+          col.style.minWidth = `${width}px`;
+        }
+        header.style.width = `${width}px`;
+        header.style.minWidth = `${width}px`;
+      };
+
+      function onMove(e){
+        const delta = e.clientX - startX;
+        const newWidth = Math.max(minWidth, startWidth + delta);
+        applyWidth(newWidth);
+      }
+
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+
     headers.forEach((th, index) => {
       if (th.querySelector('.col-resize-handle')) return;
       th.style.position = th.style.position || 'relative';
       const handle = document.createElement('span');
       handle.className = 'col-resize-handle';
+      if (!handle.style.touchAction) handle.style.touchAction = 'none';
+      if (!handle.style.userSelect) handle.style.userSelect = 'none';
+      if (!handle.style.zIndex) handle.style.zIndex = '5';
+      if (!handle.style.position) handle.style.position = 'absolute';
+      if (!handle.style.top) handle.style.top = '0';
+      if (!handle.style.bottom) handle.style.bottom = '0';
+      if (!handle.style.right) handle.style.right = '-3px';
+      if (!handle.style.width) handle.style.width = '8px';
+      handle.setAttribute('role', 'separator');
+      handle.setAttribute('aria-hidden', 'true');
+      handle.tabIndex = -1;
       th.appendChild(handle);
 
       handle.addEventListener('mousedown', (ev) => {
-        if (ev.button !== 0) return;
-        const now = ev.timeStamp || Date.now();
-        const isDoubleClick =
-          lastHandleClickIndex === index &&
-          (now - lastHandleClickTime) <= 350;
-        lastHandleClickTime = now;
-        lastHandleClickIndex = index;
-
-        if (isDoubleClick || (ev.detail && ev.detail > 1)) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          autoSizeColumn(index);
-          lastHandleClickTime = 0;
-          lastHandleClickIndex = -1;
-          return;
-        }
-        ev.preventDefault();
-        ev.stopPropagation();
-        const startX = ev.clientX;
-        const col = cols[index];
-        const rect = th.getBoundingClientRect();
-        const startWidth = col && col.style.width
-          ? parseFloat(col.style.width)
-          : rect.width;
-
-        function onMove(e){
-          const delta = e.clientX - startX;
-          const newWidth = Math.max(minWidth, startWidth + delta);
-          if (col) {
-            col.style.width = `${newWidth}px`;
-            col.style.minWidth = `${newWidth}px`;
-          } else {
-            th.style.width = `${newWidth}px`;
-            th.style.minWidth = `${newWidth}px`;
-          }
-        }
-
-        function onUp(){
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
-          document.body.style.cursor = '';
-        }
-
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-        document.body.style.cursor = 'col-resize';
+        beginResize(ev, index);
       });
       handle.addEventListener('dblclick', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         autoSizeColumn(index);
+      });
+
+      th.addEventListener('mousedown', (ev) => {
+        if (ev.button !== 0) return;
+        if (ev.target && ev.target.closest('.col-resize-handle')) return;
+        const rect = th.getBoundingClientRect();
+        const offsetX = ev.clientX - rect.left;
+        const distanceLeft = offsetX;
+        const distanceRight = rect.width - offsetX;
+        if (distanceRight <= doubleClickBuffer) {
+          beginResize(ev, index);
+        } else if (distanceLeft <= doubleClickBuffer && index > 0) {
+          beginResize(ev, index - 1);
+        }
+      });
+
+      th.addEventListener('dblclick', (ev) => {
+        if (ev.target && ev.target.closest('.col-resize-handle')) return;
+        const rect = th.getBoundingClientRect();
+        const offsetX = ev.clientX - rect.left;
+        const distanceLeft = offsetX;
+        const distanceRight = rect.width - offsetX;
+        if (distanceRight <= doubleClickBuffer) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          autoSizeColumn(index);
+        } else if (distanceLeft <= doubleClickBuffer && index > 0) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          autoSizeColumn(index - 1);
+        }
       });
     });
   }
