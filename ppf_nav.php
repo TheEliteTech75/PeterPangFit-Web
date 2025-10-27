@@ -176,7 +176,7 @@ if ($isAdmin) {
           ['href' => 'users.php?open=create', 'label' => 'Create User'],
         ],
       ],
-      ['href' => 'sessions.php', 'label' => 'Sessions'],  // ← NEW admin-only link
+      ['href' => 'sessions.php', 'label' => 'Login Sessions'],  // ← NEW admin-only link
       ['href' => 'logs.php',     'label' => 'Logs'],
     ],
   ];
