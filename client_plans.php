@@ -603,8 +603,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
     .hero {
       position: relative;
       padding: clamp(32px, 6vw, 64px);
-      margin: clamp(24px, 5vw, 60px) auto;
-      max-width: min(1220px, calc(100% - clamp(36px, 8vw, 120px)));
+      margin: clamp(24px, 5vw, 60px) clamp(18px, 5vw, 72px);
+      max-width: none;
       border-radius: clamp(22px, 7vw, 36px);
       overflow: hidden;
       background:
@@ -639,8 +639,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       display: grid;
       gap: clamp(24px, 5vw, 40px);
       width: 100%;
-      max-width: clamp(320px, 92vw, 1120px);
-      margin: 0 auto;
+      max-width: none;
+      margin: 0;
     }
 
     .hero__intro {
