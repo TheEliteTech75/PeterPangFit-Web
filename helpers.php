@@ -643,6 +643,13 @@ if (!function_exists('ppf_notifications_query')) {
       $where[] = 'is_archived = 0';
     }
 
+    if (!empty($filters['category']) && strtolower((string)$filters['category']) !== 'all') {
+      $category = ppf_notifications_valid_category((string)$filters['category']);
+      $where[] = 'COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, \'$.category\')), \'system\') = ?';
+      $params[] = $category;
+      $types .= 's';
+    }
+
     if (!empty($filters['type']) && isset(ppf_notifications_types()[$filters['type']])) {
       $where[] = 'type = ?';
       $params[] = $filters['type'];
@@ -993,7 +1000,10 @@ if (!function_exists('ppf_notifications_upsert')) {
     if ($url === '') {
       $url = null;
     }
-    $metadata = $data['metadata'] ?? [];
+    $metadata = [];
+    if (!empty($data['metadata']) && is_array($data['metadata'])) {
+      $metadata = $data['metadata'];
+    }
     if (isset($data['category'])) {
       $metadata['category'] = ppf_notifications_valid_category((string)$data['category']);
     }
@@ -1002,6 +1012,22 @@ if (!function_exists('ppf_notifications_upsert')) {
     }
     if (isset($data['send_email'])) {
       $metadata['send_email'] = (bool)$data['send_email'];
+    }
+    if (isset($data['immutable'])) {
+      $metadata['immutable'] = (bool)$data['immutable'];
+    }
+    if (isset($data['channels']) && is_array($data['channels'])) {
+      $channels = [
+        'center' => true,
+        'email' => false,
+      ];
+      foreach ($data['channels'] as $channel => $enabled) {
+        $channels[$channel] = (bool)$enabled;
+      }
+      $metadata['channels'] = $channels;
+      if (!isset($metadata['send_email'])) {
+        $metadata['send_email'] = !empty($channels['email']);
+      }
     }
     $actions = $data['actions'] ?? [];
     $jsonMetadata = $metadata ? json_encode($metadata) : null;
@@ -1045,6 +1071,9 @@ if (!function_exists('ppf_notifications_record')) {
     $typeKey = (string)($data['type_key'] ?? 'custom.manual');
     $defaults = $catalog[$typeKey] ?? [];
     $payload = array_merge($defaults, $data);
+    if (isset($defaults['immutable']) && !isset($payload['immutable'])) {
+      $payload['immutable'] = (bool)$defaults['immutable'];
+    }
     if (!isset($payload['type']) && isset($payload['type_label'])) {
       $payload['type'] = $payload['type_label'];
     }
