@@ -421,6 +421,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($plan_id<=0) throw new Exception('Invalid plan.');
         if (!$user_ids) throw new Exception('Pick at least one user.');
 
+        $planName = 'Workout Plan #' . $plan_id;
+        if ($stmtPlanName = $conn->prepare("SELECT name FROM workout_plans WHERE id=? LIMIT 1")) {
+          $stmtPlanName->bind_param("i", $plan_id);
+          $stmtPlanName->execute();
+          $resPlanName = $stmtPlanName->get_result();
+          if ($resPlanName && ($rowPlanName = $resPlanName->fetch_assoc())) {
+            $rawName = trim((string)($rowPlanName['name'] ?? ''));
+            if ($rawName !== '') $planName = $rawName;
+          }
+          $stmtPlanName->close();
+        }
+
         // plan exercises
         $pe = [];
         $stmt = $conn->prepare("SELECT exercise_id, position FROM plan_exercises WHERE plan_id=? ORDER BY position ASC, exercise_id ASC");
@@ -529,6 +541,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               }
               if (!$stmtUPE->execute()) throw new Exception('Failed to save exercise settings.');
             }
+
+            ppf_notifications_record($conn, $uidAssign, [
+              'type' => 'workouts.plan_assigned',
+              'message' => 'The "' . $planName . '" plan was assigned on ' . ppf_format_user_datetime(date('c'), ['fallback' => date('Y-m-d H:i:s')]) . '.',
+              'send_email' => false,
+            ]);
           }
           $conn->commit();
         } catch (Throwable $e) {

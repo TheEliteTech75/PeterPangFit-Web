@@ -127,6 +127,21 @@ if ($action === 'create_package') {
         ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_session_package_created', 'session_package', (string)$packageId, $details);
     }
 
+    $sessionPhrase = $purchased === 1 ? '1 session' : ($purchased . ' sessions');
+    ppf_notifications_record($conn, $clientId, [
+        'type' => 'billing.sessions_purchased',
+        'message' => $sessionPhrase . ' were added to the "' . $name . '" package.',
+        'send_email' => false,
+    ]);
+    if ($initialPayment > 0) {
+        $amountDisplay = '$' . number_format($initialPayment, 2);
+        ppf_notifications_record($conn, $clientId, [
+            'type' => 'billing.payment_recorded',
+            'message' => 'An initial payment of ' . $amountDisplay . ' was recorded for "' . $name . '".',
+            'send_email' => false,
+        ]);
+    }
+
     respond(true, 'Package created.', ['refresh' => true]);
 }
 
@@ -141,6 +156,10 @@ if ($action === 'adjust_sessions') {
         $current = (int)($pkg['purchased_sessions'] ?? 0);
         $completed = (int)($pkg['completed_count'] ?? 0);
         $scheduled = (int)($pkg['scheduled_open'] ?? 0);
+        $refundAmount = 0.0;
+        if ($direction === 'remove') {
+            $refundAmount = ppf_trainer_sessions_parse_amount($_POST['amount'] ?? 0);
+        }
         if ($direction === 'add') {
             $newTotal = $current + $count;
         } else {
@@ -172,8 +191,25 @@ if ($action === 'adjust_sessions') {
             ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, $event, 'session_package', (string)$packageId, $details);
         }
 
+        $pkgName = (string)($pkg['package_name'] ?? 'Training package');
+        if ($direction === 'add') {
+            $sessionPhrase = $count === 1 ? '1 session' : ($count . ' sessions');
+            $newTotalLabel = $newTotal === 1 ? '1 session total' : ($newTotal . ' sessions total');
+            ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
+                'type' => 'billing.sessions_purchased',
+                'message' => $sessionPhrase . ' were added to "' . $pkgName . '". You now have ' . $newTotalLabel . '.',
+                'send_email' => false,
+            ]);
+        } elseif ($direction === 'remove') {
+            $sessionPhrase = $count === 1 ? '1 session' : ($count . ' sessions');
+            ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
+                'type' => 'billing.refund_recorded',
+                'message' => $sessionPhrase . ' were removed from "' . $pkgName . '".' . ($refundAmount > 0 ? ' A refund is being recorded.' : ''),
+                'send_email' => true,
+            ]);
+        }
+
         if ($direction === 'remove') {
-            $refundAmount = ppf_trainer_sessions_parse_amount($_POST['amount'] ?? 0);
             $notes = trim((string)($_POST['notes'] ?? ''));
             if ($refundAmount > 0) {
                 if ($txn = $conn->prepare("INSERT INTO trainer_session_transactions (package_id, txn_type, amount, description, created_at, created_by) VALUES (?, 'refund', ?, NULLIF(?, ''), NOW(), ?)") ) {
@@ -211,6 +247,22 @@ if ($action === 'adjust_sessions') {
         if (function_exists('ppf_log')) {
             $event = $direction === 'payment' ? 'trainer_session_payment_recorded' : 'trainer_session_refund_recorded';
             ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, $event, 'session_package', (string)$packageId, $details);
+        }
+        $pkgName = (string)($pkg['package_name'] ?? 'Training package');
+        if ($direction === 'payment') {
+            $amountDisplay = '$' . number_format($amount, 2);
+            ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
+                'type' => 'billing.payment_recorded',
+                'message' => 'A payment of ' . $amountDisplay . ' was recorded for "' . $pkgName . '".',
+                'send_email' => false,
+            ]);
+        } else {
+            $amountDisplay = '$' . number_format($amount, 2);
+            ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
+                'type' => 'billing.refund_recorded',
+                'message' => 'A refund of ' . $amountDisplay . ' was processed for "' . $pkgName . '".',
+                'send_email' => true,
+            ]);
         }
         respond(true, ucfirst($direction) . ' recorded.', ['refresh' => true]);
     }

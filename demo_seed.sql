@@ -22,6 +22,7 @@ DROP TABLE IF EXISTS trusted_devices;
 DROP TABLE IF EXISTS user_recognized_ips;
 DROP TABLE IF EXISTS ip_cache;
 DROP TABLE IF EXISTS system_logs;
+DROP TABLE IF EXISTS user_notifications;
 DROP TABLE IF EXISTS passkeys;
 DROP TABLE IF EXISTS system_settings;
 DROP TABLE IF EXISTS password_resets;
@@ -143,6 +144,30 @@ CREATE TABLE IF NOT EXISTS passkeys (
   PRIMARY KEY (id),
   UNIQUE KEY uq_passkeys_user_cred (user_id, cred_id),
   CONSTRAINT fk_passkeys_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- user_notifications
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_notifications (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id INT UNSIGNED NOT NULL,
+  type_key VARCHAR(100) NOT NULL DEFAULT '',
+  category VARCHAR(40) NOT NULL DEFAULT 'system',
+  title VARCHAR(255) NOT NULL,
+  message TEXT NULL,
+  is_read TINYINT(1) NOT NULL DEFAULT 0,
+  is_mutable TINYINT(1) NOT NULL DEFAULT 1,
+  allow_email TINYINT(1) NOT NULL DEFAULT 1,
+  send_email TINYINT(1) NOT NULL DEFAULT 0,
+  email_sent_at DATETIME NULL DEFAULT NULL,
+  context TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_notifications_user (user_id),
+  KEY idx_notifications_read (user_id, is_read),
+  CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO passkeys (user_id, name, cred_id, public_key, counter, created_at, last_used_at)
