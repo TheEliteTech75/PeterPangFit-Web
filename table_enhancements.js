@@ -71,6 +71,9 @@
       }
     }
 
+    let lastHandleClickTime = 0;
+    let lastHandleClickIndex = -1;
+
     headers.forEach((th, index) => {
       if (th.querySelector('.col-resize-handle')) return;
       th.style.position = th.style.position || 'relative';
@@ -80,10 +83,19 @@
 
       handle.addEventListener('mousedown', (ev) => {
         if (ev.button !== 0) return;
-        if (ev.detail && ev.detail > 1) {
+        const now = ev.timeStamp || Date.now();
+        const isDoubleClick =
+          lastHandleClickIndex === index &&
+          (now - lastHandleClickTime) <= 350;
+        lastHandleClickTime = now;
+        lastHandleClickIndex = index;
+
+        if (isDoubleClick || (ev.detail && ev.detail > 1)) {
           ev.preventDefault();
           ev.stopPropagation();
           autoSizeColumn(index);
+          lastHandleClickTime = 0;
+          lastHandleClickIndex = -1;
           return;
         }
         ev.preventDefault();
