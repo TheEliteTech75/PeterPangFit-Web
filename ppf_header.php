@@ -272,11 +272,6 @@ body.ppf-themed .sort-btn {
   font-weight: 600;
   letter-spacing: .01em;
 }
-body.ppf-themed .sort-btn {
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: .01em;
-}
 body.ppf-themed .card,
 body.ppf-themed .card-resize,
 body.ppf-themed .security-card,

@@ -15,6 +15,61 @@
     const headers = Array.from(table.querySelectorAll('thead th'));
     if (!headers.length) return;
     const minWidth = (options && options.minColumnWidth) || 56;
+    const parsePx = (value) => {
+      const num = parseFloat(value);
+      return Number.isNaN(num) ? 0 : num;
+    };
+
+    function gatherColumnCells(colIndex) {
+      const cells = [];
+      if (headers[colIndex]) cells.push(headers[colIndex]);
+      Array.from(table.tBodies || []).forEach((tbody) => {
+        Array.from(tbody.rows || []).forEach((row) => {
+          if (row.dataset && row.dataset.noMatches === '1') return;
+          const cell = row.cells && row.cells[colIndex];
+          if (!cell) return;
+          if (cell.offsetParent === null) return;
+          cells.push(cell);
+        });
+      });
+      return cells;
+    }
+
+    function autoSizeColumn(colIndex) {
+      const columnCells = gatherColumnCells(colIndex);
+      if (!columnCells.length) return;
+      const col = cols[colIndex] || null;
+      const headerCell = headers[colIndex];
+
+      if (col) {
+        col.style.width = '';
+        col.style.minWidth = '';
+      }
+      if (headerCell) {
+        headerCell.style.width = '';
+        headerCell.style.minWidth = '';
+      }
+      table.getBoundingClientRect();
+
+      let targetWidth = 0;
+      columnCells.forEach((cell) => {
+        const cellStyle = window.getComputedStyle(cell);
+        const borders = parsePx(cellStyle.borderLeftWidth) + parsePx(cellStyle.borderRightWidth);
+        const width = cell.scrollWidth + borders;
+        targetWidth = Math.max(targetWidth, Math.ceil(width));
+      });
+
+      targetWidth = Math.max(minWidth, targetWidth || 0);
+
+      if (col) {
+        col.style.width = `${targetWidth}px`;
+        col.style.minWidth = `${targetWidth}px`;
+      }
+      if (headerCell) {
+        headerCell.style.width = `${targetWidth}px`;
+        headerCell.style.minWidth = `${targetWidth}px`;
+      }
+    }
 
     headers.forEach((th, index) => {
       if (th.querySelector('.col-resize-handle')) return;
@@ -24,6 +79,8 @@
       th.appendChild(handle);
 
       handle.addEventListener('mousedown', (ev) => {
+        if (ev.button !== 0) return;
+        if (ev.detail && ev.detail > 1) return;
         ev.preventDefault();
         ev.stopPropagation();
         const startX = ev.clientX;
@@ -54,6 +111,12 @@
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
         document.body.style.cursor = 'col-resize';
+      });
+
+      handle.addEventListener('dblclick', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        autoSizeColumn(index);
       });
     });
   }
