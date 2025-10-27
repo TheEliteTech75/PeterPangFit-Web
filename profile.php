@@ -82,6 +82,11 @@ if ($stmt = $conn->prepare($q)) {
 
 $userEmail = (string)($me['email'] ?? '');
 $userRole  = (string)($USER_ROLE ?? '');
+$profileMeasurementSystem = ppf_measurement_user_system();
+$profileHeightMetricInput = '';
+if ($profileMeasurementSystem === 'metric') {
+  $profileHeightMetricInput = ppf_measurement_height_metric_value($me['height_ft'] ?? null, $me['height_in'] ?? null);
+}
 
 // Normalize gender for default selection (case-insensitive)
 $graw = trim((string)($me['gender'] ?? ''));
@@ -237,9 +242,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $gci_in      = mb_strtolower($gender_in);
         $gender      = ($gci_in === 'male') ? 'Male' : (($gci_in === 'female') ? 'Female' : '');
 
+        $measurementSystem = $profileMeasurementSystem;
         $height_ft  = isset($_POST['height_ft']) ? trim($_POST['height_ft']) : '';
         $height_in  = isset($_POST['height_in']) ? trim($_POST['height_in']) : '';
-        $weight_lbs = isset($_POST['weight_lbs']) ? trim($_POST['weight_lbs']) : '';
+        $height_cm_input = ($measurementSystem === 'metric') ? trim($_POST['height_cm'] ?? '') : '';
+        $weight_input = isset($_POST['weight_lbs']) ? trim($_POST['weight_lbs']) : '';
+
+        if ($measurementSystem === 'metric') {
+          $profileHeightMetricInput = $height_cm_input;
+        }
 
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) { throw new Exception('Please enter a valid email.'); }
         if ($birthdate !== null && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $birthdate)) { throw new Exception('Birthdate must be YYYY-MM-DD.'); }
@@ -252,12 +263,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $chk->close();
         }
 
-        $hf = ($height_ft === '' ? null : (int)$height_ft);
-        $hi = ($height_in === '' ? null : (int)$height_in);
-        $wl = ($weight_lbs === '' ? null : (float)$weight_lbs);
+        if ($measurementSystem === 'metric') {
+          if ($height_cm_input === '') {
+            $hf = null;
+            $hi = null;
+          } else {
+            if (!is_numeric($height_cm_input)) {
+              throw new Exception('Height must be numeric.');
+            }
+            $cmValue = (float)$height_cm_input;
+            if ($cmValue < 0) {
+              throw new Exception('Height cannot be negative.');
+            }
+            [$hf, $hi] = ppf_measurement_height_components_from_cm($cmValue);
+          }
+        } else {
+          $hf = ($height_ft === '' ? null : (int)$height_ft);
+          $hi = ($height_in === '' ? null : (int)$height_in);
+        }
+        $wl = ppf_measurement_parse_weight_input($weight_input);
         if ($hf !== null) { if ($hf < 0) $hf = 0; if ($hf > 8) $hf = 8; }
         if ($hi !== null) { if ($hi < 0) $hi = 0; if ($hi > 11) $hi = 11; }
-        if ($wl !== null && $wl <= 0) $wl = null;
 
         $beforeRow = [];
         if ($stmt = $conn->prepare("SELECT email, phone, birthdate, gender, first_name, middle_name, last_name, height_ft, height_in, weight_lbs FROM users WHERE id = ?")) {
@@ -311,6 +337,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $graw = trim((string)($me['gender'] ?? ''));
           $gci  = mb_strtolower($graw);
           $genderNormalized = ($gci === 'male') ? 'Male' : (($gci === 'female') ? 'Female' : '');
+        }
+        if ($measurementSystem === 'metric') {
+          $profileHeightMetricInput = ppf_measurement_height_metric_value($hf, $hi);
         }
       } catch (Throwable $e) {
         $flash = $e->getMessage(); $flash_type = 'err';
@@ -457,6 +486,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Avatar URL (fallback silhouette)
 $avatarUrl = !empty($me['photo_url']) ? $me['photo_url'] : '';
+$profileWeightInput = ppf_measurement_weight_value_for_input($me['weight_lbs'] ?? null);
+$profileWeightLabel = ppf_measurement_weight_label();
 
 // Include header/nav AFTER processing so session photo is fresh
 require_once __DIR__ . '/ppf_header.php';
@@ -617,19 +648,26 @@ $photoVer = (string)($_SESSION['photo_ver'] ?? ''); // cache-buster
         </select>
       </div>
 
-      <div class="span-3">
-        <label for="height_ft">Height (ft)</label>
-        <input class="inline-input" id="height_ft" name="height_ft" type="number" min="0" max="8" step="1" value="<?php echo h($me['height_ft']); ?>">
-      </div>
+      <?php if ($profileMeasurementSystem === 'metric'): ?>
+        <div class="span-6">
+          <label for="height_cm">Height (cm)</label>
+          <input class="inline-input" id="height_cm" name="height_cm" type="number" min="0" step="0.1" value="<?php echo h($profileHeightMetricInput); ?>">
+        </div>
+      <?php else: ?>
+        <div class="span-3">
+          <label for="height_ft">Height (ft)</label>
+          <input class="inline-input" id="height_ft" name="height_ft" type="number" min="0" max="8" step="1" value="<?php echo h($me['height_ft']); ?>">
+        </div>
+
+        <div class="span-3">
+          <label for="height_in">Height (in)</label>
+          <input class="inline-input" id="height_in" name="height_in" type="number" min="0" max="11" step="1" value="<?php echo h($me['height_in']); ?>">
+        </div>
+      <?php endif; ?>
 
       <div class="span-3">
-        <label for="height_in">Height (in)</label>
-        <input class="inline-input" id="height_in" name="height_in" type="number" min="0" max="11" step="1" value="<?php echo h($me['height_in']); ?>">
-      </div>
-
-      <div class="span-3">
-        <label for="weight_lbs">Weight (lbs)</label>
-        <input class="inline-input" id="weight_lbs" name="weight_lbs" type="number" min="0" step="0.1" value="<?php echo h($me['weight_lbs']); ?>">
+        <label for="weight_lbs"><?php echo h($profileWeightLabel); ?></label>
+        <input class="inline-input" id="weight_lbs" name="weight_lbs" type="number" min="0" step="0.1" value="<?php echo h($profileWeightInput); ?>" placeholder="<?php echo h(ppf_measurement_weight_placeholder()); ?>">
       </div>
 
       <div class="span-12" style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">
