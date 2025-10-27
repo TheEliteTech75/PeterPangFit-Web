@@ -820,7 +820,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       margin-top: clamp(18px, 4vw, 30px);
       width: min(100%, 920px);
       margin-left: 0;
-      margin-right: clamp(6px, 2.6vw, 20px);
+      margin-right: clamp(2px, 1.8vw, 14px);
       padding: clamp(14px, 3.5vw, 22px);
       border-radius: var(--radius, 20px);
       background: rgba(8, 8, 8, 0.88);
@@ -2022,7 +2022,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
         grid-template-areas:
           'intro status'
           'toolbar status';
-        column-gap: clamp(18px, 3.5vw, 30px);
+        column-gap: clamp(14px, 2.6vw, 24px);
         row-gap: clamp(22px, 4.5vw, 36px);
       }
       .hero__intro {
