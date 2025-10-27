@@ -265,7 +265,7 @@ body.ppf-themed th {
   color: color-mix(in srgb, var(--muted) 78%, var(--text) 22%);
 }
 body.ppf-themed .sort-btn {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: .01em;
 }
