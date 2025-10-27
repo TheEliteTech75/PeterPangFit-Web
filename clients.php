@@ -23,6 +23,8 @@ $CLIENT_WEIGHT_LABEL = ppf_measurement_weight_label();
 $CLIENT_WEIGHT_PLACEHOLDER = ppf_measurement_weight_placeholder();
 $CLIENT_MEASUREMENT_JS = ppf_measurement_js_config();
 $CLIENT_HEIGHT_LABEL = $CLIENT_MEASUREMENT_IS_METRIC ? 'Height (cm)' : 'Height';
+$CLIENT_HEIGHT_COLUMN_LABEL = 'Height';
+$CLIENT_WEIGHT_COLUMN_LABEL = 'Weight';
 
 if (!function_exists('ppf_clients_log_encode')) {
   function ppf_clients_log_encode(array $details): ?string {
@@ -1538,7 +1540,7 @@ if ($rs = $conn->query($sqlPlans)) {
 
 // --- Rendering helpers ---
 function render_clients_table(array $clients, string $csrf, string $whichTab): void {
-  global $USER_ROLE, $CLIENT_HEIGHT_LABEL, $CLIENT_WEIGHT_LABEL, $CLIENT_WEIGHT_PLACEHOLDER, $CLIENT_MEASUREMENT_IS_METRIC;
+  global $USER_ROLE, $CLIENT_HEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_PLACEHOLDER, $CLIENT_MEASUREMENT_IS_METRIC;
   $tableId = 'clientsTable-' . $whichTab;
   $searchId = 'clientSearch-' . $whichTab;
   $bulkSelectId = 'clientBulkSelect-' . $whichTab;
@@ -1591,8 +1593,8 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
             <th data-sort-key="birthdate"><button type="button" class="sort-btn" data-sort-key="birthdate" data-state="off">Birthdate<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="age"><button type="button" class="sort-btn" data-sort-key="age" data-state="off">Age<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="gender"><button type="button" class="sort-btn" data-sort-key="gender" data-state="off">Gender<span class="sort-indicator" aria-hidden="true"></span></button></th>
-            <th data-sort-key="height"><button type="button" class="sort-btn" data-sort-key="height" data-state="off"><?php echo h($CLIENT_HEIGHT_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
-            <th data-sort-key="weight"><button type="button" class="sort-btn" data-sort-key="weight" data-state="off"><?php echo h($CLIENT_WEIGHT_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="height"><button type="button" class="sort-btn" data-sort-key="height" data-state="off"><?php echo h($CLIENT_HEIGHT_COLUMN_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <th data-sort-key="weight"><button type="button" class="sort-btn" data-sort-key="weight" data-state="off"><?php echo h($CLIENT_WEIGHT_COLUMN_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="plans"><button type="button" class="sort-btn" data-sort-key="plans" data-state="off">Plans<span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th>Actions</th>
           </tr>
