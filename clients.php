@@ -1880,7 +1880,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .clients-table .select-col{text-align:center;width:48px}
   .clients-table td:first-child{text-align:center}
   .clients-table td:first-child input{margin:0 auto;display:block}
-  .sort-btn{display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;background:none;border:none;color:inherit;font:inherit;padding:0 18px 0 0;cursor:pointer}
+  .sort-btn{appearance:none;background:none;border:none;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
   body.ppf-themed .clients-table .sort-btn{background:none;border:none;box-shadow:none}
   .sort-btn:hover .sort-indicator{opacity:0.8}
   .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}

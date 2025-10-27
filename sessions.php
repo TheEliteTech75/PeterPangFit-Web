@@ -448,6 +448,20 @@ foreach ($sessions as $s) {
   .ip-tip .row{ display:flex; gap:8px; margin:4px 0; }
   .ip-tip .k{ color:var(--muted); min-width:120px; }
   .ip-chip{ display:inline-flex; align-items:center; gap:6px; }
+  .table-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:12px 0}
+  .table-tools__search{flex:1 1 260px;max-width:420px}
+  .table-tools__search input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(8,13,23,0.85);color:var(--text)}
+  .sort-btn{appearance:none;background:none;border:none;box-shadow:none;padding:0;margin:0;display:flex;align-items:center;gap:6px;justify-content:flex-start;width:100%;cursor:pointer;padding-right:18px;color:inherit;font:inherit;text-align:left}
+  .sort-btn:hover .sort-indicator{opacity:0.8}
+  .sort-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .sort-indicator{font-size:11px;opacity:0.45;transition:opacity .2s ease}
+  .sort-btn[data-state="asc"] .sort-indicator::before{content:'▲'}
+  .sort-btn[data-state="desc"] .sort-indicator::before{content:'▼'}
+  .sort-btn[data-state="off"] .sort-indicator::before{content:''}
+  .sort-btn[data-state="asc"] .sort-indicator,
+  .sort-btn[data-state="desc"] .sort-indicator{opacity:0.8}
+  .col-resize-handle{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize}
+  .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:rgba(148,163,184,0.2)}
   </style>
 </head>
 <body>
@@ -471,23 +485,42 @@ foreach ($sessions as $s) {
       <button class="btn warn" id="btn-global-signout">Sign Out ALL Sessions</button>
     </div>
 
+    <div class="table-tools">
+      <div class="table-tools__search">
+        <input type="search" class="input search-input" id="sessionSearch" placeholder="Search sessions..." autocomplete="off">
+      </div>
+    </div>
+
     <?php if (!$sessions): ?>
       <div class="muted">No sessions recorded.</div>
     <?php else: ?>
       <div class="table-wrap">
-        <table id="sess-table">
+        <table id="sessionsTable">
+          <colgroup>
+            <col style="min-width:200px">
+            <col style="min-width:200px">
+            <col style="width:120px">
+            <col style="width:140px">
+            <col style="min-width:220px">
+            <col style="min-width:220px">
+            <col style="min-width:180px">
+            <col style="min-width:200px">
+            <col style="min-width:200px">
+            <col style="min-width:240px">
+            <col style="width:140px">
+          </colgroup>
           <thead>
             <tr>
-              <th>Timestamp</th>
-              <th>Session ID</th>
-              <th>User ID</th>
-              <th>Role</th>
-              <th>Email</th>
-              <th>Location</th>
-              <th>IP Address</th>
-              <th>Browser</th>
-              <th>Operating System</th>
-              <th>Last Activity</th>
+              <th data-sort-key="timestamp"><button type="button" class="sort-btn" data-sort-key="timestamp" data-state="off">Timestamp<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th data-sort-key="session"><button type="button" class="sort-btn" data-sort-key="session" data-state="off">Session ID<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th data-sort-key="user"><button type="button" class="sort-btn" data-sort-key="user" data-state="off">User ID<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th data-sort-key="role"><button type="button" class="sort-btn" data-sort-key="role" data-state="off">Role<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th data-sort-key="email"><button type="button" class="sort-btn" data-sort-key="email" data-state="off">Email<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th data-sort-key="location"><button type="button" class="sort-btn" data-sort-key="location" data-state="off">Location<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th data-sort-key="ip"><button type="button" class="sort-btn" data-sort-key="ip" data-state="off">IP Address<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th data-sort-key="browser"><button type="button" class="sort-btn" data-sort-key="browser" data-state="off">Browser<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th data-sort-key="platform"><button type="button" class="sort-btn" data-sort-key="platform" data-state="off">Operating System<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th data-sort-key="activity"><button type="button" class="sort-btn" data-sort-key="activity" data-state="off">Last Activity<span class="sort-indicator" aria-hidden="true"></span></button></th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -498,11 +531,39 @@ foreach ($sessions as $s) {
               $tsDisp = $ts ? date('M j, Y g:i A', strtotime($ts)) : '—';
               $roleDisp = $s['role'] ? ucfirst(strtolower((string)$s['role'])) : '—';
               $canSignOut = (!$s['is_revoked'] && !$s['is_expired'] && !$s['is_current']); // cannot sign out current/expired/revoked
+              $sortTimestamp = $ts ? strtotime($ts) : '';
+              $sortSession = strtolower($s['session_id'] ?? '');
+              $sortUser = (int)($s['user_id'] ?? 0);
+              $sortRole = strtolower($roleDisp ?? '');
+              $sortEmail = strtolower($s['email'] ?? '');
+              $locationLabel = ($s['city'] ?: 'Unknown') . ', ' . ($s['region'] ?: 'Unknown');
+              $sortLocation = strtolower($locationLabel);
+              $sortIp = strtolower($s['ip'] ?? '');
+              $sortBrowser = strtolower($s['browser_disp'] ?? '');
+              $sortPlatform = strtolower($s['platform_disp'] ?? '');
+              $activity = $sessionActivities[$s['session_id']] ?? null;
+              $activityText = '';
+              $activityTs = 0;
+              if ($activity && !empty($activity['text'])) {
+                $activityText = (string)$activity['text'];
+                $activityTs = !empty($activity['created_at']) ? strtotime((string)$activity['created_at']) : 0;
+              }
             ?>
             <tr
+              class="session-row"
               data-sid="<?php echo h($s['session_id']); ?>"
               data-revoked="<?php echo (int)$s['is_revoked']; ?>"
               data-current="<?php echo $s['is_current'] ? '1':'0'; ?>"
+              data-sort-timestamp="<?php echo h($sortTimestamp); ?>"
+              data-sort-session="<?php echo h($sortSession); ?>"
+              data-sort-user="<?php echo $sortUser; ?>"
+              data-sort-role="<?php echo h($sortRole); ?>"
+              data-sort-email="<?php echo h($sortEmail); ?>"
+              data-sort-location="<?php echo h($sortLocation); ?>"
+              data-sort-ip="<?php echo h($sortIp); ?>"
+              data-sort-browser="<?php echo h($sortBrowser); ?>"
+              data-sort-platform="<?php echo h($sortPlatform); ?>"
+              data-sort-activity="<?php echo h($activityTs); ?>"
             >
               <td class="muted" style="white-space:nowrap">
                 <?php echo h($tsDisp); ?>
@@ -532,7 +593,7 @@ foreach ($sessions as $s) {
               <td><?php echo (int)$s['user_id']; ?></td>
               <td class="muted"><?php echo h($roleDisp); ?></td>
               <td class="muted"><?php echo h($s['email'] ?: '—'); ?></td>
-              <td class="muted"><?php echo h( (($s['city']?:'Unknown').', '.($s['region']?:'Unknown')) ); ?></td>
+              <td class="muted"><?php echo h($locationLabel); ?></td>
 
               <!-- IP + iCloud/VPN pill (cached-only) + hover tooltip trigger -->
               <td class="muted">
@@ -553,16 +614,11 @@ foreach ($sessions as $s) {
               <td class="muted"><?php echo h($s['browser_disp'] ?: 'Unknown'); ?></td>
               <td class="muted"><?php echo h($s['platform_disp'] ?: 'Unknown'); ?></td>
               <td class="muted">
-                <?php
-                  $activity = $sessionActivities[$s['session_id']] ?? null;
-                  if ($activity && !empty($activity['text'])):
-                    $actText = (string)$activity['text'];
-                    $actTs   = !empty($activity['created_at']) ? strtotime((string)$activity['created_at']) : 0;
-                ?>
-                  <div><?php echo h($actText); ?></div>
-                  <?php if ($actTs): ?>
+                <?php if ($activityText !== ''): ?>
+                  <div><?php echo h($activityText); ?></div>
+                  <?php if ($activityTs): ?>
                     <div style="font-size:12px;margin-top:4px;">
-                      <?php echo h(date('M j, Y g:i A', $actTs)); ?>
+                      <?php echo h(date('M j, Y g:i A', $activityTs)); ?>
                     </div>
                   <?php endif; ?>
                 <?php else: ?>
@@ -643,7 +699,19 @@ foreach ($sessions as $s) {
   </div>
 </div>
 
+<script src="table_enhancements.js"></script>
 <script>
+ppfEnhanceTable('#sessionsTable', {
+  rowSelector: 'tbody tr.session-row',
+  searchInput: document.getElementById('sessionSearch'),
+  sortTypes: {
+    timestamp: 'number',
+    user: 'number',
+    activity: 'number'
+  },
+  noMatchesText: 'No matching sessions.'
+});
+
 let ROW_TARGET = null; // the <tr> we’re acting on
 const TIP = document.getElementById('ip-tip');
 
