@@ -776,6 +776,19 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var initialState = bootstrap.state || {};
     var categories = bootstrap.categories || {};
     var catalog = bootstrap.catalog || {};
+    var catalogIndex = {};
+    Object.keys(catalog).forEach(function(categoryKey){
+      var list = Array.isArray(catalog[categoryKey]) ? catalog[categoryKey] : [];
+      list.forEach(function(item){
+        var key = item && (item.type_key || item.key);
+        if (!key || catalogIndex[key]) { return; }
+        catalogIndex[key] = Object.assign({ category: categoryKey }, item);
+      });
+    });
+    function lookupCatalogDefinition(typeKey) {
+      if (!typeKey) { return null; }
+      return catalogIndex[typeKey] || null;
+    }
     var types = bootstrap.types || {};
     var csrf = bootstrap.csrf || '';
     function cloneRule(rule) {
@@ -1337,13 +1350,22 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       });
     }
 
-    function populateCategoryOptions(selected) {
-      if (!fieldCategory) return;
+    function populateCategoryOptions(selected, isEditing) {
+      if (!fieldCategory) return { selected: null, count: 0 };
       fieldCategory.innerHTML = '';
       Object.keys(categories).forEach(function(key){
+        var metadata = categories[key] || {};
+        var isCustom = key === 'custom';
+        var hasCatalogEntries = Array.isArray(catalog[key]) && catalog[key].length > 0;
+        if (!isEditing) {
+          if (isCustom) { return; }
+          if (!hasCatalogEntries) { return; }
+        } else if (!hasCatalogEntries && (!selected || selected !== key)) {
+          return;
+        }
         var opt = document.createElement('option');
         opt.value = key;
-        opt.textContent = categories[key].label || key;
+        opt.textContent = metadata.label || key;
         if (selected && selected === key) {
           opt.selected = true;
         }
@@ -1352,11 +1374,24 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       if (!selected && fieldCategory.options.length) {
         fieldCategory.selectedIndex = 0;
       }
+      return {
+        selected: fieldCategory && fieldCategory.value ? fieldCategory.value : (selected || null),
+        count: fieldCategory ? fieldCategory.options.length : 0
+      };
     }
 
-    function populateActionOptions(categoryKey, selected) {
+    function populateActionOptions(categoryKey, selected, isEditing, selectedLabel) {
       if (!fieldAction) return false;
       fieldAction.innerHTML = '';
+      if (!categoryKey) {
+        var emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = 'No available rules';
+        emptyOpt.disabled = true;
+        emptyOpt.selected = true;
+        fieldAction.appendChild(emptyOpt);
+        return false;
+      }
       var options = catalog[categoryKey] || [];
       var reserved = {};
       state.rules.forEach(function(rule){
@@ -1366,15 +1401,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         reserved[key] = true;
       });
       var available = 0;
-      if (!options.length) {
-        var fallback = document.createElement('option');
-        fallback.value = 'custom.manual';
-        fallback.textContent = 'Custom reminder';
-        if (!reserved[fallback.value] || (selected && selected === fallback.value)) {
-          fieldAction.appendChild(fallback);
-          available = 1;
-        }
-      } else {
+      if (options.length) {
         options.forEach(function(optDef){
           var value = optDef.type_key || optDef.key || '';
           if (!value) { return; }
@@ -1391,6 +1418,25 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       }
       if (!selected && fieldAction.options.length) {
         fieldAction.selectedIndex = 0;
+      }
+      if (!available && isEditing && selected) {
+        var current = document.createElement('option');
+        current.value = selected;
+        var catalogDef = lookupCatalogDefinition(selected);
+        var label = selectedLabel || '';
+        if (!label && catalogDef && catalogDef.title) {
+          label = catalogDef.title;
+        }
+        if (!label && selected.indexOf('custom.') === 0) {
+          label = 'Custom reminder';
+        }
+        if (!label) {
+          label = selected || 'Current selection';
+        }
+        current.textContent = label;
+        current.selected = true;
+        fieldAction.appendChild(current);
+        available = 1;
       }
       if (!available) {
         var placeholder = document.createElement('option');
@@ -1409,11 +1455,11 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       if (modalTitle) {
         modalTitle.textContent = rule ? 'Edit notification rule' : 'Create notification rule';
       }
-      populateCategoryOptions(rule ? rule.category : null);
-      var category = rule ? rule.category : (fieldCategory && fieldCategory.value ? fieldCategory.value : 'system');
-      var hasOptions = populateActionOptions(category, rule ? rule.type_key : null);
+      var categoryState = populateCategoryOptions(rule ? rule.category : null, !!rule);
+      var category = categoryState && categoryState.selected ? categoryState.selected : '';
+      var hasOptions = populateActionOptions(category, rule ? rule.type_key : null, !!rule, rule ? (rule.title || '') : '');
       if (fieldCategory) {
-        fieldCategory.disabled = !!rule;
+        fieldCategory.disabled = !!rule || !(categoryState && categoryState.count);
       }
       if (fieldAction) {
         fieldAction.disabled = rule ? true : !hasOptions;
@@ -1469,7 +1515,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     if (fieldCategory) {
       fieldCategory.addEventListener('change', function(){
-        var hasOptions = populateActionOptions(this.value, null);
+        var hasOptions = populateActionOptions(this.value, null, false, '');
         if (!state.ruleEditing && fieldAction) {
           fieldAction.disabled = !hasOptions;
         }
@@ -1483,8 +1529,8 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       modalForm.addEventListener('submit', function(event){
         event.preventDefault();
         var payload = {
-          category: fieldCategory ? fieldCategory.value : 'custom',
-          action: fieldAction ? fieldAction.value : 'custom.manual',
+          category: fieldCategory ? fieldCategory.value : '',
+          action: fieldAction ? fieldAction.value : '',
           title: fieldTitle ? fieldTitle.value.trim() : '',
           body: fieldBody ? fieldBody.value.trim() : '',
           send_email: fieldChannelEmail ? fieldChannelEmail.checked : false
