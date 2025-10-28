@@ -893,6 +893,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       },
       rules: withPreconfiguredRules(Array.isArray(initialState.rules) ? initialState.rules.slice() : []),
       ruleEditing: null,
+      ruleModalMode: null,
       searchTimeout: null
     };
 
@@ -1171,12 +1172,27 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           metaLine.appendChild(channels);
           var actions = document.createElement('div');
           actions.className = 'notification-actions';
-          if (!rule.immutable && rule.id != null && rule.id !== '') {
+          var ruleId = (rule && rule.id != null && rule.id !== '') ? String(rule.id) : '';
+          var ruleTypeKey = ruleKey(rule);
+
+          if (ruleTypeKey || ruleId) {
+            var viewBtn = document.createElement('button');
+            viewBtn.type = 'button';
+            viewBtn.className = 'action-link';
+            viewBtn.dataset.ruleAction = 'view';
+            if (ruleId) { viewBtn.dataset.id = ruleId; }
+            if (ruleTypeKey) { viewBtn.dataset.key = ruleTypeKey; }
+            viewBtn.textContent = 'View';
+            actions.appendChild(viewBtn);
+          }
+
+          if (!rule.immutable && ruleId) {
             var editBtn = document.createElement('button');
             editBtn.type = 'button';
             editBtn.className = 'action-link';
             editBtn.dataset.ruleAction = 'edit';
-            editBtn.dataset.id = String(rule.id);
+            editBtn.dataset.id = ruleId;
+            if (ruleTypeKey) { editBtn.dataset.key = ruleTypeKey; }
             editBtn.textContent = 'Edit';
             actions.appendChild(editBtn);
 
@@ -1184,7 +1200,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
             deleteBtn.type = 'button';
             deleteBtn.className = 'action-link';
             deleteBtn.dataset.ruleAction = 'delete';
-            deleteBtn.dataset.id = String(rule.id);
+            deleteBtn.dataset.id = ruleId;
             deleteBtn.textContent = 'Delete';
             actions.appendChild(deleteBtn);
           } else if (rule.immutable) {
@@ -1534,43 +1550,71 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     function getEditingRule() {
-      if (!state.ruleEditing) { return null; }
+      if (state.ruleModalMode !== 'edit' || !state.ruleEditing) { return null; }
       var targetId = String(state.ruleEditing);
       var match = state.rules.find(function(r){ return String(r.id || '') === targetId; });
       return match || null;
     }
 
-    function openRuleModal(rule) {
+    function openRuleModal(rule, mode) {
       if (!modalBackdrop || !modalForm) return;
-      state.ruleEditing = rule && rule.id != null ? String(rule.id) : null;
+      var resolvedMode = mode || (rule ? 'edit' : 'create');
+      state.ruleModalMode = resolvedMode;
+      state.ruleEditing = (resolvedMode === 'edit' && rule && rule.id != null) ? String(rule.id) : null;
       if (modalTitle) {
-        modalTitle.textContent = rule ? 'Edit notification rule' : 'Create notification rule';
+        var titleText = 'Create notification rule';
+        if (resolvedMode === 'edit') {
+          titleText = 'Edit notification rule';
+        } else if (resolvedMode === 'view') {
+          titleText = 'View notification rule';
+        }
+        modalTitle.textContent = titleText;
       }
-      var categoryState = populateCategoryOptions(rule ? rule.category : null, !!rule);
+      if (modalClose) {
+        modalClose.textContent = resolvedMode === 'view' ? 'Close' : 'Cancel';
+      }
+      var categoryState = populateCategoryOptions(rule ? rule.category : null, resolvedMode !== 'create');
       var category = categoryState && categoryState.selected ? categoryState.selected : '';
-      var hasOptions = populateActionOptions(category, rule ? rule.type_key : null, !!rule, rule ? (rule.title || '') : '');
+      var hasOptions = populateActionOptions(category, rule ? rule.type_key : null, resolvedMode !== 'create', rule ? (rule.title || '') : '');
       if (fieldCategory) {
-        fieldCategory.disabled = !!rule || !(categoryState && categoryState.count);
+        if (resolvedMode === 'create') {
+          fieldCategory.disabled = !(categoryState && categoryState.count);
+        } else {
+          fieldCategory.disabled = true;
+        }
       }
       if (fieldAction) {
-        fieldAction.disabled = rule ? true : !hasOptions;
+        if (resolvedMode === 'create') {
+          fieldAction.disabled = !hasOptions;
+        } else {
+          fieldAction.disabled = true;
+        }
       }
       var activeType = fieldAction && fieldAction.value ? fieldAction.value : '';
       applyRuleSelection(rule, activeType);
-      if (modalSubmit) {
-        modalSubmit.disabled = rule ? false : !hasOptions;
+      if (fieldChannelEmail) {
+        fieldChannelEmail.disabled = resolvedMode === 'view';
       }
       if (modalSubmit) {
-        modalSubmit.disabled = rule ? false : !hasOptions;
+        if (resolvedMode === 'view') {
+          modalSubmit.disabled = true;
+          modalSubmit.hidden = true;
+        } else {
+          modalSubmit.hidden = false;
+          modalSubmit.disabled = resolvedMode === 'create' ? !hasOptions : false;
+          modalSubmit.textContent = resolvedMode === 'edit' ? 'Save changes' : 'Save';
+        }
       }
       modalBackdrop.classList.add('is-active');
       setTimeout(function(){
-        if (!rule && fieldAction && !fieldAction.disabled) {
+        if (resolvedMode === 'create' && fieldAction && !fieldAction.disabled) {
           fieldAction.focus();
-        } else if (fieldChannelEmail) {
+        } else if (resolvedMode !== 'view' && fieldChannelEmail && !fieldChannelEmail.disabled) {
           fieldChannelEmail.focus();
-        } else if (modalSubmit) {
+        } else if (resolvedMode !== 'view' && modalSubmit && !modalSubmit.hidden) {
           modalSubmit.focus();
+        } else if (modalClose) {
+          modalClose.focus();
         }
       }, 60);
     }
@@ -1580,6 +1624,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       modalBackdrop.classList.remove('is-active');
       modalBackdrop.classList.remove('is-visible');
       state.ruleEditing = null;
+      state.ruleModalMode = null;
       if (modalForm) {
         modalForm.reset();
       }
@@ -1592,6 +1637,14 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       applyRuleSelection(null, '');
       if (modalSubmit) {
         modalSubmit.disabled = false;
+        modalSubmit.hidden = false;
+        modalSubmit.textContent = 'Save';
+      }
+      if (modalClose) {
+        modalClose.textContent = 'Cancel';
+      }
+      if (fieldChannelEmail) {
+        fieldChannelEmail.disabled = false;
       }
     }
 
@@ -1612,13 +1665,14 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     if (fieldCategory) {
       fieldCategory.addEventListener('change', function(){
         var hasOptions = populateActionOptions(this.value, null, false, '');
-        if (!state.ruleEditing && fieldAction) {
+        var mode = state.ruleModalMode;
+        if (mode === 'create' && fieldAction) {
           fieldAction.disabled = !hasOptions;
         }
-        if (!state.ruleEditing && modalSubmit) {
+        if (mode === 'create' && modalSubmit) {
           modalSubmit.disabled = !hasOptions;
         }
-        var activeRule = getEditingRule();
+        var activeRule = mode === 'edit' ? getEditingRule() : null;
         var nextType = fieldAction && fieldAction.value ? fieldAction.value : '';
         applyRuleSelection(activeRule, nextType);
       });
@@ -1626,7 +1680,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     if (fieldAction) {
       fieldAction.addEventListener('change', function(){
-        if (state.ruleEditing) { return; }
+        if (state.ruleModalMode !== 'create') { return; }
         var nextType = this.value || '';
         applyRuleSelection(null, nextType);
       });
@@ -1635,6 +1689,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     if (modalForm) {
       modalForm.addEventListener('submit', function(event){
         event.preventDefault();
+        if (state.ruleModalMode === 'view') {
+          closeRuleModal();
+          return;
+        }
         var payload = {
           category: fieldCategory ? fieldCategory.value : '',
           action: fieldAction ? fieldAction.value : '',
@@ -1642,8 +1700,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           body: fieldBody ? fieldBody.value.trim() : '',
           send_email: fieldChannelEmail ? fieldChannelEmail.checked : false
         };
-        var method = state.ruleEditing ? 'PATCH' : 'POST';
-        var url = state.ruleEditing ? ('api/notifications/index.php/rules/' + state.ruleEditing) : 'api/notifications/index.php/rules';
+        var isEdit = state.ruleModalMode === 'edit' && state.ruleEditing;
+        var method = isEdit ? 'PATCH' : 'POST';
+        var url = isEdit ? ('api/notifications/index.php/rules/' + state.ruleEditing) : 'api/notifications/index.php/rules';
         if (modalSubmit) { modalSubmit.disabled = true; }
         fetchJson(url, withCsrfOptions(method, payload)).then(function(json){
           if (json && json.data) {
@@ -1662,7 +1721,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     if (createRuleBtn) {
       createRuleBtn.addEventListener('click', function(){
-        openRuleModal(null);
+        openRuleModal(null, 'create');
       });
     }
 
@@ -1670,15 +1729,25 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       rulesContainer.addEventListener('click', function(event){
         var target = event.target;
         if (!target || !target.dataset.ruleAction) { return; }
-        var id = target.dataset.id ? String(target.dataset.id) : '';
-        if (!id) { return; }
         var action = target.dataset.ruleAction;
-        if (action === 'edit') {
-          var rule = state.rules.find(function(r){ return String(r.id || '') === id; });
+        var id = target.dataset.id ? String(target.dataset.id) : '';
+        var key = target.dataset.key ? String(target.dataset.key) : '';
+        var rule = null;
+        if (id) {
+          rule = state.rules.find(function(r){ return String(r.id || '') === id; });
+        }
+        if (!rule && key) {
+          rule = state.rules.find(function(r){ return ruleKey(r) === key; });
+        }
+        if (action === 'view') {
           if (rule) {
-            openRuleModal(rule);
+            openRuleModal(rule, 'view');
           }
+        } else if (action === 'edit') {
+          if (!id || !rule) { return; }
+          openRuleModal(rule, 'edit');
         } else if (action === 'delete') {
+          if (!id) { return; }
           if (!confirm('Delete this notification rule?')) { return; }
           fetchJson('api/notifications/index.php/rules/' + id, withCsrfOptions('DELETE')).then(function(){
             state.rules = withPreconfiguredRules(state.rules.filter(function(r){ return String(r.id || '') !== id; }));
