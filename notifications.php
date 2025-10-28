@@ -1560,6 +1560,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       if (modalSubmit) {
         modalSubmit.disabled = rule ? false : !hasOptions;
       }
+      if (modalSubmit) {
+        modalSubmit.disabled = rule ? false : !hasOptions;
+      }
       modalBackdrop.classList.add('is-active');
       setTimeout(function(){
         if (!rule && fieldAction && !fieldAction.disabled) {
