@@ -504,6 +504,8 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     .action-link {
       background: none;
       border: none;
+      border-radius: 0;
+      box-shadow: none;
       padding: 0;
       margin: 0;
       color: var(--brand, #38bdf8);
@@ -1129,20 +1131,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           metaLine.appendChild(channels);
           var actions = document.createElement('div');
           actions.className = 'notification-actions';
-          if (!rule.immutable) {
-            var toggleBtn = document.createElement('button');
-            toggleBtn.type = 'button';
-            toggleBtn.className = 'action-link';
-            toggleBtn.dataset.ruleAction = 'toggle-email';
-            toggleBtn.dataset.id = rule.id;
-            toggleBtn.textContent = rule.send_email ? 'Disable email' : 'Enable email';
-            actions.appendChild(toggleBtn);
-
+          if (!rule.immutable && rule.id != null && rule.id !== '') {
             var editBtn = document.createElement('button');
             editBtn.type = 'button';
             editBtn.className = 'action-link';
             editBtn.dataset.ruleAction = 'edit';
-            editBtn.dataset.id = rule.id;
+            editBtn.dataset.id = String(rule.id);
             editBtn.textContent = 'Edit';
             actions.appendChild(editBtn);
 
@@ -1150,10 +1144,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
             deleteBtn.type = 'button';
             deleteBtn.className = 'action-link';
             deleteBtn.dataset.ruleAction = 'delete';
-            deleteBtn.dataset.id = rule.id;
+            deleteBtn.dataset.id = String(rule.id);
             deleteBtn.textContent = 'Delete';
             actions.appendChild(deleteBtn);
-          } else {
+          } else if (rule.immutable) {
             var lock = document.createElement('span');
             lock.className = 'meta-pill';
             lock.textContent = 'Security policy';
@@ -1237,7 +1231,8 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     function updateRuleInState(rule) {
-      var idx = state.rules.findIndex(function(r){ return r.id === rule.id; });
+      var targetId = rule && rule.id != null ? String(rule.id) : null;
+      var idx = state.rules.findIndex(function(r){ return targetId !== null && String(r.id || '') === targetId; });
       var nextRules = state.rules.slice();
       if (idx === -1) {
         nextRules.push(rule);
@@ -1387,7 +1382,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     function openRuleModal(rule) {
       if (!modalBackdrop || !modalForm) return;
-      state.ruleEditing = rule ? rule.id : null;
+      state.ruleEditing = rule && rule.id != null ? String(rule.id) : null;
       if (modalTitle) {
         modalTitle.textContent = rule ? 'Edit notification rule' : 'Create notification rule';
       }
@@ -1487,32 +1482,21 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       rulesContainer.addEventListener('click', function(event){
         var target = event.target;
         if (!target || !target.dataset.ruleAction) { return; }
-        var id = parseInt(target.dataset.id || '0', 10);
+        var id = target.dataset.id ? String(target.dataset.id) : '';
         if (!id) { return; }
         var action = target.dataset.ruleAction;
         if (action === 'edit') {
-          var rule = state.rules.find(function(r){ return r.id === id; });
+          var rule = state.rules.find(function(r){ return String(r.id || '') === id; });
           if (rule) {
             openRuleModal(rule);
           }
         } else if (action === 'delete') {
           if (!confirm('Delete this notification rule?')) { return; }
           fetchJson('api/notifications/index.php/rules/' + id, withCsrfOptions('DELETE')).then(function(){
-            state.rules = withPreconfiguredRules(state.rules.filter(function(r){ return r.id !== id; }));
+            state.rules = withPreconfiguredRules(state.rules.filter(function(r){ return String(r.id || '') !== id; }));
             renderRules();
           }).catch(function(err){
             alert(err.message || 'Unable to delete rule.');
-          });
-        } else if (action === 'toggle-email') {
-          var rule = state.rules.find(function(r){ return r.id === id; });
-          if (!rule) { return; }
-          var next = !rule.send_email;
-          fetchJson('api/notifications/index.php/rules/' + id + '/channels', withCsrfOptions('PATCH', { email: next })).then(function(json){
-            if (json && json.data) {
-              updateRuleInState(json.data);
-            }
-          }).catch(function(err){
-            alert(err.message || 'Unable to update rule.');
           });
         }
       });
