@@ -513,6 +513,16 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       font-weight: 600;
       cursor: pointer;
       text-decoration: none;
+      appearance: none;
+    }
+    body.ppf-themed .notification-actions .action-link,
+    .notification-actions .action-link {
+      background: none;
+      background-color: transparent;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      margin: 0;
     }
     .action-link:hover,
     .action-link:focus-visible {
