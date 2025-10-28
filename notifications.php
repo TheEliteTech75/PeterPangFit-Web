@@ -603,6 +603,27 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       resize: vertical;
       line-height: 1.5;
     }
+    .preview-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-radius: 12px;
+      border: 1px dashed rgba(148,163,184,0.4);
+      padding: 12px 14px;
+      background: rgba(15,23,42,0.6);
+    }
+    .preview-label {
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: color-mix(in srgb, var(--muted, #cbd5f5) 70%, var(--text, #f8fafc) 30%);
+    }
+    .preview-value {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text, #f8fafc);
+      white-space: pre-wrap;
+    }
     .channel-options {
       display: flex;
       flex-direction: column;
@@ -737,14 +758,16 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           Action
           <select name="action" required data-modal-field="action"></select>
         </label>
-        <label>
-          Title
-          <input type="text" name="title" maxlength="160" data-modal-field="title" placeholder="Notification title" required />
-        </label>
-        <label>
-          Message
-          <textarea name="body" data-modal-field="body" placeholder="What should this notification say?" required></textarea>
-        </label>
+        <input type="hidden" name="title" data-modal-field="title" />
+        <input type="hidden" name="body" data-modal-field="body" />
+        <div class="preview-field">
+          <span class="preview-label">Title</span>
+          <p class="preview-value" data-modal-preview="title">Select an action to preview the notification.</p>
+        </div>
+        <div class="preview-field">
+          <span class="preview-label">Message</span>
+          <p class="preview-value" data-modal-preview="body">Select an action to see the message that will be sent.</p>
+        </div>
         <label>
           Channels
           <div class="channel-options">
@@ -900,6 +923,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var fieldTitle = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="title"]') : null;
     var fieldBody = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="body"]') : null;
     var fieldChannelEmail = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="channel-email"]') : null;
+    var previewTitle = modalBackdrop ? modalBackdrop.querySelector('[data-modal-preview="title"]') : null;
+    var previewBody = modalBackdrop ? modalBackdrop.querySelector('[data-modal-preview="body"]') : null;
+    var previewTitleDefault = previewTitle ? previewTitle.textContent : 'Select an action to preview the notification.';
+    var previewBodyDefault = previewBody ? previewBody.textContent : 'Select an action to see the message that will be sent.';
 
     function formatDate(iso) {
       if (!iso) return '';
@@ -1449,6 +1476,70 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       return available > 0;
     }
 
+    function computeRuleContent(rule, typeKey) {
+      var selectedKey = typeKey || (rule && rule.type_key) || '';
+      var title = rule && rule.title ? String(rule.title) : '';
+      var body = rule && rule.body ? String(rule.body) : '';
+      var def = lookupCatalogDefinition(selectedKey);
+      if (def) {
+        if (!title && def.title) {
+          title = String(def.title);
+        }
+        if (!body && def.body) {
+          body = String(def.body);
+        }
+      }
+      return { title: title, body: body };
+    }
+
+    function updateRulePreview(rule, typeKey) {
+      var content = computeRuleContent(rule, typeKey);
+      var titleText = content.title || '';
+      var bodyText = content.body || '';
+      if (fieldTitle) {
+        fieldTitle.value = titleText;
+      }
+      if (fieldBody) {
+        fieldBody.value = bodyText;
+      }
+      if (previewTitle) {
+        previewTitle.textContent = titleText || previewTitleDefault;
+      }
+      if (previewBody) {
+        previewBody.textContent = bodyText || previewBodyDefault;
+      }
+    }
+
+    function computeEmailPreference(rule, typeKey) {
+      if (rule && typeof rule.send_email === 'boolean') {
+        return !!rule.send_email;
+      }
+      var def = lookupCatalogDefinition(typeKey);
+      if (def) {
+        if (typeof def.send_email === 'boolean') {
+          return !!def.send_email;
+        }
+        if (def.channels && typeof def.channels.email === 'boolean') {
+          return !!def.channels.email;
+        }
+      }
+      return false;
+    }
+
+    function applyRuleSelection(rule, typeKey) {
+      updateRulePreview(rule, typeKey);
+      if (fieldChannelEmail) {
+        fieldChannelEmail.checked = computeEmailPreference(rule, typeKey);
+      }
+    }
+
+    function getEditingRule() {
+      if (!state.ruleEditing) { return null; }
+      var targetId = String(state.ruleEditing);
+      var match = state.rules.find(function(r){ return String(r.id || '') === targetId; });
+      return match || null;
+    }
+
     function openRuleModal(rule) {
       if (!modalBackdrop || !modalForm) return;
       state.ruleEditing = rule && rule.id != null ? String(rule.id) : null;
@@ -1464,20 +1555,24 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       if (fieldAction) {
         fieldAction.disabled = rule ? true : !hasOptions;
       }
-      if (fieldTitle) {
-        fieldTitle.value = rule ? (rule.title || '') : '';
-      }
-      if (fieldBody) {
-        fieldBody.value = rule ? (rule.body || '') : '';
-      }
-      if (fieldChannelEmail) {
-        fieldChannelEmail.checked = rule ? !!rule.send_email : false;
+      var activeType = fieldAction && fieldAction.value ? fieldAction.value : '';
+      applyRuleSelection(rule, activeType);
+      if (modalSubmit) {
+        modalSubmit.disabled = rule ? false : !hasOptions;
       }
       if (modalSubmit) {
         modalSubmit.disabled = rule ? false : !hasOptions;
       }
       modalBackdrop.classList.add('is-active');
-      setTimeout(function(){ if (fieldTitle) { fieldTitle.focus(); } }, 60);
+      setTimeout(function(){
+        if (!rule && fieldAction && !fieldAction.disabled) {
+          fieldAction.focus();
+        } else if (fieldChannelEmail) {
+          fieldChannelEmail.focus();
+        } else if (modalSubmit) {
+          modalSubmit.focus();
+        }
+      }, 60);
     }
 
     function closeRuleModal() {
@@ -1494,6 +1589,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       if (fieldAction) {
         fieldAction.disabled = false;
       }
+      applyRuleSelection(null, '');
       if (modalSubmit) {
         modalSubmit.disabled = false;
       }
@@ -1522,6 +1618,17 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         if (!state.ruleEditing && modalSubmit) {
           modalSubmit.disabled = !hasOptions;
         }
+        var activeRule = getEditingRule();
+        var nextType = fieldAction && fieldAction.value ? fieldAction.value : '';
+        applyRuleSelection(activeRule, nextType);
+      });
+    }
+
+    if (fieldAction) {
+      fieldAction.addEventListener('change', function(){
+        if (state.ruleEditing) { return; }
+        var nextType = this.value || '';
+        applyRuleSelection(null, nextType);
       });
     }
 
