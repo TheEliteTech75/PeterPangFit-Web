@@ -1355,29 +1355,52 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     function populateActionOptions(categoryKey, selected) {
-      if (!fieldAction) return;
+      if (!fieldAction) return false;
       fieldAction.innerHTML = '';
       var options = catalog[categoryKey] || [];
+      var reserved = {};
+      state.rules.forEach(function(rule){
+        var key = ruleKey(rule);
+        if (!key) { return; }
+        if (selected && key === selected) { return; }
+        reserved[key] = true;
+      });
+      var available = 0;
       if (!options.length) {
         var fallback = document.createElement('option');
         fallback.value = 'custom.manual';
         fallback.textContent = 'Custom reminder';
-        fieldAction.appendChild(fallback);
-        fieldAction.value = 'custom.manual';
-        return;
-      }
-      options.forEach(function(optDef){
-        var opt = document.createElement('option');
-        opt.value = optDef.type_key || optDef.key || '';
-        opt.textContent = optDef.title || opt.value || 'Notification';
-        if (selected && selected === opt.value) {
-          opt.selected = true;
+        if (!reserved[fallback.value] || (selected && selected === fallback.value)) {
+          fieldAction.appendChild(fallback);
+          available = 1;
         }
-        fieldAction.appendChild(opt);
-      });
+      } else {
+        options.forEach(function(optDef){
+          var value = optDef.type_key || optDef.key || '';
+          if (!value) { return; }
+          if (reserved[value]) { return; }
+          var opt = document.createElement('option');
+          opt.value = value;
+          opt.textContent = optDef.title || opt.value || 'Notification';
+          if (selected && selected === opt.value) {
+            opt.selected = true;
+          }
+          fieldAction.appendChild(opt);
+          available += 1;
+        });
+      }
       if (!selected && fieldAction.options.length) {
         fieldAction.selectedIndex = 0;
       }
+      if (!available) {
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'No available rules';
+        placeholder.disabled = true;
+        placeholder.selected = true;
+        fieldAction.appendChild(placeholder);
+      }
+      return available > 0;
     }
 
     function openRuleModal(rule) {
@@ -1388,12 +1411,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       }
       populateCategoryOptions(rule ? rule.category : null);
       var category = rule ? rule.category : (fieldCategory && fieldCategory.value ? fieldCategory.value : 'system');
-      populateActionOptions(category, rule ? rule.type_key : null);
+      var hasOptions = populateActionOptions(category, rule ? rule.type_key : null);
       if (fieldCategory) {
         fieldCategory.disabled = !!rule;
       }
       if (fieldAction) {
-        fieldAction.disabled = !!rule;
+        fieldAction.disabled = rule ? true : !hasOptions;
       }
       if (fieldTitle) {
         fieldTitle.value = rule ? (rule.title || '') : '';
@@ -1403,6 +1426,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       }
       if (fieldChannelEmail) {
         fieldChannelEmail.checked = rule ? !!rule.send_email : false;
+      }
+      if (modalSubmit) {
+        modalSubmit.disabled = rule ? false : !hasOptions;
       }
       modalBackdrop.classList.add('is-active');
       setTimeout(function(){ if (fieldTitle) { fieldTitle.focus(); } }, 60);
@@ -1422,6 +1448,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       if (fieldAction) {
         fieldAction.disabled = false;
       }
+      if (modalSubmit) {
+        modalSubmit.disabled = false;
+      }
     }
 
     if (modalClose) {
@@ -1440,7 +1469,13 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     if (fieldCategory) {
       fieldCategory.addEventListener('change', function(){
-        populateActionOptions(this.value, null);
+        var hasOptions = populateActionOptions(this.value, null);
+        if (!state.ruleEditing && fieldAction) {
+          fieldAction.disabled = !hasOptions;
+        }
+        if (!state.ruleEditing && modalSubmit) {
+          modalSubmit.disabled = !hasOptions;
+        }
       });
     }
 
