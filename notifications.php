@@ -15,6 +15,50 @@ $types = ppf_notifications_types();
 $priorities = ppf_notifications_priorities();
 $catalog = ppf_notifications_catalog();
 
+$preconfiguredRules = [];
+if ($userId > 0) {
+  foreach ($catalog as $typeKey => $definition) {
+    if (empty($definition['preconfigured'])) {
+      continue;
+    }
+    $channels = ['center' => true, 'email' => false];
+    if (!empty($definition['channels']) && is_array($definition['channels'])) {
+      $channels = array_merge($channels, $definition['channels']);
+    } elseif (!empty($definition['send_email'])) {
+      $channels['email'] = true;
+    }
+    $categoryKey = ppf_notifications_valid_category((string)($definition['category'] ?? 'system'));
+    $sendEmail = isset($definition['send_email']) ? (bool)$definition['send_email'] : !empty($channels['email']);
+    $immutable = !empty($definition['immutable']);
+    $metadata = [
+      'preconfigured' => true,
+      'type_key' => $typeKey,
+      'category' => $categoryKey,
+      'channels' => $channels,
+      'send_email' => $sendEmail,
+    ];
+    if ($immutable) {
+      $metadata['immutable'] = true;
+    }
+    $preconfiguredRules[$typeKey] = [
+      'id' => null,
+      'tenant_id' => $tenantId,
+      'user_id' => $userId,
+      'type_key' => $typeKey,
+      'title' => (string)($definition['title'] ?? 'Notification'),
+      'body' => (string)($definition['body'] ?? ''),
+      'category' => $categoryKey,
+      'channels' => $channels,
+      'send_email' => $sendEmail,
+      'priority' => (int)($definition['priority'] ?? 0),
+      'immutable' => $immutable,
+      'metadata' => $metadata,
+      'created_at' => null,
+      'updated_at' => null,
+    ];
+  }
+}
+
 ppf_notifications_seed_defaults($conn, $tenantId, $userId);
 
 $catalogGrouped = [];
@@ -81,6 +125,43 @@ try {
   $initialState['rules'] = ppf_notification_rules_list($conn, $tenantId, $userId);
 } catch (Throwable $e) {
   $initialState['rules'] = [];
+}
+
+if (!is_array($initialState['rules'])) {
+  $initialState['rules'] = [];
+}
+
+if (!empty($preconfiguredRules)) {
+  $existingRuleKeys = [];
+  foreach ($initialState['rules'] as $rule) {
+    $key = isset($rule['type_key']) ? (string)$rule['type_key'] : '';
+    if ($key !== '') {
+      $existingRuleKeys[$key] = true;
+    }
+  }
+  foreach ($preconfiguredRules as $typeKey => $rule) {
+    if (!isset($existingRuleKeys[$typeKey])) {
+      $initialState['rules'][] = $rule;
+    }
+  }
+  if (!empty($initialState['rules'])) {
+    usort($initialState['rules'], function ($a, $b) {
+      $catA = strtolower((string)($a['category'] ?? ''));
+      $catB = strtolower((string)($b['category'] ?? ''));
+      if ($catA !== $catB) {
+        return $catA <=> $catB;
+      }
+      $priorityA = (int)($a['priority'] ?? 0);
+      $priorityB = (int)($b['priority'] ?? 0);
+      if ($priorityA !== $priorityB) {
+        return $priorityB <=> $priorityA;
+      }
+      $titleA = (string)($a['title'] ?? '');
+      $titleB = (string)($b['title'] ?? '');
+      return $titleA <=> $titleB;
+    });
+    $initialState['rules'] = array_values($initialState['rules']);
+  }
 }
 
 $initialStateJson = json_encode($initialState, JSON_UNESCAPED_SLASHES);
@@ -423,6 +504,8 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     .action-link {
       background: none;
       border: none;
+      border-radius: 0;
+      box-shadow: none;
       padding: 0;
       margin: 0;
       color: var(--brand, #38bdf8);
@@ -471,6 +554,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       padding: 24px;
       z-index: 1000;
     }
+    .modal-backdrop.is-active,
     .modal-backdrop.is-visible {
       display: flex;
     }
@@ -518,6 +602,27 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       min-height: 120px;
       resize: vertical;
       line-height: 1.5;
+    }
+    .preview-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-radius: 12px;
+      border: 1px dashed rgba(148,163,184,0.4);
+      padding: 12px 14px;
+      background: rgba(15,23,42,0.6);
+    }
+    .preview-label {
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: color-mix(in srgb, var(--muted, #cbd5f5) 70%, var(--text, #f8fafc) 30%);
+    }
+    .preview-value {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text, #f8fafc);
+      white-space: pre-wrap;
     }
     .channel-options {
       display: flex;
@@ -653,14 +758,16 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           Action
           <select name="action" required data-modal-field="action"></select>
         </label>
-        <label>
-          Title
-          <input type="text" name="title" maxlength="160" data-modal-field="title" placeholder="Notification title" required />
-        </label>
-        <label>
-          Message
-          <textarea name="body" data-modal-field="body" placeholder="What should this notification say?" required></textarea>
-        </label>
+        <input type="hidden" name="title" data-modal-field="title" />
+        <input type="hidden" name="body" data-modal-field="body" />
+        <div class="preview-field">
+          <span class="preview-label">Title</span>
+          <p class="preview-value" data-modal-preview="title">Select an action to preview the notification.</p>
+        </div>
+        <div class="preview-field">
+          <span class="preview-label">Message</span>
+          <p class="preview-value" data-modal-preview="body">Select an action to see the message that will be sent.</p>
+        </div>
         <label>
           Channels
           <div class="channel-options">
@@ -692,8 +799,88 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var initialState = bootstrap.state || {};
     var categories = bootstrap.categories || {};
     var catalog = bootstrap.catalog || {};
+    var catalogIndex = {};
+    Object.keys(catalog).forEach(function(categoryKey){
+      var list = Array.isArray(catalog[categoryKey]) ? catalog[categoryKey] : [];
+      list.forEach(function(item){
+        var key = item && (item.type_key || item.key);
+        if (!key || catalogIndex[key]) { return; }
+        catalogIndex[key] = Object.assign({ category: categoryKey }, item);
+      });
+    });
+    function lookupCatalogDefinition(typeKey) {
+      if (!typeKey) { return null; }
+      return catalogIndex[typeKey] || null;
+    }
     var types = bootstrap.types || {};
     var csrf = bootstrap.csrf || '';
+    function cloneRule(rule) {
+      return JSON.parse(JSON.stringify(rule || {}));
+    }
+
+    function ruleKey(rule) {
+      if (!rule) { return ''; }
+      if (rule.type_key) { return String(rule.type_key); }
+      if (rule.metadata && rule.metadata.type_key) { return String(rule.metadata.type_key); }
+      return '';
+    }
+
+    function sortRuleList(list) {
+      return list.slice().sort(function(a, b){
+        var catA = ((a && (a.category || (a.metadata && a.metadata.category))) || '').toString().toLowerCase();
+        var catB = ((b && (b.category || (b.metadata && b.metadata.category))) || '').toString().toLowerCase();
+        if (catA !== catB) {
+          return catA < catB ? -1 : 1;
+        }
+        var priorityA = parseInt(a && a.priority, 10);
+        if (isNaN(priorityA)) { priorityA = 0; }
+        var priorityB = parseInt(b && b.priority, 10);
+        if (isNaN(priorityB)) { priorityB = 0; }
+        if (priorityA !== priorityB) {
+          return priorityB - priorityA;
+        }
+        var titleA = ((a && a.title) || '').toString();
+        var titleB = ((b && b.title) || '').toString();
+        return titleA.localeCompare(titleB);
+      });
+    }
+
+    var preconfiguredRuleMap = {};
+    if (Array.isArray(initialState.rules)) {
+      initialState.rules.forEach(function(rule){
+        if (!(rule && rule.metadata && rule.metadata.preconfigured)) { return; }
+        var key = ruleKey(rule);
+        if (!key || preconfiguredRuleMap[key]) { return; }
+        preconfiguredRuleMap[key] = cloneRule(rule);
+      });
+    }
+
+    function withPreconfiguredRules(rules) {
+      var list = Array.isArray(rules) ? rules.slice() : [];
+      var seen = {};
+      list = list.map(function(rule){
+        var key = ruleKey(rule);
+        if (key) {
+          seen[key] = true;
+          if (preconfiguredRuleMap[key]) {
+            var fallback = preconfiguredRuleMap[key];
+            var merged = Object.assign({}, fallback, rule);
+            var fallbackMeta = fallback.metadata || {};
+            var ruleMeta = rule.metadata || {};
+            merged.metadata = Object.assign({}, fallbackMeta, ruleMeta);
+            return merged;
+          }
+        }
+        return rule;
+      });
+      Object.keys(preconfiguredRuleMap).forEach(function(key){
+        if (!seen[key]) {
+          list.push(cloneRule(preconfiguredRuleMap[key]));
+        }
+      });
+      return sortRuleList(list);
+    }
+
     var state = {
       feed: {
         items: initialState.feed && Array.isArray(initialState.feed.items) ? initialState.feed.items.slice() : [],
@@ -704,7 +891,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         category: 'all',
         loading: false
       },
-      rules: Array.isArray(initialState.rules) ? initialState.rules.slice() : [],
+      rules: withPreconfiguredRules(Array.isArray(initialState.rules) ? initialState.rules.slice() : []),
       ruleEditing: null,
       searchTimeout: null
     };
@@ -736,6 +923,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var fieldTitle = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="title"]') : null;
     var fieldBody = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="body"]') : null;
     var fieldChannelEmail = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="channel-email"]') : null;
+    var previewTitle = modalBackdrop ? modalBackdrop.querySelector('[data-modal-preview="title"]') : null;
+    var previewBody = modalBackdrop ? modalBackdrop.querySelector('[data-modal-preview="body"]') : null;
+    var previewTitleDefault = previewTitle ? previewTitle.textContent : 'Select an action to preview the notification.';
+    var previewBodyDefault = previewBody ? previewBody.textContent : 'Select an action to see the message that will be sent.';
 
     function formatDate(iso) {
       if (!iso) return '';
@@ -980,20 +1171,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           metaLine.appendChild(channels);
           var actions = document.createElement('div');
           actions.className = 'notification-actions';
-          if (!rule.immutable) {
-            var toggleBtn = document.createElement('button');
-            toggleBtn.type = 'button';
-            toggleBtn.className = 'action-link';
-            toggleBtn.dataset.ruleAction = 'toggle-email';
-            toggleBtn.dataset.id = rule.id;
-            toggleBtn.textContent = rule.send_email ? 'Disable email' : 'Enable email';
-            actions.appendChild(toggleBtn);
-
+          if (!rule.immutable && rule.id != null && rule.id !== '') {
             var editBtn = document.createElement('button');
             editBtn.type = 'button';
             editBtn.className = 'action-link';
             editBtn.dataset.ruleAction = 'edit';
-            editBtn.dataset.id = rule.id;
+            editBtn.dataset.id = String(rule.id);
             editBtn.textContent = 'Edit';
             actions.appendChild(editBtn);
 
@@ -1001,10 +1184,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
             deleteBtn.type = 'button';
             deleteBtn.className = 'action-link';
             deleteBtn.dataset.ruleAction = 'delete';
-            deleteBtn.dataset.id = rule.id;
+            deleteBtn.dataset.id = String(rule.id);
             deleteBtn.textContent = 'Delete';
             actions.appendChild(deleteBtn);
-          } else {
+          } else if (rule.immutable) {
             var lock = document.createElement('span');
             lock.className = 'meta-pill';
             lock.textContent = 'Security policy';
@@ -1080,7 +1263,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     function loadRules() {
       fetchJson('api/notifications/index.php/rules').then(function(json){
-        state.rules = Array.isArray(json.rules) ? json.rules : [];
+        state.rules = withPreconfiguredRules(Array.isArray(json.rules) ? json.rules : []);
         renderRules();
       }).catch(function(err){
         console.error(err);
@@ -1088,12 +1271,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     function updateRuleInState(rule) {
-      var idx = state.rules.findIndex(function(r){ return r.id === rule.id; });
+      var targetId = rule && rule.id != null ? String(rule.id) : null;
+      var idx = state.rules.findIndex(function(r){ return targetId !== null && String(r.id || '') === targetId; });
+      var nextRules = state.rules.slice();
       if (idx === -1) {
-        state.rules.push(rule);
+        nextRules.push(rule);
       } else {
-        state.rules[idx] = rule;
+        nextRules[idx] = rule;
       }
+      state.rules = withPreconfiguredRules(nextRules);
       renderRules();
     }
 
@@ -1191,13 +1377,22 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       });
     }
 
-    function populateCategoryOptions(selected) {
-      if (!fieldCategory) return;
+    function populateCategoryOptions(selected, isEditing) {
+      if (!fieldCategory) return { selected: null, count: 0 };
       fieldCategory.innerHTML = '';
       Object.keys(categories).forEach(function(key){
+        var metadata = categories[key] || {};
+        var isCustom = key === 'custom';
+        var hasCatalogEntries = Array.isArray(catalog[key]) && catalog[key].length > 0;
+        if (!isEditing) {
+          if (isCustom) { return; }
+          if (!hasCatalogEntries) { return; }
+        } else if (!hasCatalogEntries && (!selected || selected !== key)) {
+          return;
+        }
         var opt = document.createElement('option');
         opt.value = key;
-        opt.textContent = categories[key].label || key;
+        opt.textContent = metadata.label || key;
         if (selected && selected === key) {
           opt.selected = true;
         }
@@ -1206,65 +1401,181 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       if (!selected && fieldCategory.options.length) {
         fieldCategory.selectedIndex = 0;
       }
+      return {
+        selected: fieldCategory && fieldCategory.value ? fieldCategory.value : (selected || null),
+        count: fieldCategory ? fieldCategory.options.length : 0
+      };
     }
 
-    function populateActionOptions(categoryKey, selected) {
-      if (!fieldAction) return;
+    function populateActionOptions(categoryKey, selected, isEditing, selectedLabel) {
+      if (!fieldAction) return false;
       fieldAction.innerHTML = '';
-      var options = catalog[categoryKey] || [];
-      if (!options.length) {
-        var fallback = document.createElement('option');
-        fallback.value = 'custom.manual';
-        fallback.textContent = 'Custom reminder';
-        fieldAction.appendChild(fallback);
-        fieldAction.value = 'custom.manual';
-        return;
+      if (!categoryKey) {
+        var emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = 'No available rules';
+        emptyOpt.disabled = true;
+        emptyOpt.selected = true;
+        fieldAction.appendChild(emptyOpt);
+        return false;
       }
-      options.forEach(function(optDef){
-        var opt = document.createElement('option');
-        opt.value = optDef.type_key || optDef.key || '';
-        opt.textContent = optDef.title || opt.value || 'Notification';
-        if (selected && selected === opt.value) {
-          opt.selected = true;
-        }
-        fieldAction.appendChild(opt);
+      var options = catalog[categoryKey] || [];
+      var reserved = {};
+      state.rules.forEach(function(rule){
+        var key = ruleKey(rule);
+        if (!key) { return; }
+        if (selected && key === selected) { return; }
+        reserved[key] = true;
       });
+      var available = 0;
+      if (options.length) {
+        options.forEach(function(optDef){
+          var value = optDef.type_key || optDef.key || '';
+          if (!value) { return; }
+          if (reserved[value]) { return; }
+          var opt = document.createElement('option');
+          opt.value = value;
+          opt.textContent = optDef.title || opt.value || 'Notification';
+          if (selected && selected === opt.value) {
+            opt.selected = true;
+          }
+          fieldAction.appendChild(opt);
+          available += 1;
+        });
+      }
       if (!selected && fieldAction.options.length) {
         fieldAction.selectedIndex = 0;
       }
+      if (!available && isEditing && selected) {
+        var current = document.createElement('option');
+        current.value = selected;
+        var catalogDef = lookupCatalogDefinition(selected);
+        var label = selectedLabel || '';
+        if (!label && catalogDef && catalogDef.title) {
+          label = catalogDef.title;
+        }
+        if (!label && selected.indexOf('custom.') === 0) {
+          label = 'Custom reminder';
+        }
+        if (!label) {
+          label = selected || 'Current selection';
+        }
+        current.textContent = label;
+        current.selected = true;
+        fieldAction.appendChild(current);
+        available = 1;
+      }
+      if (!available) {
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'No available rules';
+        placeholder.disabled = true;
+        placeholder.selected = true;
+        fieldAction.appendChild(placeholder);
+      }
+      return available > 0;
+    }
+
+    function computeRuleContent(rule, typeKey) {
+      var selectedKey = typeKey || (rule && rule.type_key) || '';
+      var title = rule && rule.title ? String(rule.title) : '';
+      var body = rule && rule.body ? String(rule.body) : '';
+      var def = lookupCatalogDefinition(selectedKey);
+      if (def) {
+        if (!title && def.title) {
+          title = String(def.title);
+        }
+        if (!body && def.body) {
+          body = String(def.body);
+        }
+      }
+      return { title: title, body: body };
+    }
+
+    function updateRulePreview(rule, typeKey) {
+      var content = computeRuleContent(rule, typeKey);
+      var titleText = content.title || '';
+      var bodyText = content.body || '';
+      if (fieldTitle) {
+        fieldTitle.value = titleText;
+      }
+      if (fieldBody) {
+        fieldBody.value = bodyText;
+      }
+      if (previewTitle) {
+        previewTitle.textContent = titleText || previewTitleDefault;
+      }
+      if (previewBody) {
+        previewBody.textContent = bodyText || previewBodyDefault;
+      }
+    }
+
+    function computeEmailPreference(rule, typeKey) {
+      if (rule && typeof rule.send_email === 'boolean') {
+        return !!rule.send_email;
+      }
+      var def = lookupCatalogDefinition(typeKey);
+      if (def) {
+        if (typeof def.send_email === 'boolean') {
+          return !!def.send_email;
+        }
+        if (def.channels && typeof def.channels.email === 'boolean') {
+          return !!def.channels.email;
+        }
+      }
+      return false;
+    }
+
+    function applyRuleSelection(rule, typeKey) {
+      updateRulePreview(rule, typeKey);
+      if (fieldChannelEmail) {
+        fieldChannelEmail.checked = computeEmailPreference(rule, typeKey);
+      }
+    }
+
+    function getEditingRule() {
+      if (!state.ruleEditing) { return null; }
+      var targetId = String(state.ruleEditing);
+      var match = state.rules.find(function(r){ return String(r.id || '') === targetId; });
+      return match || null;
     }
 
     function openRuleModal(rule) {
       if (!modalBackdrop || !modalForm) return;
-      state.ruleEditing = rule ? rule.id : null;
+      state.ruleEditing = rule && rule.id != null ? String(rule.id) : null;
       if (modalTitle) {
         modalTitle.textContent = rule ? 'Edit notification rule' : 'Create notification rule';
       }
-      populateCategoryOptions(rule ? rule.category : null);
-      var category = rule ? rule.category : (fieldCategory && fieldCategory.value ? fieldCategory.value : 'system');
-      populateActionOptions(category, rule ? rule.type_key : null);
+      var categoryState = populateCategoryOptions(rule ? rule.category : null, !!rule);
+      var category = categoryState && categoryState.selected ? categoryState.selected : '';
+      var hasOptions = populateActionOptions(category, rule ? rule.type_key : null, !!rule, rule ? (rule.title || '') : '');
       if (fieldCategory) {
-        fieldCategory.disabled = !!rule;
+        fieldCategory.disabled = !!rule || !(categoryState && categoryState.count);
       }
       if (fieldAction) {
-        fieldAction.disabled = !!rule;
+        fieldAction.disabled = rule ? true : !hasOptions;
       }
-      if (fieldTitle) {
-        fieldTitle.value = rule ? (rule.title || '') : '';
-      }
-      if (fieldBody) {
-        fieldBody.value = rule ? (rule.body || '') : '';
-      }
-      if (fieldChannelEmail) {
-        fieldChannelEmail.checked = rule ? !!rule.send_email : false;
+      var activeType = fieldAction && fieldAction.value ? fieldAction.value : '';
+      applyRuleSelection(rule, activeType);
+      if (modalSubmit) {
+        modalSubmit.disabled = rule ? false : !hasOptions;
       }
       modalBackdrop.classList.add('is-active');
-      setTimeout(function(){ if (fieldTitle) { fieldTitle.focus(); } }, 60);
+      setTimeout(function(){
+        if (!rule && fieldAction && !fieldAction.disabled) {
+          fieldAction.focus();
+        } else if (fieldChannelEmail) {
+          fieldChannelEmail.focus();
+        } else if (modalSubmit) {
+          modalSubmit.focus();
+        }
+      }, 60);
     }
 
     function closeRuleModal() {
       if (!modalBackdrop) return;
       modalBackdrop.classList.remove('is-active');
+      modalBackdrop.classList.remove('is-visible');
       state.ruleEditing = null;
       if (modalForm) {
         modalForm.reset();
@@ -1274,6 +1585,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       }
       if (fieldAction) {
         fieldAction.disabled = false;
+      }
+      applyRuleSelection(null, '');
+      if (modalSubmit) {
+        modalSubmit.disabled = false;
       }
     }
 
@@ -1293,7 +1608,24 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     if (fieldCategory) {
       fieldCategory.addEventListener('change', function(){
-        populateActionOptions(this.value, null);
+        var hasOptions = populateActionOptions(this.value, null, false, '');
+        if (!state.ruleEditing && fieldAction) {
+          fieldAction.disabled = !hasOptions;
+        }
+        if (!state.ruleEditing && modalSubmit) {
+          modalSubmit.disabled = !hasOptions;
+        }
+        var activeRule = getEditingRule();
+        var nextType = fieldAction && fieldAction.value ? fieldAction.value : '';
+        applyRuleSelection(activeRule, nextType);
+      });
+    }
+
+    if (fieldAction) {
+      fieldAction.addEventListener('change', function(){
+        if (state.ruleEditing) { return; }
+        var nextType = this.value || '';
+        applyRuleSelection(null, nextType);
       });
     }
 
@@ -1301,8 +1633,8 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       modalForm.addEventListener('submit', function(event){
         event.preventDefault();
         var payload = {
-          category: fieldCategory ? fieldCategory.value : 'custom',
-          action: fieldAction ? fieldAction.value : 'custom.manual',
+          category: fieldCategory ? fieldCategory.value : '',
+          action: fieldAction ? fieldAction.value : '',
           title: fieldTitle ? fieldTitle.value.trim() : '',
           body: fieldBody ? fieldBody.value.trim() : '',
           send_email: fieldChannelEmail ? fieldChannelEmail.checked : false
@@ -1335,32 +1667,21 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       rulesContainer.addEventListener('click', function(event){
         var target = event.target;
         if (!target || !target.dataset.ruleAction) { return; }
-        var id = parseInt(target.dataset.id || '0', 10);
+        var id = target.dataset.id ? String(target.dataset.id) : '';
         if (!id) { return; }
         var action = target.dataset.ruleAction;
         if (action === 'edit') {
-          var rule = state.rules.find(function(r){ return r.id === id; });
+          var rule = state.rules.find(function(r){ return String(r.id || '') === id; });
           if (rule) {
             openRuleModal(rule);
           }
         } else if (action === 'delete') {
           if (!confirm('Delete this notification rule?')) { return; }
           fetchJson('api/notifications/index.php/rules/' + id, withCsrfOptions('DELETE')).then(function(){
-            state.rules = state.rules.filter(function(r){ return r.id !== id; });
+            state.rules = withPreconfiguredRules(state.rules.filter(function(r){ return String(r.id || '') !== id; }));
             renderRules();
           }).catch(function(err){
             alert(err.message || 'Unable to delete rule.');
-          });
-        } else if (action === 'toggle-email') {
-          var rule = state.rules.find(function(r){ return r.id === id; });
-          if (!rule) { return; }
-          var next = !rule.send_email;
-          fetchJson('api/notifications/index.php/rules/' + id + '/channels', withCsrfOptions('PATCH', { email: next })).then(function(json){
-            if (json && json.data) {
-              updateRuleInState(json.data);
-            }
-          }).catch(function(err){
-            alert(err.message || 'Unable to update rule.');
           });
         }
       });
