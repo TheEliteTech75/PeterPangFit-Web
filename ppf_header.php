@@ -236,6 +236,7 @@ if (isset($conn) && $conn instanceof mysqli && function_exists('ppf_log_page_vie
 }
 .ppf-notify__button svg { width:22px; height:22px; }
 .ppf-notify__button.is-active svg { color:var(--brand-strong, var(--brand)); }
+.ppf-notify__glyph { display:inline-flex; align-items:center; justify-content:center; }
 .ppf-notify__badge {
   position:absolute;
   top:6px;
@@ -523,11 +524,12 @@ body.ppf-themed .dash-settings-toggle {
     <?php if ($headerUserId > 0): ?>
     <div class="ppf-notify" data-notify data-csrf="<?php echo h($headerCsrf); ?>">
       <button type="button" class="ppf-notify__button" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" data-notify-toggle>
-        <span class="sr-only">Notifications</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
-          <path d="M13.73 21a2 2 0 01-3.46 0"></path>
-        </svg>
+        <span class="ppf-notify__glyph" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 01-3.46 0"></path>
+          </svg>
+        </span>
         <span class="ppf-notify__badge" data-notify-badge hidden>0</span>
       </button>
       <div class="ppf-notify__panel" role="dialog" aria-label="Notifications" hidden data-notify-panel>
