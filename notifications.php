@@ -728,6 +728,18 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       return '';
     }
 
+    function rulePendingKey(rule) {
+      if (!rule) { return ''; }
+      if (rule.id !== undefined && rule.id !== null && rule.id !== '') {
+        return 'id:' + String(rule.id);
+      }
+      var key = ruleKey(rule);
+      if (key) {
+        return 'key:' + key;
+      }
+      return '';
+    }
+
     function sortRuleList(list) {
       return list.slice().sort(function(a, b){
         var catA = ((a && (a.category || (a.metadata && a.metadata.category))) || '').toString().toLowerCase();
@@ -1126,10 +1138,14 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
           function appendToggle(labelText, channelKey, checked) {
             var labelEl = document.createElement('label');
-            var ruleIdKey = ruleId ? String(ruleId) : '';
-            var isPending = !!(ruleIdKey && pendingRuleUpdates[ruleIdKey]);
+            var pendingKey = rulePendingKey(rule) || (ruleTypeKey ? 'key:' + ruleTypeKey : '');
+            var pendingEntry = pendingKey ? pendingRuleUpdates[pendingKey] : null;
+            var pendingChannels = pendingEntry && pendingEntry.channels;
+            var hasPendingValue = pendingChannels && Object.prototype.hasOwnProperty.call(pendingChannels, channelKey);
+            var effectiveChecked = hasPendingValue ? !!pendingChannels[channelKey] : checked;
+            var isPending = !!pendingEntry;
             var className = 'channel-toggle';
-            if (checked) { className += ' is-active'; }
+            if (effectiveChecked) { className += ' is-active'; }
             if (isPending) { className += ' is-pending'; }
             labelEl.className = className;
             var input = document.createElement('input');
@@ -1137,8 +1153,8 @@ if ($csrfJson === false) { $csrfJson = '""'; }
             input.dataset.ruleToggle = channelKey;
             if (ruleId) { input.dataset.id = ruleId; }
             if (ruleTypeKey) { input.dataset.key = ruleTypeKey; }
-            input.checked = checked;
-            input.disabled = isImmutable || !ruleId || isPending;
+            input.checked = effectiveChecked;
+            input.disabled = isImmutable || isPending;
             labelEl.appendChild(input);
             var text = document.createElement('span');
             text.textContent = labelText;
@@ -1234,9 +1250,23 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     function updateRuleInState(rule) {
-      var targetId = rule && rule.id != null ? String(rule.id) : null;
-      var idx = state.rules.findIndex(function(r){ return targetId !== null && String(r.id || '') === targetId; });
+      if (!rule) { return; }
       var nextRules = state.rules.slice();
+      var targetId = (rule.id !== undefined && rule.id !== null && rule.id !== '') ? String(rule.id) : null;
+      var idx = -1;
+      if (targetId !== null) {
+        idx = nextRules.findIndex(function(existing){
+          return existing && existing.id !== undefined && existing.id !== null && String(existing.id) === targetId;
+        });
+      }
+      if (idx === -1) {
+        var key = ruleKey(rule);
+        if (key) {
+          idx = nextRules.findIndex(function(existing){
+            return ruleKey(existing) === key;
+          });
+        }
+      }
       if (idx === -1) {
         nextRules.push(rule);
       } else {
@@ -1355,15 +1385,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         if (!rule && lookupKey) {
           rule = state.rules.find(function(r){ return ruleKey(r) === lookupKey; });
         }
-        if (!rule) { return; }
-        if (rule.immutable || !rule.id) {
+        if (!rule) {
           renderRules();
           return;
         }
-        var ruleIdKey = String(rule.id);
-        if (pendingRuleUpdates[ruleIdKey]) {
+        if (rule.immutable) {
+          renderRules();
           return;
         }
+        var originalRule = cloneRule(rule);
         var previousState = resolveChannels(rule);
         var nextState = { center: previousState.center, email: previousState.email };
         if (channelKey === 'center') {
@@ -1371,33 +1401,104 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         } else if (channelKey === 'email') {
           nextState.email = target.checked;
         } else {
+          renderRules();
           return;
         }
-        pendingRuleUpdates[ruleIdKey] = true;
+
+        var pendingKey = rulePendingKey(rule) || (lookupKey ? 'key:' + lookupKey : '');
+        if (pendingKey && pendingRuleUpdates[pendingKey]) {
+          renderRules();
+          return;
+        }
+        if (pendingKey) {
+          pendingRuleUpdates[pendingKey] = {
+            channels: { center: !!nextState.center, email: !!nextState.email }
+          };
+        }
+
         var optimisticRule = buildRuleWithChannels(rule, nextState);
         if (optimisticRule) {
           updateRuleInState(optimisticRule);
         } else {
           renderRules();
         }
-        fetchJson('api/notifications/index.php/rules/' + rule.id + '/channels', withCsrfOptions('PATCH', nextState)).then(function(json){
-          delete pendingRuleUpdates[ruleIdKey];
-          if (json && json.data) {
-            updateRuleInState(json.data);
-          } else {
-            loadRules();
+
+        var clearPending = function() {
+          if (pendingKey) {
+            delete pendingRuleUpdates[pendingKey];
           }
-        }).catch(function(err){
-          delete pendingRuleUpdates[ruleIdKey];
-          alert(err.message || 'Unable to update rule.');
-          var currentRule = state.rules.find(function(r){ return String(r.id || '') === ruleIdKey; });
-          if (currentRule) {
-            var revertRule = buildRuleWithChannels(currentRule, previousState);
+        };
+
+        if (rule.id) {
+          fetchJson('api/notifications/index.php/rules/' + rule.id + '/channels', withCsrfOptions('PATCH', nextState)).then(function(json){
+            clearPending();
+            if (json && json.data) {
+              updateRuleInState(json.data);
+            } else {
+              loadRules();
+            }
+          }).catch(function(err){
+            clearPending();
+            alert(err.message || 'Unable to update rule.');
+            var revertRule = buildRuleWithChannels(originalRule, previousState);
             if (revertRule) {
               updateRuleInState(revertRule);
             } else {
               renderRules();
             }
+          });
+          return;
+        }
+
+        var typeKey = lookupKey || ruleKey(originalRule);
+        if (!typeKey) {
+          clearPending();
+          renderRules();
+          return;
+        }
+
+        var payload = {
+          type_key: typeKey,
+          channels: nextState,
+          send_email: !!nextState.email
+        };
+        if (originalRule && originalRule.title) {
+          payload.title = originalRule.title;
+        }
+        if (originalRule && originalRule.body) {
+          payload.body = originalRule.body;
+        }
+        var category = '';
+        if (originalRule && originalRule.category) {
+          category = String(originalRule.category);
+        } else if (originalRule && originalRule.metadata && originalRule.metadata.category) {
+          category = String(originalRule.metadata.category);
+        }
+        if (category) {
+          payload.category = category;
+        }
+        if (originalRule && typeof originalRule.priority !== 'undefined') {
+          var priorityValue = parseInt(originalRule.priority, 10);
+          if (!isNaN(priorityValue)) {
+            payload.priority = priorityValue;
+          }
+        }
+        if (originalRule && originalRule.metadata && originalRule.metadata.preconfigured) {
+          payload.metadata = { preconfigured: true };
+        }
+
+        fetchJson('api/notifications/index.php/rules', withCsrfOptions('POST', payload)).then(function(json){
+          clearPending();
+          if (json && json.data) {
+            updateRuleInState(json.data);
+          }
+          loadRules();
+        }).catch(function(err){
+          clearPending();
+          alert(err.message || 'Unable to update rule.');
+          var revertRule = buildRuleWithChannels(originalRule, previousState);
+          if (revertRule) {
+            updateRuleInState(revertRule);
           } else {
             renderRules();
           }

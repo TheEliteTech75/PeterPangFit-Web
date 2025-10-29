@@ -148,7 +148,66 @@ if ($isRuleRequest) {
             break;
 
         case 'POST':
-            ppf_notifications_api_error(405, 'Notification rules are managed automatically.');
+            ppf_notifications_api_csrf_required();
+            $body = ppf_notifications_api_decode_body();
+            $typeKey = isset($body['type_key']) ? trim((string)$body['type_key']) : '';
+            if ($typeKey === '') {
+                ppf_notifications_api_error(422, 'Notification type is required.');
+            }
+
+            $existing = ppf_notification_rules_get_by_key($conn, $tenantId, $userId, $typeKey);
+            if ($existing) {
+                ppf_notifications_api_success(['data' => $existing]);
+            }
+
+            $definition = $catalog[$typeKey] ?? null;
+            if ($definition && !empty($definition['immutable'])) {
+                ppf_notifications_api_error(403, 'Security rules cannot be modified.');
+            }
+
+            $metadata = [];
+            if ($definition && !empty($definition['metadata']) && is_array($definition['metadata'])) {
+                $metadata = $definition['metadata'];
+            }
+            if ($definition && !empty($definition['preconfigured'])) {
+                $metadata['preconfigured'] = true;
+            }
+
+            $channels = null;
+            if (isset($body['channels']) && is_array($body['channels'])) {
+                $channels = $body['channels'];
+            } elseif ($definition && !empty($definition['channels']) && is_array($definition['channels'])) {
+                $channels = $definition['channels'];
+            }
+            if (!is_array($channels)) {
+                $channels = [
+                    'center' => true,
+                    'email' => ($definition && !empty($definition['send_email'])),
+                ];
+            }
+
+            $payload = [
+                'type_key' => $typeKey,
+                'title' => $definition['title'] ?? (string)($body['title'] ?? 'Notification'),
+                'body' => $definition['body'] ?? (string)($body['body'] ?? ''),
+                'category' => $definition['category'] ?? (string)($body['category'] ?? 'custom'),
+                'priority' => isset($definition['priority']) ? (int)$definition['priority'] : (int)($body['priority'] ?? 0),
+                'channels' => $channels,
+                'metadata' => $metadata,
+                'send_email' => isset($body['send_email']) ? (bool)$body['send_email'] : null,
+            ];
+
+            $ruleId = ppf_notification_rules_save($conn, $tenantId, $userId, $payload, null);
+            if (!$ruleId) {
+                ppf_notifications_api_error(500, 'Unable to save notification rule.');
+            }
+
+            $rule = ppf_notification_rules_get($conn, $tenantId, $userId, $ruleId);
+            if (!$rule) {
+                ppf_notifications_api_error(500, 'Unable to load notification rule.');
+            }
+
+            ppf_notifications_api_success(['data' => $rule]);
             break;
 
         case 'PATCH':
