@@ -1246,9 +1246,23 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     function updateRuleInState(rule) {
-      var targetId = rule && rule.id != null ? String(rule.id) : null;
-      var idx = state.rules.findIndex(function(r){ return targetId !== null && String(r.id || '') === targetId; });
+      if (!rule) { return; }
       var nextRules = state.rules.slice();
+      var targetId = (rule.id !== undefined && rule.id !== null && rule.id !== '') ? String(rule.id) : null;
+      var idx = -1;
+      if (targetId !== null) {
+        idx = nextRules.findIndex(function(existing){
+          return existing && existing.id !== undefined && existing.id !== null && String(existing.id) === targetId;
+        });
+      }
+      if (idx === -1) {
+        var key = ruleKey(rule);
+        if (key) {
+          idx = nextRules.findIndex(function(existing){
+            return ruleKey(existing) === key;
+          });
+        }
+      }
       if (idx === -1) {
         nextRules.push(rule);
       } else {
