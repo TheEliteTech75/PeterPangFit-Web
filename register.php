@@ -149,6 +149,10 @@ if ($upd = $conn->prepare("UPDATE invites SET accepted_at = COALESCE(accepted_at
     -webkit-font-smoothing: antialiased;
   }
 
+  body.modal-open {
+    overflow: hidden;
+  }
+
   .wrap {
     max-width: 960px;
     margin: clamp(40px, 5vw, 72px) auto;
@@ -215,13 +219,36 @@ if ($upd = $conn->prepare("UPDATE invites SET accepted_at = COALESCE(accepted_at
     background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
     color: #02131f;
     box-shadow: 0 16px 40px rgba(56, 189, 248, 0.35);
-    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, opacity 0.2s ease;
   }
 
   .btn:hover,
   .btn:focus {
     transform: translateY(-1px);
     box-shadow: 0 20px 48px rgba(110, 231, 183, 0.38);
+  }
+
+  .btn[disabled] {
+    cursor: not-allowed;
+    opacity: 0.6;
+    background: rgba(148, 163, 184, 0.22);
+    color: var(--muted);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .btn-link {
+    background: transparent;
+    color: var(--muted-strong);
+    box-shadow: none;
+    padding: 10px 16px;
+  }
+
+  .btn-link:hover,
+  .btn-link:focus {
+    color: var(--text);
+    box-shadow: none;
+    transform: none;
   }
 
   .hint {
@@ -258,6 +285,76 @@ if ($upd = $conn->prepare("UPDATE invites SET accepted_at = COALESCE(accepted_at
   ul.req li{margin:6px 0;list-style:none;padding-left:22px;position:relative;color:var(--danger);transition:color 0.2s ease}
   ul.req li::before{content:'•';position:absolute;left:8px;top:0.2rem;opacity:.7}
   ul.req li.ok{color:#bbf7d0}
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.78);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 1000;
+  }
+
+  .modal-backdrop[hidden] { display: none; }
+
+  .modal {
+    max-width: min(840px, 92vw);
+    max-height: min(80vh, 720px);
+    width: 100%;
+    background: var(--surface-strong);
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    box-shadow: 0 30px 60px rgba(2, 6, 23, 0.55);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .modal header {
+    padding: 24px clamp(24px, 4vw, 36px) 12px;
+  }
+
+  .modal header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: var(--accent);
+  }
+
+  .modal .modal-body {
+    padding: 0 clamp(24px, 4vw, 36px);
+    overflow-y: auto;
+    flex: 1 1 auto;
+    scroll-behavior: smooth;
+  }
+
+  .modal .modal-body p,
+  .modal .modal-body li {
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .modal .modal-body h3 {
+    color: var(--muted-strong);
+    margin-top: 24px;
+    font-size: 1.05rem;
+  }
+
+  .modal footer {
+    padding: 20px clamp(24px, 4vw, 36px) 28px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: flex-end;
+    background: rgba(15, 23, 42, 0.45);
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+  }
+
+  .modal footer .btn {
+    margin-top: 0;
+  }
 
   @media (max-width: 900px) {
     .wrap {
@@ -378,26 +475,155 @@ if ($upd = $conn->prepare("UPDATE invites SET accepted_at = COALESCE(accepted_at
       </div>
 
       <div class="span-12">
-        <button class="btn" type="submit">Create Account</button>
+        <button class="btn" type="submit" id="reg_submit_btn">Register</button>
       </div>
     </form>
+
+    <div class="modal-backdrop" id="privacy_modal" role="dialog" aria-modal="true" aria-labelledby="privacy_modal_title" hidden>
+      <div class="modal">
+        <header>
+          <h2 id="privacy_modal_title">Privacy Policy</h2>
+          <p class="hint" style="margin-top:8px">Please review the full policy below. You must scroll to the end before registering.</p>
+        </header>
+        <div class="modal-body" id="privacy_modal_body" tabindex="0">
+          <p><strong>Last Updated:</strong> October 29, 2025<br><strong>Effective Date:</strong> October 29, 2025</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>1. Introduction</h3>
+          <p>Welcome to Pangsanity Personal Training (&ldquo;Company,&rdquo; &ldquo;we,&rdquo; &ldquo;our,&rdquo; or &ldquo;us&rdquo;). We respect your privacy and are committed to protecting your personal data. This Privacy Policy explains how we collect, use, store, and safeguard your information when you register for and use our platform, PeterPangFit (&ldquo;Service&rdquo;).</p>
+          <p>By creating an account or using our Service, you agree to the terms of this Privacy Policy.</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>2. Information We Collect</h3>
+          <p><strong>a. Personal Information</strong><br>When you register for an account or update your profile, we collect:</p>
+          <ul>
+            <li>First Name, Middle Name or Initial, and Last Name</li>
+            <li>Phone Number</li>
+            <li>Email Address</li>
+            <li>Date of Birth</li>
+            <li>Gender</li>
+            <li>Height and Weight</li>
+          </ul>
+          <p>If the account is for a minor, this information is collected only with the consent of a parent or legal guardian.</p>
+          <p><strong>b. Device &amp; Login Information</strong><br>For account security and fraud prevention, we automatically collect:</p>
+          <ul>
+            <li>IP Address</li>
+            <li>Browser Type and Version</li>
+            <li>Operating System and Device Type</li>
+            <li>User Agent String</li>
+            <li>Login Activity (timestamps, location approximation, and device information)</li>
+          </ul>
+          <p>We also support enhanced authentication options such as Passkeys, Email Verification, and App-Based Two-Factor Authentication (2FA).</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>3. How We Use Your Information</h3>
+          <p>We use collected information to:</p>
+          <ul>
+            <li>Create and maintain user accounts</li>
+            <li>Authenticate logins and provide security features</li>
+            <li>Deliver personalized training and tracking services</li>
+            <li>Send necessary account, verification, or security-related emails</li>
+            <li>Monitor platform performance and security</li>
+            <li>Comply with applicable laws and enforce our Terms of Service</li>
+          </ul>
+          <p>We do not sell or rent your personal data.</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>4. Communications and Emails</h3>
+          <p>We send emails using PHPMailer through Proton Mail, including:</p>
+          <ul>
+            <li>Account verification or authentication links</li>
+            <li>Password resets and passkey setup emails</li>
+            <li>Security and administrative notifications</li>
+          </ul>
+          <p>These are essential system communications and cannot be opted out of. Marketing or promotional emails will only be sent with your express consent.</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>5. Data Storage and Security</h3>
+          <p>All data is hosted on secure, virtualized servers maintained by the developer during beta testing. Both web and database servers are separate and protected with:</p>
+          <ul>
+            <li>Encryption at rest for stored data and backups</li>
+            <li>TLS/SSL encryption (Let&rsquo;s Encrypt) for data in transit</li>
+            <li>Firewalls, access controls, and audit logs for intrusion prevention</li>
+          </ul>
+          <p>Upon public release, hosting will migrate to a commercial cloud service meeting or exceeding these standards.</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>6. Data Retention</h3>
+          <p>We retain your data only as long as necessary for the purposes described or as required by law. If you delete your account, your data will be securely deleted or anonymized within a reasonable time, unless retention is required by law or for dispute resolution.</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>7. Sharing and Disclosure</h3>
+          <p>We may share limited information in the following cases:</p>
+          <ul>
+            <li>With service providers who assist in operations (e.g., email or hosting services)</li>
+            <li>When required by law enforcement or legal obligations</li>
+            <li>To prevent fraud, ensure security, or protect user safety</li>
+          </ul>
+          <p>All service providers are bound by confidentiality and data protection agreements.</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>8. Children and Minors</h3>
+          <p>We recognize that some users of our Service are minors who train under the supervision of a certified personal trainer.</p>
+          <ul>
+            <li>We collect information from minors only with verifiable parental or guardian consent.</li>
+            <li>Parents or guardians who register their child are considered the account holders and responsible for managing their child&rsquo;s information.</li>
+            <li>We comply with the Children&rsquo;s Online Privacy Protection Act (COPPA), GDPR Article 8, and relevant state laws such as the California Consumer Privacy Act (CCPA).</li>
+            <li>If we learn that a minor&rsquo;s information was collected without proper consent, it will be deleted promptly.</li>
+          </ul>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>9. User Rights</h3>
+          <p><strong>a. GDPR (EU/EEA Residents)</strong><br>You may:</p>
+          <ul>
+            <li>Access, correct, or delete your personal data</li>
+            <li>Withdraw consent for processing (where applicable)</li>
+            <li>Request data portability</li>
+            <li>Lodge a complaint with a supervisory authority</li>
+          </ul>
+          <p><strong>b. CCPA (California Residents)</strong><br>You may:</p>
+          <ul>
+            <li>Request details about personal data collected and its use</li>
+            <li>Request deletion of your personal information</li>
+            <li>Opt out of data sale (we do not sell data)</li>
+          </ul>
+          <p>Requests may be sent to <a href="mailto:pangsanity.personaltraining@gmail.com">pangsanity.personaltraining@gmail.com</a>.</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>10. International Data Transfers</h3>
+          <p>If you access the Service from outside the United States, note that your information will be transferred to and processed in the U.S. under appropriate legal safeguards consistent with GDPR standards.</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>11. Updates to This Policy</h3>
+          <p>We may revise this Privacy Policy periodically. Any material changes will be posted here, and where required, we will notify you via email or in-app notice. Continued use of the Service after changes take effect constitutes acceptance of the updated policy.</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>12. Contact Us</h3>
+          <p>If you have questions about this Privacy Policy or your data rights, contact us at:</p>
+          <p>Email: <a href="mailto:pangsanity.personaltraining@gmail.com">pangsanity.personaltraining@gmail.com</a><br>Location: Bakersfield, CA, United States</p>
+          <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.25); margin: 24px 0;">
+          <h3>13. Consent</h3>
+          <p>By registering an account or allowing a minor to use the PeterPangFit platform, you acknowledge that you have read, understood, and agree to this Privacy Policy and that, if registering on behalf of a minor, you are the lawful parent or guardian providing consent.</p>
+        </div>
+        <footer>
+          <button type="button" class="btn btn-link" id="privacy_modal_cancel">Cancel</button>
+          <button type="button" class="btn" id="privacy_modal_confirm" disabled>Register</button>
+        </footer>
+      </div>
+    </div>
   <?php endif; ?>
 </div>
 
 <script>
 (function(){
   // Elements
-  const form    = document.getElementById('reg_form');
-  const first   = document.getElementById('reg_first');
-  const last    = document.getElementById('reg_last');
-  const email   = document.getElementById('reg_email');
-  const pwd     = document.getElementById('reg_password');
-  const conf    = document.getElementById('reg_confirm');
+  const form        = document.getElementById('reg_form');
+  const first       = document.getElementById('reg_first');
+  const last        = document.getElementById('reg_last');
+  const email       = document.getElementById('reg_email');
+  const pwd         = document.getElementById('reg_password');
+  const conf        = document.getElementById('reg_confirm');
+  const submitBtn   = document.getElementById('reg_submit_btn');
+  const modal       = document.getElementById('privacy_modal');
+  const modalBody   = document.getElementById('privacy_modal_body');
+  const modalCancel = document.getElementById('privacy_modal_cancel');
+  const modalConfirm= document.getElementById('privacy_modal_confirm');
 
   const ruleLen   = document.getElementById('reg_rule_length');
   const ruleMix   = document.getElementById('reg_rule_mix');
   const rulePers  = document.getElementById('reg_rule_personal');
   const ruleMatch = document.getElementById('reg_rule_match');
+
+  let hasAcknowledgedPolicy = false;
+  let isProcessing = false;
 
   function toggle(el, ok){ if(!el) return; el.classList.toggle('ok', !!ok); }
 
@@ -452,6 +678,44 @@ if ($upd = $conn->prepare("UPDATE invites SET accepted_at = COALESCE(accepted_at
     return (okLen && okMix && okPersonal && okMatch);
   }
 
+  function focusFirstIssue(){
+    if (!(pwd?.value || '').length) { pwd?.focus(); return; }
+    if (!/[A-Z]/.test(pwd.value) || !/\d/.test(pwd.value) || !/[^A-Za-z0-9]/.test(pwd.value)) { pwd?.focus(); return; }
+    if ((conf?.value || '') !== (pwd?.value || '')) { conf?.focus(); return; }
+    pwd?.focus();
+  }
+
+  function closeModal(){
+    if (!modal) return;
+    modal.hidden = true;
+    document.body.classList.remove('modal-open');
+  }
+
+  function checkModalScroll(){
+    if (!modalBody || !modalConfirm) return false;
+    const atBottom = (modalBody.scrollHeight - (modalBody.scrollTop + modalBody.clientHeight)) <= 2;
+    if (atBottom) {
+      modalConfirm.disabled = false;
+    }
+    return atBottom;
+  }
+
+  function openModal(){
+    if (!modal) return;
+    hasAcknowledgedPolicy = false;
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+    modalBody?.scrollTo({ top: 0 });
+    if (modalConfirm) {
+      modalConfirm.disabled = true;
+      modalConfirm.textContent = 'Register';
+    }
+    setTimeout(() => {
+      modalBody?.focus();
+      checkModalScroll(); // in case content fits without scrolling
+    }, 20);
+  }
+
   // Live updates
   [first,last,email,pwd,conf].forEach(el => el && el.addEventListener('input', evaluate));
 
@@ -459,12 +723,53 @@ if ($upd = $conn->prepare("UPDATE invites SET accepted_at = COALESCE(accepted_at
   form?.addEventListener('submit', function(e){
     if (!evaluate()){
       e.preventDefault();
-      // Focus the most likely offending field
-      if (!(pwd?.value || '').length) { pwd?.focus(); return; }
-      if (!/[A-Z]/.test(pwd.value) || !/\d/.test(pwd.value) || !/[^A-Za-z0-9]/.test(pwd.value)) { pwd?.focus(); return; }
-      if ((conf?.value || '') !== (pwd?.value || '')) { conf?.focus(); return; }
-      pwd?.focus();
+      focusFirstIssue();
+      return;
     }
+
+    if (!hasAcknowledgedPolicy){
+      e.preventDefault();
+      openModal();
+      return;
+    }
+
+    if (isProcessing){
+      e.preventDefault();
+      return;
+    }
+
+    isProcessing = true;
+    if (submitBtn){
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Processing...';
+    }
+  });
+
+  modalBody?.addEventListener('scroll', checkModalScroll);
+
+  modalCancel?.addEventListener('click', () => {
+    closeModal();
+    if (submitBtn){ submitBtn.focus(); }
+  });
+
+  modal?.addEventListener('click', (ev) => {
+    if (ev.target === modal) {
+      closeModal();
+      if (submitBtn){ submitBtn.focus(); }
+    }
+  });
+
+  modalConfirm?.addEventListener('click', () => {
+    if (modalConfirm.disabled) return;
+    modalConfirm.disabled = true;
+    modalConfirm.textContent = 'Processing...';
+    hasAcknowledgedPolicy = true;
+    closeModal();
+    setTimeout(() => {
+      if (form) {
+        form.requestSubmit();
+      }
+    }, 20);
   });
 
   // initial paint
