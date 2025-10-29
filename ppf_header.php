@@ -270,6 +270,26 @@ if (isset($conn) && $conn instanceof mysqli && function_exists('ppf_log_page_vie
 .ppf-notify__header h3 { margin:0; font-size:16px; font-weight:700; letter-spacing:.01em; }
 .ppf-notify__header p { margin:4px 0 0; font-size:12px; color:color-mix(in srgb, var(--muted) 70%, var(--text) 30%); }
 .ppf-notify__header-actions { display:flex; align-items:center; gap:8px; }
+.ppf-notify__close {
+  display:none;
+  align-items:center;
+  justify-content:center;
+  width:34px;
+  height:34px;
+  border-radius:10px;
+  border:1px solid color-mix(in srgb, var(--card-border) 70%, transparent 30%);
+  background:transparent;
+  color:var(--text);
+  font-size:18px;
+  line-height:1;
+  cursor:pointer;
+}
+.ppf-notify__close:hover,
+.ppf-notify__close:focus-visible {
+  outline:none;
+  border-color:color-mix(in srgb, var(--brand) 55%, transparent 45%);
+  background:color-mix(in srgb, var(--brand) 18%, transparent 82%);
+}
 .ppf-notify__mark-all {
   background:color-mix(in srgb, var(--brand) 12%, transparent 88%);
   border:1px solid color-mix(in srgb, var(--brand) 35%, transparent 65%);
@@ -363,6 +383,25 @@ if (isset($conn) && $conn instanceof mysqli && function_exists('ppf_log_page_vie
 .ppf-notify__footer a { color:var(--brand); text-decoration:none; font-weight:600; }
 .ppf-notify__footer a:hover { text-decoration:underline; }
 .ppf-notify__empty { font-size:13px; color:color-mix(in srgb, var(--muted) 75%, var(--text) 25%); text-align:center; padding:28px 0; }
+
+@media (max-width: 640px) {
+  .ppf-notify { position: static; }
+  .ppf-notify__panel {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    padding: 24px 20px 28px;
+    max-height: none;
+    overflow-y: auto;
+  }
+  .ppf-notify__list { max-height: none; }
+  .ppf-notify__close { display: inline-flex; }
+  .ppf-notify__header { align-items: center; }
+}
 
 .ppf-chip {
   display:flex;align-items:center;gap:10px;
@@ -541,6 +580,7 @@ body.ppf-themed .dash-settings-toggle {
           <div class="ppf-notify__header-actions">
             <button type="button" class="ppf-notify__icon" title="Refresh" aria-label="Refresh" data-notify-refresh>⟳</button>
             <button type="button" class="ppf-notify__mark-all" data-notify-mark-all disabled>Mark all read</button>
+            <button type="button" class="ppf-notify__close" data-notify-close aria-label="Close notifications">×</button>
           </div>
         </div>
         <ul class="ppf-notify__list is-loading" data-notify-list>
@@ -607,6 +647,7 @@ body.ppf-themed .dash-settings-toggle {
   var badgeEl=container.querySelector('[data-notify-badge]');
   var markAllBtn=container.querySelector('[data-notify-mark-all]');
   var refreshBtn=container.querySelector('[data-notify-refresh]');
+  var closeBtn=container.querySelector('[data-notify-close]');
   var csrf=container.getAttribute('data-csrf')||'';
   var bootstrapScript=document.getElementById('ppf-notify-bootstrap');
   var typesScript=document.getElementById('ppf-notify-types');
@@ -653,6 +694,7 @@ body.ppf-themed .dash-settings-toggle {
   if(listEl){ listEl.addEventListener('click', handleActionClick); }
   if(markAllBtn){ markAllBtn.addEventListener('click', function(){ if(markAllBtn.disabled) return; markAllBtn.disabled=true; sendRequest(API_BASE+'/bulk','PATCH',{ scope:'all', operation:'read' }).then(function(res){ if(!res.ok) throw new Error('failed'); return res.json(); }).then(function(json){ if(json){ if(typeof json.unread==='number'){ state.unread=json.unread; } state.items=state.items.map(function(item){ item.is_read=true; return item; }); render(); } }).catch(function(){}).finally(function(){ markAllBtn.disabled=false; }); }); }
   if(refreshBtn){ refreshBtn.addEventListener('click', function(){ fetchList(); }); }
+  if(closeBtn){ closeBtn.addEventListener('click', function(){ closePanel(); }); }
   function startPolling(){ if(pollingTimer) return; pollingTimer=setInterval(function(){ fetchList({ silent:true }); }, 15000); }
   function stopPolling(){ if(pollingTimer){ clearInterval(pollingTimer); pollingTimer=null; } }
   function connectStream(){ if(typeof EventSource==='undefined'){ startPolling(); return; }
