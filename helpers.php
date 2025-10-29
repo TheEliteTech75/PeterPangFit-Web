@@ -1813,6 +1813,91 @@ if (!function_exists('ppf_notifications_catalog')) {
   }
 }
 
+if (!function_exists('ppf_notifications_reassign_rule_key')) {
+  function ppf_notifications_reassign_rule_key(mysqli $conn, int $tenantId, int $userId, int $ruleId, string $oldKey, string $newKey, array $definition): bool {
+    if ($newKey === '' || $oldKey === '' || $ruleId <= 0 || $oldKey === $newKey) {
+      return false;
+    }
+
+    $stmt = $conn->prepare('SELECT channels, metadata, category FROM notification_rules WHERE tenant_id = ? AND user_id = ? AND id = ? LIMIT 1');
+    if (!$stmt) {
+      return false;
+    }
+    $stmt->bind_param('iii', $tenantId, $userId, $ruleId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    if (!$row) {
+      return false;
+    }
+
+    $channels = ppf_notifications_normalize_channels(isset($row['channels']) ? json_decode((string)$row['channels'], true) : null, ['center' => true, 'email' => false]);
+    $metadata = [];
+    if (!empty($row['metadata'])) {
+      $decoded = json_decode((string)$row['metadata'], true);
+      if (is_array($decoded)) {
+        $metadata = $decoded;
+      }
+    }
+
+    $metadata['type_key'] = $newKey;
+    $category = ppf_notifications_valid_category((string)($row['category'] ?? ($definition['category'] ?? 'system')));
+    $metadata['category'] = $category;
+    if (!isset($metadata['channels']) || !is_array($metadata['channels'])) {
+      $metadata['channels'] = $channels;
+    }
+    $metadata['send_email'] = !empty($channels['email']);
+    if (!empty($definition['preconfigured'])) {
+      $metadata['preconfigured'] = true;
+    }
+    if (!empty($definition['immutable'])) {
+      $metadata['immutable'] = true;
+    } elseif (isset($metadata['immutable']) && empty($definition['immutable'])) {
+      unset($metadata['immutable']);
+    }
+
+    $jsonMetadata = json_encode($metadata);
+    if ($jsonMetadata === false) {
+      return false;
+    }
+
+    $stmt = $conn->prepare('UPDATE notification_rules SET type_key = ?, category = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND user_id = ? AND id = ?');
+    if (!$stmt) {
+      return false;
+    }
+    $stmt->bind_param('sssiii', $newKey, $category, $jsonMetadata, $tenantId, $userId, $ruleId);
+    $stmt->execute();
+    $ok = ppf_notifications_stmt_affected_rows($stmt) >= 0;
+    $stmt->close();
+    if (!$ok) {
+      return false;
+    }
+
+    try {
+      $state = ppf_notification_rule_state_get($conn, $tenantId, $userId, $oldKey);
+    } catch (Throwable $e) {
+      $state = null;
+    }
+    if ($state) {
+      ppf_notification_rule_state_put($conn, $tenantId, $userId, $newKey, $state);
+      ppf_notification_rule_state_delete($conn, $tenantId, $userId, $oldKey);
+    }
+
+    try {
+      if ($stmt = $conn->prepare('UPDATE notification_messages SET type_key = ? WHERE tenant_id = ? AND user_id = ? AND type_key = ?')) {
+        $stmt->bind_param('siis', $newKey, $tenantId, $userId, $oldKey);
+        $stmt->execute();
+        $stmt->close();
+      }
+    } catch (Throwable $e) {
+      // Ignore message update failures; rule reassignment succeeded.
+    }
+
+    return true;
+  }
+}
+
 if (!function_exists('ppf_notifications_seed_defaults')) {
   function ppf_notifications_seed_defaults(mysqli $conn, int $tenantId, int $userId): void {
     if ($userId <= 0) {
@@ -1831,7 +1916,8 @@ if (!function_exists('ppf_notifications_seed_defaults')) {
     }
 
     $existing = [];
-    if ($stmt = $conn->prepare('SELECT id, type_key FROM notification_rules WHERE tenant_id = ? AND user_id = ?')) {
+    $existingByTitle = [];
+    if ($stmt = $conn->prepare('SELECT id, type_key, title FROM notification_rules WHERE tenant_id = ? AND user_id = ?')) {
       $stmt->bind_param('ii', $tenantId, $userId);
       $stmt->execute();
       if ($res = $stmt->get_result()) {
@@ -1840,12 +1926,34 @@ if (!function_exists('ppf_notifications_seed_defaults')) {
           if ($key !== '') {
             $existing[$key] = (int)$row['id'];
           }
+          $titleKey = strtolower(trim((string)($row['title'] ?? '')));
+          if ($titleKey !== '') {
+            $existingByTitle[$titleKey] = [
+              'id' => (int)($row['id'] ?? 0),
+              'type_key' => $key,
+            ];
+          }
         }
       }
       $stmt->close();
     }
 
     foreach ($preconfigured as $typeKey => $definition) {
+      if (!isset($existing[$typeKey])) {
+        $titleKey = strtolower(trim((string)($definition['title'] ?? '')));
+        if ($titleKey !== '' && isset($existingByTitle[$titleKey])) {
+          $match = $existingByTitle[$titleKey];
+          $ruleId = (int)($match['id'] ?? 0);
+          $currentKey = (string)($match['type_key'] ?? '');
+          if ($ruleId > 0 && $currentKey !== '' && $currentKey !== $typeKey) {
+            if (ppf_notifications_reassign_rule_key($conn, $tenantId, $userId, $ruleId, $currentKey, $typeKey, $definition)) {
+              unset($existing[$currentKey]);
+              $existing[$typeKey] = $ruleId;
+              continue;
+            }
+          }
+        }
+      }
       if (isset($existing[$typeKey])) {
         continue;
       }
