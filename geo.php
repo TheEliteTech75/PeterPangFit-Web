@@ -156,6 +156,7 @@ if (!function_exists('ppf_geo_with_maxmind')) {
     if (!ppf_geo_is_public_ip($ip)) return ['city'=>'', 'region'=>''];
     $candidates = [
       __DIR__ . '/data/GeoLite2-City.mmdb',
+      '/var/www/html/peterpangfitness/data/GeoLite2-City.mmdb',
       __DIR__ . '/GeoLite2-City.mmdb',
     ];
     $linuxRoot = defined('PPF_LINUX_APP_ROOT') ? rtrim(PPF_LINUX_APP_ROOT, '/') : null;

@@ -426,6 +426,9 @@ function b64urlToUint8Array(b64url) {
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
+function b64urlToArrayBuffer(b64url) {
+  return b64urlToUint8Array(b64url).buffer;
+}
 function bytesToB64(bytes) {
   let s = '';
   for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
