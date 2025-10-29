@@ -216,8 +216,15 @@ if (!function_exists('ppf_notification_rules_update_channels')) {
       return null;
     }
 
-    $channels = is_array($rule['channels']) ? $rule['channels'] : [];
-    $channels = array_merge(['center' => true, 'email' => false], $channels);
+    $channels = ['center' => false, 'email' => false];
+    if (is_array($rule['channels'])) {
+      foreach ($rule['channels'] as $key => $value) {
+        if (!in_array($key, ['center', 'email'], true)) {
+          continue;
+        }
+        $channels[$key] = (bool)$value;
+      }
+    }
     foreach ($channelUpdates as $key => $value) {
       if (!in_array($key, ['center', 'email'], true)) {
         continue;
