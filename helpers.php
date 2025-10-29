@@ -79,6 +79,181 @@ if (!function_exists('ppf_notification_rule_transform_row')) {
   }
 }
 
+if (!function_exists('ppf_notification_rule_apply_channels_override')) {
+  function ppf_notification_rule_apply_channels_override(array $rule, array $channels, ?bool $forceMuted = null): array {
+    $normalized = ppf_notifications_normalize_channels($channels, ['center' => true, 'email' => false]);
+    $rule['channels'] = $normalized;
+    $rule['send_email'] = !empty($normalized['email']);
+    $metadata = [];
+    if (!empty($rule['metadata']) && is_array($rule['metadata'])) {
+      $metadata = $rule['metadata'];
+    }
+    $metadata['channels'] = $normalized;
+    $metadata['send_email'] = !empty($normalized['email']);
+    $muted = $forceMuted;
+    if ($muted === null) {
+      $muted = empty($normalized['center']) && empty($normalized['email']);
+    }
+    if ($muted) {
+      $metadata['muted'] = true;
+    } elseif (isset($metadata['muted'])) {
+      unset($metadata['muted']);
+    }
+    $rule['metadata'] = $metadata;
+    return $rule;
+  }
+}
+
+if (!function_exists('ppf_notification_rule_state_map')) {
+  function ppf_notification_rule_state_map(mysqli $conn, int $tenantId, int $userId): array {
+    ppf_notifications_bootstrap($conn);
+    $stmt = $conn->prepare('SELECT type_key, channels FROM notification_rule_states WHERE tenant_id = ? AND user_id = ?');
+    if (!$stmt) {
+      return [];
+    }
+    $stmt->bind_param('ii', $tenantId, $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $states = [];
+    if ($res) {
+      while ($row = $res->fetch_assoc()) {
+        $key = (string)($row['type_key'] ?? '');
+        if ($key === '') {
+          continue;
+        }
+        $decoded = [];
+        if (!empty($row['channels'])) {
+          $parsed = json_decode((string)$row['channels'], true);
+          if (is_array($parsed)) {
+            $decoded = $parsed;
+          }
+        }
+        $states[$key] = ppf_notifications_normalize_channels($decoded, ['center' => true, 'email' => false]);
+      }
+      $res->close();
+    }
+    $stmt->close();
+    return $states;
+  }
+}
+
+if (!function_exists('ppf_notification_rule_state_get')) {
+  function ppf_notification_rule_state_get(mysqli $conn, int $tenantId, int $userId, string $typeKey): ?array {
+    ppf_notifications_bootstrap($conn);
+    $stmt = $conn->prepare('SELECT channels FROM notification_rule_states WHERE tenant_id = ? AND user_id = ? AND type_key = ? LIMIT 1');
+    if (!$stmt) {
+      return null;
+    }
+    $stmt->bind_param('iis', $tenantId, $userId, $typeKey);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    if (!$row || empty($row['channels'])) {
+      return null;
+    }
+    $decoded = json_decode((string)$row['channels'], true);
+    if (!is_array($decoded)) {
+      return null;
+    }
+    return ppf_notifications_normalize_channels($decoded, ['center' => true, 'email' => false]);
+  }
+}
+
+if (!function_exists('ppf_notification_rule_state_put')) {
+  function ppf_notification_rule_state_put(mysqli $conn, int $tenantId, int $userId, string $typeKey, array $channels): bool {
+    ppf_notifications_bootstrap($conn);
+    $typeKey = trim($typeKey);
+    if ($typeKey === '') {
+      return false;
+    }
+    $normalized = ppf_notifications_normalize_channels($channels, ['center' => true, 'email' => false]);
+    $jsonChannels = json_encode($normalized);
+    if ($jsonChannels === false) {
+      return false;
+    }
+    $flag = !empty($normalized['email']) ? 1 : 0;
+    $stmt = $conn->prepare('INSERT INTO notification_rule_states (tenant_id, user_id, type_key, channels, send_email) VALUES (?,?,?,?,?)
+      ON DUPLICATE KEY UPDATE channels = VALUES(channels), send_email = VALUES(send_email), updated_at = CURRENT_TIMESTAMP');
+    if (!$stmt) {
+      return false;
+    }
+    $stmt->bind_param('iissi', $tenantId, $userId, $typeKey, $jsonChannels, $flag);
+    $stmt->execute();
+    $ok = ppf_notifications_stmt_affected_rows($stmt) >= 0;
+    $stmt->close();
+    return $ok;
+  }
+}
+
+if (!function_exists('ppf_notification_rule_state_delete')) {
+  function ppf_notification_rule_state_delete(mysqli $conn, int $tenantId, int $userId, string $typeKey): void {
+    ppf_notifications_bootstrap($conn);
+    $typeKey = trim($typeKey);
+    if ($typeKey === '') {
+      return;
+    }
+    if ($stmt = $conn->prepare('DELETE FROM notification_rule_states WHERE tenant_id = ? AND user_id = ? AND type_key = ?')) {
+      $stmt->bind_param('iis', $tenantId, $userId, $typeKey);
+      $stmt->execute();
+      $stmt->close();
+    }
+  }
+}
+
+if (!function_exists('ppf_notification_rule_states_apply_list')) {
+  function ppf_notification_rule_states_apply_list(mysqli $conn, int $tenantId, int $userId, array $rules): array {
+    if (!$rules) {
+      return $rules;
+    }
+    $states = ppf_notification_rule_state_map($conn, $tenantId, $userId);
+    if (!$states) {
+      return $rules;
+    }
+    $seen = [];
+    foreach ($rules as $idx => $rule) {
+      $typeKey = (string)($rule['type_key'] ?? '');
+      if ($typeKey === '') {
+        continue;
+      }
+      if (!empty($rule['immutable']) && isset($states[$typeKey])) {
+        ppf_notification_rule_state_delete($conn, $tenantId, $userId, $typeKey);
+        unset($states[$typeKey]);
+        continue;
+      }
+      if (isset($states[$typeKey])) {
+        $rules[$idx] = ppf_notification_rule_apply_channels_override($rule, $states[$typeKey]);
+        $seen[$typeKey] = true;
+      }
+    }
+    if ($states) {
+      foreach ($states as $typeKey => $_) {
+        if (!isset($seen[$typeKey])) {
+          ppf_notification_rule_state_delete($conn, $tenantId, $userId, (string)$typeKey);
+        }
+      }
+    }
+    return $rules;
+  }
+}
+
+if (!function_exists('ppf_notification_rule_state_apply_single')) {
+  function ppf_notification_rule_state_apply_single(mysqli $conn, int $tenantId, int $userId, array $rule): array {
+    $typeKey = (string)($rule['type_key'] ?? '');
+    if ($typeKey === '' || !empty($rule['immutable'])) {
+      if ($typeKey !== '' && !empty($rule['immutable'])) {
+        ppf_notification_rule_state_delete($conn, $tenantId, $userId, $typeKey);
+      }
+      return $rule;
+    }
+    $state = ppf_notification_rule_state_get($conn, $tenantId, $userId, $typeKey);
+    if (!$state) {
+      return $rule;
+    }
+    return ppf_notification_rule_apply_channels_override($rule, $state);
+  }
+}
+
 if (!function_exists('ppf_notification_rules_list')) {
   function ppf_notification_rules_list(mysqli $conn, int $tenantId, int $userId): array {
     ppf_notifications_bootstrap($conn);
@@ -95,7 +270,7 @@ if (!function_exists('ppf_notification_rules_list')) {
       $items[] = ppf_notification_rule_transform_row($row);
     }
     $stmt->close();
-    return $items;
+    return ppf_notification_rule_states_apply_list($conn, $tenantId, $userId, $items);
   }
 }
 
@@ -120,7 +295,11 @@ if (!function_exists('ppf_notification_rules_get')) {
     $res = $stmt->get_result();
     $row = $res ? $res->fetch_assoc() : null;
     $stmt->close();
-    return $row ? ppf_notification_rule_transform_row($row) : null;
+    if (!$row) {
+      return null;
+    }
+    $rule = ppf_notification_rule_transform_row($row);
+    return ppf_notification_rule_state_apply_single($conn, $tenantId, $userId, $rule);
   }
 }
 
@@ -136,7 +315,11 @@ if (!function_exists('ppf_notification_rules_get_by_key')) {
     $res = $stmt->get_result();
     $row = $res ? $res->fetch_assoc() : null;
     $stmt->close();
-    return $row ? ppf_notification_rule_transform_row($row) : null;
+    if (!$row) {
+      return null;
+    }
+    $rule = ppf_notification_rule_transform_row($row);
+    return ppf_notification_rule_state_apply_single($conn, $tenantId, $userId, $rule);
   }
 }
 
@@ -198,7 +381,11 @@ if (!function_exists('ppf_notification_rules_save')) {
       $stmt->execute();
       $ok = ppf_notifications_stmt_affected_rows($stmt) >= 0;
       $stmt->close();
-      return $ok ? $ruleId : null;
+      if ($ok) {
+        ppf_notification_rule_state_put($conn, $tenantId, $userId, $typeKey, $channels);
+        return $ruleId;
+      }
+      return null;
     }
 
     $stmt = $conn->prepare('INSERT INTO notification_rules (tenant_id, user_id, type_key, title, body, category, channels, send_email, priority, metadata) VALUES (?,?,?,?,?,?,?,?,?,?)');
@@ -210,7 +397,15 @@ if (!function_exists('ppf_notification_rules_save')) {
     $stmt->execute();
     $id = ppf_notifications_stmt_insert_id($stmt);
     $stmt->close();
-    return $id > 0 ? $id : null;
+    if ($id > 0) {
+      if (empty($metadata['immutable'])) {
+        ppf_notification_rule_state_put($conn, $tenantId, $userId, $typeKey, $channels);
+      } else {
+        ppf_notification_rule_state_delete($conn, $tenantId, $userId, $typeKey);
+      }
+      return $id;
+    }
+    return null;
   }
 }
 
@@ -228,7 +423,11 @@ if (!function_exists('ppf_notification_rules_delete')) {
     $stmt->execute();
     $rows = ppf_notifications_stmt_affected_rows($stmt);
     $stmt->close();
-    return $rows > 0;
+    if ($rows > 0) {
+      ppf_notification_rule_state_delete($conn, $tenantId, $userId, (string)$rule['type_key']);
+      return true;
+    }
+    return false;
   }
 }
 
@@ -267,7 +466,11 @@ if (!function_exists('ppf_notification_rules_update_channels')) {
     $ok = ppf_notifications_stmt_affected_rows($stmt) >= 0;
     $stmt->close();
 
-    return $ok ? ppf_notification_rules_get($conn, $tenantId, $userId, $ruleId) : null;
+    if ($ok) {
+      ppf_notification_rule_state_put($conn, $tenantId, $userId, (string)$rule['type_key'], $channels);
+      return ppf_notification_rules_get($conn, $tenantId, $userId, $ruleId);
+    }
+    return null;
   }
 }
 
@@ -705,6 +908,19 @@ if (!function_exists('ppf_notifications_bootstrap')) {
         if (!column_exists($conn, 'notification_messages', 'metadata')) {
           @$conn->query("ALTER TABLE notification_messages ADD COLUMN metadata $jsonNullable AFTER archived_at");
         }
+      }
+
+      if (!table_exists($conn, 'notification_rule_states')) {
+        @$conn->query("CREATE TABLE notification_rule_states (
+          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          tenant_id BIGINT UNSIGNED NOT NULL,
+          user_id BIGINT UNSIGNED NOT NULL,
+          type_key VARCHAR(191) NOT NULL,
+          channels $jsonNotNull,
+          send_email TINYINT(1) NOT NULL DEFAULT 0,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_notification_rule_states_user (tenant_id, user_id, type_key)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
       }
 
       if (column_exists($conn, 'notification_rules', 'is_read')) {
