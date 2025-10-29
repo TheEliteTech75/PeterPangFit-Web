@@ -154,7 +154,9 @@ if (!function_exists('ppf_geo_with_maxmind')) {
     if (!ppf_geo_is_public_ip($ip)) return ['city'=>'', 'region'=>''];
     $mmdb = ppf_geo_mmdb_find([
       __DIR__ . '/data/GeoLite2-City.mmdb',
+      '/var/www/html/peterpangfitness/data/GeoLite2-City.mmdb',
       __DIR__ . '/GeoLite2-City.mmdb',
+      '/var/www/html/peterpangfitness/GeoLite2-City.mmdb',
       'C:\\data\\GeoLite2-City.mmdb',
     ]);
     if (!$mmdb) return ['city'=>'', 'region'=>''];

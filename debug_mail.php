@@ -9,6 +9,24 @@ error_reporting(E_ALL);
 
 echo "PHP reachable.\n";
 
+$phpIniLoaded = php_ini_loaded_file();
+$phpIniHint = '/etc/php/8.4/apache2/php.ini';
+if ($phpIniLoaded) {
+  $ok = @is_readable($phpIniLoaded);
+  echo 'php.ini: ' . $phpIniLoaded . ($ok ? " [OK]\n" : " [NOT READABLE]\n");
+} else {
+  echo "php.ini: [not reported]" . "\n";
+}
+if (!$phpIniLoaded || !@is_readable($phpIniLoaded)) {
+  $hintReadable = @is_readable($phpIniHint);
+  echo 'Hint: Ubuntu Apache builds keep php.ini at ' . $phpIniHint
+     . ($hintReadable ? " [OK]\n" : " [MISSING]\n");
+}
+$scanned = php_ini_scanned_files();
+if ($scanned) {
+  echo 'Additional INI files: ' . $scanned . "\n";
+}
+
 // Check presence of config + sender
 $cfg = __DIR__ . '/config.mail.php';
 $sender = __DIR__ . '/send_email.php';

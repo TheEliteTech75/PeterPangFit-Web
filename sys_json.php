@@ -213,11 +213,30 @@ function read_sys_stats_snapshot(): array {
   $cpu_pct = null; $ram_used_pct = null; $disk_used_pct = null;
   $rx = null; $tx = null;
 
+  $phpIniLoaded = (string) (php_ini_loaded_file() ?: '');
+  $phpIniHint = '/etc/php/8.4/apache2/php.ini';
+  $phpIniPath = $phpIniLoaded !== '' ? $phpIniLoaded : $phpIniHint;
+  $phpIniReadable = false;
+  $phpIniCandidates = array_values(array_unique(array_filter([
+    $phpIniLoaded !== '' ? $phpIniLoaded : null,
+    $phpIniHint,
+  ])));
+  foreach ($phpIniCandidates as $candidate) {
+    if ($candidate && @is_readable($candidate)) {
+      $phpIniPath = $candidate;
+      $phpIniReadable = true;
+      break;
+    }
+  }
+
   // Disk
   if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
     $disk_total = @disk_total_space('C:'); $disk_free = @disk_free_space('C:');
   } else {
-    $disk_total = @disk_total_space('/');  $disk_free = @disk_free_space('/');
+    $linuxRoot = '/var/www/html/peterpangfitness/';
+    if (!is_dir($linuxRoot)) $linuxRoot = __DIR__;
+    $disk_total = @disk_total_space($linuxRoot);
+    $disk_free  = @disk_free_space($linuxRoot);
   }
   if ($disk_total && $disk_total > 0 && $disk_free !== false) {
     $disk_used_pct = max(0, min(100, round((1 - ($disk_free / $disk_total)) * 100)));
@@ -327,6 +346,9 @@ function read_sys_stats_snapshot(): array {
     'cpu_pct' => $cpu_pct,
     'ram_used_pct' => $ram_used_pct,
     'disk_used_pct' => $disk_used_pct,
+    'php_ini_path' => $phpIniPath,
+    'php_ini_readable' => $phpIniReadable,
+    'php_ini_hint' => $phpIniHint,
     'net' => ['rx_bytes' => $rx, 'tx_bytes' => $tx],
     'ts'  => microtime(true)
   ];

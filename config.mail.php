@@ -21,9 +21,12 @@ define('MAIL_FROM_NAME', 'Peter Pang Fitness');
 define('MAIL_SECURE', '');
 define('MAIL_AUTH', true);
 
-// Absolute paths for PHPMailer on Windows (we’ll try these in order)
-// Absolute paths for PHPMailer on Windows (we’ll try these in order)
-define('PHPMailer_HINTS', serialize([
-    'C:\\php\\src\\',             // e.g., C:\php\src\Exception.php
-    'C:\\php\\PHPMailer\\src\\',  // e.g., C:\php\PHPMailer\src\Exception.php
-]));
+// Absolute paths for PHPMailer if Composer autoload is unavailable (Linux + Windows)
+define('PHPMailer_HINTS', json_encode([
+    __DIR__ . '/vendor/phpmailer/phpmailer/src/',   // default Composer install
+    __DIR__ . '/PHPMailer/src/',                    // bundled library fallback
+    '/var/www/html/peterpangfitness/vendor/phpmailer/phpmailer/src/',
+    '/var/www/html/peterpangfitness/PHPMailer/src/',
+    'C:\\php\\src\\',                          // legacy Windows path
+    'C:\\php\\PHPMailer\\src\\',             // legacy Windows path
+], JSON_UNESCAPED_SLASHES));
