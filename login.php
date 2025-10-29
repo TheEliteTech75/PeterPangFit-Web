@@ -333,6 +333,68 @@ $forceCaptcha = !empty($_SESSION['force_captcha']);
         padding: 13px;
       }
     }
+
+    .cookie-consent {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      width: min(520px, calc(100% - 32px));
+      background: rgba(9, 14, 28, 0.94);
+      border: 1px solid rgba(148, 163, 184, 0.26);
+      border-radius: 18px;
+      padding: 18px 22px;
+      box-shadow: 0 24px 50px rgba(2, 6, 23, 0.55);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      color: var(--text);
+      z-index: 1200;
+      transition: transform 0.3s ease, opacity 0.3s ease, visibility 0.3s ease;
+    }
+
+    .cookie-consent p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .cookie-consent button {
+      align-self: flex-end;
+      padding: 10px 22px;
+      border-radius: 999px;
+      border: none;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      color: #02131f;
+      box-shadow: 0 16px 40px rgba(56, 189, 248, 0.32);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .cookie-consent button:hover,
+    .cookie-consent button:focus {
+      transform: translateY(-1px);
+      box-shadow: 0 22px 50px rgba(56, 189, 248, 0.35);
+    }
+
+    .cookie-consent.is-hidden {
+      opacity: 0;
+      visibility: hidden;
+      transform: translate(-50%, 24px);
+      pointer-events: none;
+    }
+
+    @media (max-width: 600px) {
+      .cookie-consent {
+        padding: 16px 18px;
+        gap: 8px;
+      }
+
+      .cookie-consent button {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>
@@ -409,6 +471,11 @@ $forceCaptcha = !empty($_SESSION['force_captcha']);
     </form>
   </div>
 </main>
+
+<div class="cookie-consent" role="dialog" aria-live="polite" aria-label="Cookie consent">
+  <p><strong>Cookies help keep your session secure.</strong> We use essential session cookies to remember your login and protect your account.</p>
+  <button type="button" data-consent-dismiss>OK</button>
+</div>
 
 <script>
 // ===== Helpers =====
@@ -504,6 +571,31 @@ document.getElementById('btn-passkey')?.addEventListener('click', async ()=>{
     $err.style.display = 'block';
   }
 });
+
+// ===== Cookie consent banner =====
+(function () {
+  const storageKey = 'ppf-cookie-consent';
+  const banner = document.querySelector('.cookie-consent');
+  if (!banner) return;
+  const dismissButton = banner.querySelector('[data-consent-dismiss]');
+  if (!dismissButton) return;
+  try {
+    if (sessionStorage.getItem(storageKey) === 'accepted') {
+      banner.classList.add('is-hidden');
+      return;
+    }
+  } catch (err) {
+    // sessionStorage may be unavailable; fail gracefully.
+  }
+  dismissButton.addEventListener('click', function () {
+    banner.classList.add('is-hidden');
+    try {
+      sessionStorage.setItem(storageKey, 'accepted');
+    } catch (err) {
+      // ignore storage failures
+    }
+  });
+})();
 </script>
 </body>
 </html>
