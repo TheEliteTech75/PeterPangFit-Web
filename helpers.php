@@ -131,10 +131,14 @@ if (!function_exists('ppf_notification_rules_save')) {
     $sendEmail = !empty($data['send_email']);
     $channels = ['center' => true, 'email' => $sendEmail];
     if (!empty($data['channels']) && is_array($data['channels'])) {
-      $channels = array_merge($channels, array_map('boolval', $data['channels']));
-      $channels['center'] = true;
-      $channels['email'] = !empty($channels['email']);
+      foreach ($data['channels'] as $channel => $enabled) {
+        if (!in_array($channel, ['center', 'email'], true)) {
+          continue;
+        }
+        $channels[$channel] = (bool)$enabled;
+      }
     }
+    $sendEmail = !empty($channels['email']);
     if ($title === '' || $typeKey === '') {
       return null;
     }
