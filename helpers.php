@@ -1917,14 +1917,29 @@ if (!function_exists('ppf_notifications_seed_defaults')) {
 
     $existing = [];
     $existingByTitle = [];
+    $existingMeta = [];
     if ($stmt = $conn->prepare('SELECT id, type_key, title FROM notification_rules WHERE tenant_id = ? AND user_id = ?')) {
       $stmt->bind_param('ii', $tenantId, $userId);
       $stmt->execute();
       if ($res = $stmt->get_result()) {
         while ($row = $res->fetch_assoc()) {
+          $id = (int)($row['id'] ?? 0);
           $key = (string)($row['type_key'] ?? '');
-          if ($key !== '') {
-            $existing[$key] = (int)$row['id'];
+          if ($key !== '' && $id > 0) {
+            $existing[$key] = $id;
+          }
+          $titleKey = strtolower(trim((string)($row['title'] ?? '')));
+          if ($titleKey !== '') {
+            $existingByTitle[$titleKey] = [
+              'id' => $id,
+              'type_key' => $key,
+            ];
+          }
+          if ($id > 0) {
+            $existingMeta[$id] = [
+              'type_key' => $key,
+              'title_key' => $titleKey,
+            ];
           }
           $titleKey = strtolower(trim((string)($row['title'] ?? '')));
           if ($titleKey !== '') {
@@ -1939,16 +1954,55 @@ if (!function_exists('ppf_notifications_seed_defaults')) {
     }
 
     foreach ($preconfigured as $typeKey => $definition) {
+      $expectedTitleKey = strtolower(trim((string)($definition['title'] ?? '')));
+      if (isset($existing[$typeKey])) {
+        $ruleId = (int)$existing[$typeKey];
+        $currentMeta = $existingMeta[$ruleId] ?? null;
+        $currentTitleKey = '';
+        if (is_array($currentMeta) && isset($currentMeta['title_key'])) {
+          $currentTitleKey = (string)$currentMeta['title_key'];
+        }
+        if ($expectedTitleKey !== '' && $currentTitleKey !== '' && $currentTitleKey !== $expectedTitleKey) {
+          $match = $existingByTitle[$expectedTitleKey] ?? null;
+          $matchId = (int)($match['id'] ?? 0);
+          $currentKey = (string)($match['type_key'] ?? '');
+          if ($matchId > 0 && $currentKey !== '' && $currentKey !== $typeKey) {
+            if (ppf_notifications_reassign_rule_key($conn, $tenantId, $userId, $matchId, $currentKey, $typeKey, $definition)) {
+              unset($existing[$currentKey]);
+              $existing[$typeKey] = $matchId;
+              $existingMeta[$matchId] = [
+                'type_key' => $typeKey,
+                'title_key' => $expectedTitleKey,
+              ];
+              $existingByTitle[$expectedTitleKey] = [
+                'id' => $matchId,
+                'type_key' => $typeKey,
+              ];
+              continue;
+            }
+          }
+          unset($existing[$typeKey]);
+        } else {
+          continue;
+        }
+      }
       if (!isset($existing[$typeKey])) {
-        $titleKey = strtolower(trim((string)($definition['title'] ?? '')));
-        if ($titleKey !== '' && isset($existingByTitle[$titleKey])) {
-          $match = $existingByTitle[$titleKey];
+        if ($expectedTitleKey !== '' && isset($existingByTitle[$expectedTitleKey])) {
+          $match = $existingByTitle[$expectedTitleKey];
           $ruleId = (int)($match['id'] ?? 0);
           $currentKey = (string)($match['type_key'] ?? '');
           if ($ruleId > 0 && $currentKey !== '' && $currentKey !== $typeKey) {
             if (ppf_notifications_reassign_rule_key($conn, $tenantId, $userId, $ruleId, $currentKey, $typeKey, $definition)) {
               unset($existing[$currentKey]);
               $existing[$typeKey] = $ruleId;
+              $existingMeta[$ruleId] = [
+                'type_key' => $typeKey,
+                'title_key' => $expectedTitleKey,
+              ];
+              $existingByTitle[$expectedTitleKey] = [
+                'id' => $ruleId,
+                'type_key' => $typeKey,
+              ];
               continue;
             }
           }
