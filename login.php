@@ -457,11 +457,11 @@ document.getElementById('btn-passkey')?.addEventListener('click', async ()=>{
     if (!begin.ok) throw new Error(begin.error || 'init failed');
 
     const pubKey = begin.publicKey;
-    pubKey.challenge = b64urlToArrayBuffer(pubKey.challenge);
+    pubKey.challenge = b64urlToUint8Array(pubKey.challenge);
     if (Array.isArray(pubKey.allowCredentials)) {
       pubKey.allowCredentials = pubKey.allowCredentials.map(c => ({
         type: c.type || 'public-key',
-        id: b64urlToArrayBuffer(c.id),
+        id: b64urlToUint8Array(c.id),
         transports: Array.isArray(c.transports) && c.transports.length ? c.transports : ['internal','hybrid','usb','nfc','ble']
       }));
     }
