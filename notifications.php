@@ -623,6 +623,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       align-items: center;
       gap: 10px;
     }
+    .channel-toggle-group.is-fixed {
+      margin-left: auto;
+      justify-content: flex-end;
+    }
     .channel-toggle {
       display: inline-flex;
       align-items: center;
@@ -1284,11 +1288,13 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           var titleEl = document.createElement('h3');
           titleEl.textContent = rule.title || 'Notification rule';
           top.appendChild(titleEl);
-          var badge = document.createElement('span');
-          badge.className = 'badge';
-          badge.dataset.type = rule.immutable ? 'system' : 'info';
-          badge.textContent = rule.immutable ? 'Security' : 'Rule';
-          top.appendChild(badge);
+          if (!rule.immutable) {
+            var badge = document.createElement('span');
+            badge.className = 'badge';
+            badge.dataset.type = 'info';
+            badge.textContent = 'Rule';
+            top.appendChild(badge);
+          }
           card.appendChild(top);
           if (rule.body) {
             var body = document.createElement('div');
@@ -1319,6 +1325,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
           var toggles = document.createElement('div');
           toggles.className = 'channel-toggle-group';
+          if (isImmutable) {
+            toggles.classList.add('is-fixed');
+          }
           var ruleId = (rule && rule.id != null && rule.id !== '') ? String(rule.id) : '';
           var ruleTypeKey = ruleKey(rule);
           var isImmutable = !!(rule && rule.immutable);
@@ -1352,13 +1361,6 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           appendToggle('Portal', 'center', channelState.center);
           appendToggle('Email', 'email', channelState.email);
           metaLine.appendChild(toggles);
-
-          if (isImmutable) {
-            var lock = document.createElement('span');
-            lock.className = 'meta-pill';
-            lock.textContent = 'Security policy';
-            metaLine.appendChild(lock);
-          }
 
           card.appendChild(metaLine);
           list.appendChild(card);

@@ -1941,13 +1941,6 @@ if (!function_exists('ppf_notifications_seed_defaults')) {
               'title_key' => $titleKey,
             ];
           }
-          $titleKey = strtolower(trim((string)($row['title'] ?? '')));
-          if ($titleKey !== '') {
-            $existingByTitle[$titleKey] = [
-              'id' => (int)($row['id'] ?? 0),
-              'type_key' => $key,
-            ];
-          }
         }
       }
       $stmt->close();
