@@ -31,11 +31,13 @@ function _ppf_bootstrap_phpmailer(): bool {
     $tried = [];
 
     // 1) Composer autoloads in common locations
-    $composer = [
+    $composer = array_values(array_unique(array_filter([
         __DIR__ . '/vendor/autoload.php',
         dirname(__DIR__) . '/vendor/autoload.php',
-        'C:/inetpub/wwwroot/vendor/autoload.php', // common IIS global
-    ];
+        defined('PPF_LINUX_APP_ROOT') ? rtrim(PPF_LINUX_APP_ROOT, '/') . '/vendor/autoload.php' : null,
+        '/var/www/html/peterpangfitness/vendor/autoload.php',
+        'C:/inetpub/wwwroot/vendor/autoload.php', // legacy IIS global
+    ])));
     foreach ($composer as $c) {
         if (_ppf_try_require($c, $tried) && class_exists('PHPMailer\\PHPMailer\\PHPMailer')) return true;
     }

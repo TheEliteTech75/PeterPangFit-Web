@@ -414,13 +414,27 @@ $forceCaptcha = !empty($_SESSION['force_captcha']);
 const $err = document.getElementById('passkey-error');
 const $email = document.getElementById('login-email');
 
-function b64urlToBytes(b64url) {
-  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/')
-                    .padEnd(Math.ceil(b64url.length / 4) * 4, '=');
-  const bin = atob(b64);
+function normalizeB64url(input) {
+  const safe = (input || '').replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = safe.length % 4;
+  return pad ? safe + '='.repeat(4 - pad) : safe;
+}
+function b64urlToUint8Array(b64url) {
+  if (typeof b64url !== 'string' || b64url === '') {
+    throw new Error('Missing credential data.');
+  }
+  const normalized = normalizeB64url(b64url);
+  const bin = atob(normalized);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
+}
+function requireB64urlBytes(label, value) {
+  try {
+    return b64urlToUint8Array(value);
+  } catch (err) {
+    throw new Error(`Invalid ${label}.`);
+  }
 }
 function bytesToB64(bytes) {
   let s = '';
@@ -437,6 +451,9 @@ document.getElementById('btn-passkey')?.addEventListener('click', async ()=>{
   try{
     const emailVal = ($email.value || '').trim().toLowerCase();
     if (!emailVal) throw new Error('Please enter your email address first.');
+    if (typeof window.PublicKeyCredential === 'undefined') {
+      throw new Error('Passkeys are not supported in this browser.');
+    }
 
     const beginRes = await fetch('passkey_begin_login.php', {
       method:'POST',
@@ -446,17 +463,19 @@ document.getElementById('btn-passkey')?.addEventListener('click', async ()=>{
     const begin = await beginRes.json();
     if (!begin.ok) throw new Error(begin.error || 'init failed');
 
-    const pubKey = begin.publicKey;
-    pubKey.challenge = b64urlToBytes(pubKey.challenge);
-    if (Array.isArray(pubKey.allowCredentials)) {
-      pubKey.allowCredentials = pubKey.allowCredentials.map(c => ({
-        type: c.type || 'public-key',
-        id: b64urlToBytes(c.id),
-        transports: c.transports || ['internal','hybrid','usb','nfc','ble']
-      }));
+    const pubKey = begin.publicKey || {};
+    pubKey.challenge = requireB64urlBytes('passkey challenge', pubKey.challenge);
+    if (Array.isArray(pubKey.allowCredentials) && pubKey.allowCredentials.length) {
+      pubKey.allowCredentials = pubKey.allowCredentials.map((c) => {
+        const copy = { ...c };
+        copy.type = copy.type || 'public-key';
+        copy.id = requireB64urlBytes('credential id', copy.id);
+        if (!Array.isArray(copy.transports) || copy.transports.length === 0) {
+          copy.transports = ['internal', 'hybrid', 'usb', 'nfc', 'ble'];
+        }
+        return copy;
+      });
     }
-
-    pubKey.authenticatorSelection = { authenticatorAttachment: 'platform' };
 
     const cred = await navigator.credentials.get({ publicKey: pubKey });
     if (!cred) throw new Error('No credential selected.');
