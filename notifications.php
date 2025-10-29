@@ -855,28 +855,40 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     function withPreconfiguredRules(rules) {
       var list = Array.isArray(rules) ? rules.slice() : [];
-      var seen = {};
-      list = list.map(function(rule){
+      var keyed = Object.create(null);
+      var anonymous = [];
+
+      list.forEach(function(rule){
+        if (!rule) { return; }
         var key = ruleKey(rule);
+        var current = rule;
+        if (key && preconfiguredRuleMap[key]) {
+          var fallback = preconfiguredRuleMap[key];
+          var merged = Object.assign({}, fallback, rule);
+          var fallbackMeta = fallback.metadata || {};
+          var ruleMeta = rule.metadata || {};
+          merged.metadata = Object.assign({}, fallbackMeta, ruleMeta);
+          current = merged;
+        }
         if (key) {
-          seen[key] = true;
-          if (preconfiguredRuleMap[key]) {
-            var fallback = preconfiguredRuleMap[key];
-            var merged = Object.assign({}, fallback, rule);
-            var fallbackMeta = fallback.metadata || {};
-            var ruleMeta = rule.metadata || {};
-            merged.metadata = Object.assign({}, fallbackMeta, ruleMeta);
-            return merged;
-          }
+          keyed[key] = current;
+        } else {
+          anonymous.push(current);
         }
-        return rule;
       });
+
       Object.keys(preconfiguredRuleMap).forEach(function(key){
-        if (!seen[key]) {
-          list.push(cloneRule(preconfiguredRuleMap[key]));
+        if (!Object.prototype.hasOwnProperty.call(keyed, key)) {
+          keyed[key] = cloneRule(preconfiguredRuleMap[key]);
         }
       });
-      return sortRuleList(list);
+
+      var deduped = anonymous.slice();
+      Object.keys(keyed).forEach(function(key){
+        deduped.push(keyed[key]);
+      });
+
+      return sortRuleList(deduped);
     }
 
     var state = {
@@ -1457,20 +1469,23 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       var nextRules = state.rules.slice();
       var targetId = (rule.id !== undefined && rule.id !== null && rule.id !== '') ? String(rule.id) : null;
       var idx = -1;
+      var key = ruleKey(rule);
       if (targetId !== null) {
         idx = nextRules.findIndex(function(existing){
           return existing && existing.id !== undefined && existing.id !== null && String(existing.id) === targetId;
         });
       }
-      if (idx === -1) {
-        var key = ruleKey(rule);
-        if (key) {
-          idx = nextRules.findIndex(function(existing){
-            return ruleKey(existing) === key;
-          });
-        }
+      if (idx === -1 && key) {
+        idx = nextRules.findIndex(function(existing){
+          return ruleKey(existing) === key;
+        });
       }
       if (idx === -1) {
+        if (key) {
+          nextRules = nextRules.filter(function(existing){
+            return ruleKey(existing) !== key;
+          });
+        }
         nextRules.push(rule);
       } else {
         nextRules[idx] = rule;
