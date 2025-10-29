@@ -161,7 +161,7 @@ if (!function_exists('ppf_register_login_failure')) {
             : $until;
           ppf_notifications_record($conn, $userId, [
             'type_key' => 'security.account_locked',
-            'message' => 'Your account was locked until ' . $untilLabel . '.',
+            'message' => 'Security Alert! Your account has been locked out until ' . $untilLabel . '.',
             'send_email' => true,
           ]);
         } else {
