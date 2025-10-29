@@ -1,6 +1,8 @@
 <?php
 // helpers.php — shared helpers for PeterPangFit
 
+require_once __DIR__ . '/ppf_env.php';
+
 /* -------------------- General safe helpers -------------------- */
 if (!function_exists('h')) {
   function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
