@@ -1178,7 +1178,64 @@ if (!function_exists('ppf_notifications_transform_row')) {
       'updated_at' => $row['updated_at'],
       'metadata' => $metadata,
       'actions' => $actions,
+      'type_key' => isset($row['type_key']) && $row['type_key'] !== null
+        ? (string)$row['type_key']
+        : (isset($metadata['type_key']) ? (string)$metadata['type_key'] : ''),
+      'rule_id' => isset($row['rule_id']) ? (int)$row['rule_id'] : (isset($metadata['rule_id']) ? (int)$metadata['rule_id'] : 0),
     ];
+  }
+}
+
+if (!function_exists('ppf_notifications_is_rule_template_message')) {
+  function ppf_notifications_is_rule_template_message(array $notification, ?array $catalog = null): bool {
+    $metadata = isset($notification['metadata']) && is_array($notification['metadata']) ? $notification['metadata'] : [];
+    if (empty($metadata['preconfigured'])) {
+      return false;
+    }
+    $typeKey = '';
+    if (!empty($notification['type_key'])) {
+      $typeKey = (string)$notification['type_key'];
+    } elseif (!empty($metadata['type_key'])) {
+      $typeKey = (string)$metadata['type_key'];
+    }
+    if ($typeKey === '') {
+      return false;
+    }
+    if ($catalog === null) {
+      $catalog = ppf_notifications_catalog();
+    }
+    if (empty($catalog[$typeKey])) {
+      return false;
+    }
+    $definition = $catalog[$typeKey];
+    $expectedTitle = trim((string)($definition['title'] ?? ''));
+    $expectedBody = trim((string)($definition['body'] ?? ''));
+    if ($expectedTitle === '' || $expectedBody === '') {
+      return false;
+    }
+    $title = trim((string)($notification['title'] ?? ''));
+    $body = trim((string)($notification['body'] ?? ''));
+    if ($title !== $expectedTitle || $body !== $expectedBody) {
+      return false;
+    }
+    $ruleId = isset($notification['rule_id']) ? (int)$notification['rule_id'] : 0;
+    if ($ruleId > 0) {
+      return false;
+    }
+    return true;
+  }
+}
+
+if (!function_exists('ppf_notifications_prune_rule_template_message')) {
+  function ppf_notifications_prune_rule_template_message(mysqli $conn, int $tenantId, int $userId, int $notificationId): void {
+    if ($notificationId <= 0) {
+      return;
+    }
+    if ($stmt = $conn->prepare('DELETE FROM notification_messages WHERE tenant_id = ? AND user_id = ? AND id = ?')) {
+      $stmt->bind_param('iii', $tenantId, $userId, $notificationId);
+      $stmt->execute();
+      $stmt->close();
+    }
   }
 }
 
@@ -1205,6 +1262,10 @@ if (!function_exists('ppf_notifications_fetch_recent')) {
         continue;
       }
       $formatted = ppf_notifications_transform_row($row);
+      if (ppf_notifications_is_rule_template_message($formatted)) {
+        ppf_notifications_prune_rule_template_message($conn, $tenantId, $userId, (int)$formatted['id']);
+        continue;
+      }
       if (!$formatted['is_read']) {
         $unread++;
       }
@@ -1226,7 +1287,7 @@ if (!function_exists('ppf_notifications_unread_count')) {
     if ($settings === null) {
       $settings = ppf_notifications_settings_get($conn, $tenantId, $userId);
     }
-    $stmt = $conn->prepare("SELECT type_key, type FROM notification_messages WHERE tenant_id = ? AND user_id = ? AND is_archived = 0 AND is_read = 0");
+    $stmt = $conn->prepare("SELECT id, type_key, type, title, body, metadata, rule_id FROM notification_messages WHERE tenant_id = ? AND user_id = ? AND is_archived = 0 AND is_read = 0");
     if (!$stmt) {
       return 0;
     }
@@ -1237,6 +1298,25 @@ if (!function_exists('ppf_notifications_unread_count')) {
     while ($row = $res->fetch_assoc()) {
       $type = (string)($row['type'] ?? 'info');
       if (ppf_notifications_should_filter_type($settings, $type, true)) {
+        continue;
+      }
+      $metadata = [];
+      if (!empty($row['metadata'])) {
+        $decoded = json_decode((string)$row['metadata'], true);
+        if (is_array($decoded)) {
+          $metadata = $decoded;
+        }
+      }
+      $notification = [
+        'id' => (int)($row['id'] ?? 0),
+        'title' => (string)($row['title'] ?? ''),
+        'body' => (string)($row['body'] ?? ''),
+        'metadata' => $metadata,
+        'type_key' => isset($row['type_key']) ? (string)$row['type_key'] : '',
+        'rule_id' => isset($row['rule_id']) ? (int)$row['rule_id'] : 0,
+      ];
+      if (ppf_notifications_is_rule_template_message($notification)) {
+        ppf_notifications_prune_rule_template_message($conn, $tenantId, $userId, $notification['id']);
         continue;
       }
       $count++;
@@ -1378,12 +1458,21 @@ if (!function_exists('ppf_notifications_query')) {
     $stmt->execute();
     $res = $stmt->get_result();
     $rows = [];
+    $templateFiltered = 0;
     while ($row = $res->fetch_assoc()) {
       $transformed = ppf_notifications_transform_row($row);
+      if (ppf_notifications_is_rule_template_message($transformed)) {
+        ppf_notifications_prune_rule_template_message($conn, $tenantId, $userId, (int)$transformed['id']);
+        $templateFiltered++;
+        continue;
+      }
       if (ppf_notifications_should_filter_type($settings, $transformed['type'])) {
         continue;
       }
       $rows[] = $transformed;
+    }
+    if ($templateFiltered > 0) {
+      $total = max(0, $total - $templateFiltered);
     }
     $stmt->close();
 
@@ -1421,7 +1510,15 @@ if (!function_exists('ppf_notifications_get')) {
     $res = $stmt->get_result();
     $row = $res ? $res->fetch_assoc() : null;
     $stmt->close();
-    return $row ? ppf_notifications_transform_row($row) : null;
+    if (!$row) {
+      return null;
+    }
+    $transformed = ppf_notifications_transform_row($row);
+    if (ppf_notifications_is_rule_template_message($transformed)) {
+      ppf_notifications_prune_rule_template_message($conn, $tenantId, $userId, (int)$transformed['id']);
+      return null;
+    }
+    return $transformed;
   }
 }
 
