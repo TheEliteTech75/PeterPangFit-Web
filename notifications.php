@@ -840,14 +840,17 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       });
     }
 
-    var preconfiguredRuleMap = {};
+    var preconfiguredRuleMap = Object.create(null);
+
+    function cachePreconfiguredRule(rule) {
+      if (!rule || !(rule.metadata && rule.metadata.preconfigured)) { return; }
+      var key = ruleKey(rule);
+      if (!key) { return; }
+      preconfiguredRuleMap[key] = cloneRule(rule);
+    }
+
     if (Array.isArray(initialState.rules)) {
-      initialState.rules.forEach(function(rule){
-        if (!(rule && rule.metadata && rule.metadata.preconfigured)) { return; }
-        var key = ruleKey(rule);
-        if (!key || preconfiguredRuleMap[key]) { return; }
-        preconfiguredRuleMap[key] = cloneRule(rule);
-      });
+      initialState.rules.forEach(cachePreconfiguredRule);
     }
 
     function withPreconfiguredRules(rules) {
@@ -1440,7 +1443,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     function loadRules() {
       fetchJson('api/notifications/index.php/rules').then(function(json){
-        state.rules = withPreconfiguredRules(Array.isArray(json.rules) ? json.rules : []);
+        var incoming = Array.isArray(json.rules) ? json.rules : [];
+        incoming.forEach(cachePreconfiguredRule);
+        state.rules = withPreconfiguredRules(incoming);
         renderRules();
       }).catch(function(err){
         console.error(err);
@@ -1469,6 +1474,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         nextRules.push(rule);
       } else {
         nextRules[idx] = rule;
+      }
+      if (Array.isArray(nextRules)) {
+        nextRules.forEach(cachePreconfiguredRule);
       }
       state.rules = withPreconfiguredRules(nextRules);
       renderRules();
@@ -1689,10 +1697,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           fetchJson('api/notifications/index.php/rules/' + rule.id + '/channels', withCsrfOptions('PATCH', nextState)).then(function(json){
             clearPending();
             if (json && json.data) {
+              cachePreconfiguredRule(json.data);
               updateRuleInState(json.data);
-            } else {
-              loadRules();
             }
+            loadRules();
           }).catch(function(err){
             clearPending();
             alert(err.message || 'Unable to update rule.');
@@ -1746,6 +1754,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         fetchJson('api/notifications/index.php/rules', withCsrfOptions('POST', payload)).then(function(json){
           clearPending();
           if (json && json.data) {
+            cachePreconfiguredRule(json.data);
             updateRuleInState(json.data);
           }
           loadRules();
