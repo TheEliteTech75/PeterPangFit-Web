@@ -223,21 +223,30 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
         $port   = isset($cfg['port']) && $cfg['port'] !== '' ? (int)$cfg['port'] : null;
         $socket = $cfg['socket'] ?? null;
 
-        $mysqli = null;
-        if ($port !== null || $socket !== null) {
-            $mysqli = @new mysqli(
-                $host,
-                $user,
-                $pass,
-                $dbName,
-                $port !== null ? $port : ini_get('mysqli.default_port'),
-                $socket !== null ? $socket : ini_get('mysqli.default_socket')
-            );
-        } else {
-            $mysqli = @new mysqli($host, $user, $pass, $dbName);
+        $mysqli = @mysqli_init();
+        if (!$mysqli instanceof mysqli) {
+            $PPF_DEMO_LAST_ERROR = 'Unable to initialize mysqli.';
+            return null;
         }
 
-        if ($mysqli instanceof mysqli && !$mysqli->connect_errno) {
+        // Fail fast on unreachable hosts — otherwise PHP will hang for ~60s.
+        @mysqli_options($mysqli, MYSQLI_OPT_CONNECT_TIMEOUT, 5);
+        @mysqli_options($mysqli, MYSQLI_OPT_READ_TIMEOUT, 10);
+
+        $defaultPort   = (int)ini_get('mysqli.default_port');
+        $defaultSocket = ini_get('mysqli.default_socket');
+
+        $targetPort   = $port !== null ? $port : ($defaultPort > 0 ? $defaultPort : 3306);
+        $targetSocket = $socket !== null ? $socket : ($defaultSocket !== false ? $defaultSocket : null);
+
+        $connected = false;
+        if ($targetSocket !== null && $targetSocket !== '') {
+            $connected = @$mysqli->real_connect($host, $user, $pass, $dbName, $targetPort, $targetSocket);
+        } else {
+            $connected = @$mysqli->real_connect($host, $user, $pass, $dbName, $targetPort);
+        }
+
+        if ($connected) {
             $charset = $cfg['charset'] ?? 'utf8mb4';
             if ($charset) {
                 @$mysqli->set_charset($charset);
@@ -246,7 +255,8 @@ if (!defined('PPF_DEMO_MODE_HELPER')) {
             return $mysqli;
         }
 
-        $PPF_DEMO_LAST_ERROR = $mysqli instanceof mysqli ? $mysqli->connect_error : 'Unknown connection error';
+        $PPF_DEMO_LAST_ERROR = $mysqli->connect_error ?: 'Unknown connection error';
+        @$mysqli->close();
         return null;
     }
 

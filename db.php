@@ -16,8 +16,21 @@ $primaryCfg = array_merge($primaryDefaults, ppf_demo_build_config('PPF_DB_'));
 
 $primaryConn = ppf_demo_bootstrap_primary($primaryCfg);
 if (!$primaryConn instanceof mysqli) {
-    $err = ppf_demo_last_error();
-    die('Connection failed: ' . ($err ?: 'Unable to connect to database.'));
+    $err = trim((string)(ppf_demo_last_error() ?? ''));
+    $host = (string)($primaryCfg['host'] ?? '');
+    $details = $err !== '' ? $err : 'Unable to connect to database.';
+
+    $advice = 'Verify that the Ubuntu server can reach the MySQL host'
+            . ($host !== '' ? ' (' . $host . ')' : '')
+            . ' and that the firewall allows TCP/3306 from this machine.';
+
+    error_log('[DB ERROR] ' . $details . ' | ' . $advice);
+
+    http_response_code(503);
+    echo '<h1>Database connection failed</h1>';
+    echo '<p>' . htmlspecialchars($details, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</p>';
+    echo '<p>' . htmlspecialchars($advice, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</p>';
+    exit;
 }
 
 $conn = $primaryConn;
