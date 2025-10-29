@@ -212,6 +212,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
   <style>
     :root {
       color-scheme: dark;
+      --subheader-offset: 76px;
     }
     body {
       margin: 0;
@@ -219,28 +220,33 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       background: var(--surface, #020617);
       color: var(--text, #f8fafc);
     }
-    main.wrap {
-      max-width: 1180px;
-      margin: 24px auto 48px;
-      padding: 0 20px 60px;
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
+    .subheader-bar {
+      position: sticky;
+      top: var(--subheader-offset);
+      z-index: 3500;
+      background: color-mix(in srgb, var(--panel, rgba(15,23,42,0.82)) 85%, rgba(30,41,59,0.65) 15%);
+      border-bottom: 1px solid var(--line, rgba(148,163,184,0.18));
+      box-shadow: 0 18px 40px rgba(15,23,42,0.35);
+      backdrop-filter: blur(22px);
+      padding: 8px 0;
+      margin-bottom: 24px;
     }
     .subheader {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      padding: 14px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 14px 18px;
-      border-radius: 14px;
-      background: color-mix(in srgb, var(--panel, rgba(15,23,42,0.82)) 85%, rgba(30,41,59,0.65) 15%);
-      border: 1px solid var(--line, rgba(148,163,184,0.18));
-      box-shadow: 0 18px 40px rgba(15,23,42,0.35);
-      position: sticky;
-      top: 76px;
-      z-index: 20;
-      backdrop-filter: blur(22px);
+    }
+    main.wrap {
+      max-width: 1180px;
+      margin: 0 auto 48px;
+      padding: 24px 20px 60px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
     }
     .subheader .title {
       display: flex;
@@ -682,6 +688,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
     @media (max-width: 768px) {
       .subheader {
+        padding: 16px 20px;
         flex-direction: column;
         align-items: flex-start;
       }
@@ -719,7 +726,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
   </style>
 </head>
 <body>
-  <main class="wrap" data-notification-center>
+  <div class="subheader-bar">
     <div class="subheader">
       <div class="title">
         <h1>Notification Center</h1>
@@ -731,6 +738,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         <button type="button" class="ppf-btn" data-feed-action="refresh">Refresh</button>
       </div>
     </div>
+  </div>
+
+  <main class="wrap" data-notification-center>
 
     <section class="panel" data-feed-section>
       <div class="panel-header">
@@ -801,6 +811,22 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var catalog = bootstrap.catalog || {};
     var types = bootstrap.types || {};
     var csrf = bootstrap.csrf || '';
+
+    function updateSubheaderOffset() {
+      var topStack = document.querySelector('.ppf-top-stack');
+      var offset = topStack ? topStack.offsetHeight : 0;
+      if (offset > 0) {
+        document.documentElement.style.setProperty('--subheader-offset', offset + 'px');
+      } else {
+        document.documentElement.style.removeProperty('--subheader-offset');
+      }
+    }
+
+    updateSubheaderOffset();
+    window.addEventListener('load', updateSubheaderOffset);
+    window.addEventListener('resize', function(){
+      window.requestAnimationFrame(updateSubheaderOffset);
+    });
     function cloneRule(rule) {
       return JSON.parse(JSON.stringify(rule || {}));
     }
