@@ -91,6 +91,67 @@ function ppf_icloud_cached_only(mysqli $conn, ?string $ip): ?bool {
   return null;
 }
 
+function ppf_sessions_ipinfo_lookup(mysqli $conn, string $ip): array {
+  $ip = trim($ip);
+  $base = [
+    'ok' => false,
+    'ip' => $ip,
+    'city' => '',
+    'region' => '',
+    'asn_org' => '',
+    'source' => '',
+    'is_vpn' => false,
+    'is_icloud' => false,
+    'anonymous_flags' => null,
+  ];
+
+  if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+    return $base;
+  }
+
+  try {
+    $geo = ppf_geo_city_region($conn, $ip);
+    $asnOrg = ppf_geo_as_org($ip);
+
+    $isIcloud = false;
+    try { $isIcloud = ppf_geo_is_icloud($conn, $ip); } catch (\Throwable $e) {}
+
+    $isVpn = false;
+    $flags = null;
+    $source = 'cache/mmdb/ip-api';
+
+    if (!$isIcloud) {
+      $anon = ppf_geo_with_maxmind_anonymous($ip);
+      if ($anon !== null) {
+        $isVpn = (bool)$anon;
+        $source = 'anonymous-ip-mmdb';
+        ppf_geo_write_vpn_cache($conn, $ip, $isVpn);
+      } else {
+        $isVpn = ppf_geo_is_vpn($conn, $ip);
+        $source = 'asn-heuristic';
+      }
+    } else {
+      ppf_geo_write_vpn_cache($conn, $ip, false);
+    }
+
+    ppf_geo_write_icloud_cache($conn, $ip, $isIcloud);
+
+    return [
+      'ok' => true,
+      'ip' => $ip,
+      'city' => (string)($geo['city'] ?? ''),
+      'region' => (string)($geo['region'] ?? ''),
+      'asn_org' => $asnOrg,
+      'source' => $source,
+      'is_vpn' => (bool)$isVpn,
+      'is_icloud' => (bool)$isIcloud,
+      'anonymous_flags' => $flags,
+    ];
+  } catch (\Throwable $e) {
+    return $base;
+  }
+}
+
 if (!function_exists('ppf_sessions_pretty_join')) {
   function ppf_sessions_pretty_join(array $items): string {
     $clean = [];
@@ -340,6 +401,42 @@ if ($rs = $conn->query($sql)) {
     $sessions[] = $row;
   }
   $rs->close();
+}
+
+$ipTooltipCache = [];
+if ($sessions) {
+  $ips = [];
+  foreach ($sessions as $row) {
+    $ipVal = trim((string)($row['ip'] ?? ''));
+    if ($ipVal !== '' && filter_var($ipVal, FILTER_VALIDATE_IP)) {
+      $ips[$ipVal] = true;
+    }
+  }
+
+  foreach (array_keys($ips) as $ipKey) {
+    $info = ppf_sessions_ipinfo_lookup($conn, $ipKey);
+    $json = json_encode($info, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+    if ($json === false) {
+      $json = '';
+    }
+    $ipTooltipCache[$ipKey] = ['data' => $info, 'json' => $json];
+  }
+
+  foreach ($sessions as &$sessRef) {
+    $ipVal = trim((string)($sessRef['ip'] ?? ''));
+    $sessRef['ip_tooltip_json'] = '';
+    if ($ipVal !== '' && isset($ipTooltipCache[$ipVal])) {
+      $sessRef['ip_tooltip_json'] = $ipTooltipCache[$ipVal]['json'];
+      $info = $ipTooltipCache[$ipVal]['data'];
+      if (!empty($info['is_icloud'])) {
+        $sessRef['is_icloud_cached'] = true;
+        $sessRef['is_vpn_cached'] = false;
+      } elseif (!empty($info['is_vpn'])) {
+        $sessRef['is_vpn_cached'] = true;
+      }
+    }
+  }
+  unset($sessRef);
 }
 
 
@@ -601,7 +698,7 @@ foreach ($sessions as $s) {
               <td class="muted">
                 <?php if (!empty($s['ip'])): ?>
                   <span class="ip-chip">
-                    <a href="#" class="ip-hover" data-ip="<?php echo h($s['ip']); ?>" onclick="return false;"><?php echo h($s['ip']); ?></a>
+                    <a href="#" class="ip-hover" data-ip="<?php echo h($s['ip']); ?>" data-ipinfo="<?php echo h($s['ip_tooltip_json'] ?? ''); ?>" onclick="return false;"><?php echo h($s['ip']); ?></a>
                     <?php if (!empty($s['is_icloud_cached'])): ?>
                       <span class="pill icloud" title="Apple iCloud Private Relay">iCloud</span>
                     <?php elseif (!empty($s['is_vpn_cached'])): ?>
@@ -754,44 +851,15 @@ let tipTimer = null;
 
 function attachIpHovers(){
   document.querySelectorAll('.ip-hover').forEach(el=>{
-    const ip = el.getAttribute('data-ip');
+    const rawInfo = el.getAttribute('data-ipinfo') || '';
 
     const onEnter = (e)=>{
       clearTimeout(tipTimer);
-      tipShow('<div class="muted">Loading…</div>', e.clientX, e.clientY);
-      fetch('sessions_ipinfo.php', {
-        method:'POST',
-        headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body:new URLSearchParams({ ip })
-      }).then(r=>r.json()).then(j=>{
-        tipShow(tipHTML(j), e.clientX, e.clientY);
-
-        // If iCloud/VPN detected but not shown yet (because cache unknown), add pill lazily
-        try{
-          const chip = el.closest('.ip-chip');
-          if (!chip) return;
-          if (j && j.ok) {
-            if (j.is_icloud) {
-              if (!chip.querySelector('.pill.icloud')) {
-                chip.querySelector('.pill.vpn')?.remove();
-                const span = document.createElement('span');
-                span.className = 'pill icloud';
-                span.title = 'Apple iCloud Private Relay';
-                span.textContent = 'iCloud';
-                chip.appendChild(span);
-              }
-            } else if (j.is_vpn) {
-              if (!chip.querySelector('.pill.vpn') && !chip.querySelector('.pill.icloud')) {
-                const span = document.createElement('span');
-                span.className = 'pill vpn';
-                span.title = 'Potential VPN / Hosting / Proxy';
-                span.textContent = 'VPN';
-                chip.appendChild(span);
-              }
-            }
-          }
-        }catch(_e){}
-      }).catch(()=>{ tipShow('<div class="muted">Lookup failed</div>', e.clientX, e.clientY); });
+      let data = null;
+      if (rawInfo) {
+        try { data = JSON.parse(rawInfo); } catch (_err) {}
+      }
+      tipShow(tipHTML(data), e.clientX, e.clientY);
     };
 
     const onMove = (e)=>{
