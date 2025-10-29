@@ -202,11 +202,18 @@ if ($action === 'adjust_sessions') {
             ]);
         } elseif ($direction === 'remove') {
             $sessionPhrase = $count === 1 ? '1 session' : ($count . ' sessions');
+            $totalLabel = $newTotal === 1 ? '1 session remaining' : ($newTotal . ' sessions remaining');
             ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
-                'type_key' => 'billing.refund_recorded',
-                'message' => $sessionPhrase . ' were removed from "' . $pkgName . '".' . ($refundAmount > 0 ? ' A refund is being recorded.' : ''),
-                'send_email' => true,
+                'type_key' => 'billing.sessions_refunded',
+                'message' => $sessionPhrase . ' were removed from "' . $pkgName . '". You now have ' . $totalLabel . '.',
             ]);
+            if ($refundAmount > 0) {
+                $refundDisplay = '$' . number_format($refundAmount, 2);
+                ppf_notifications_record($conn, (int)($pkg['client_id'] ?? 0), [
+                    'type_key' => 'billing.refund_recorded',
+                    'message' => 'A refund of ' . $refundDisplay . ' is being processed for "' . $pkgName . '".',
+                ]);
+            }
         }
 
         if ($direction === 'remove') {

@@ -110,6 +110,30 @@ try {
   $initialUnread = 0;
 }
 
+$archivedTotal = 0;
+if ($userId > 0) {
+  try {
+    ppf_notifications_prune_archived($conn, $tenantId, $userId);
+  } catch (Throwable $e) {
+    // ignore pruning errors for boot
+  }
+  try {
+    if ($stmt = $conn->prepare('SELECT COUNT(*) AS c FROM notification_messages WHERE tenant_id = ? AND user_id = ? AND is_archived = 1')) {
+      $stmt->bind_param('ii', $tenantId, $userId);
+      $stmt->execute();
+      if ($res = $stmt->get_result()) {
+        if ($row = $res->fetch_assoc()) {
+          $archivedTotal = (int)$row['c'];
+        }
+        $res->close();
+      }
+      $stmt->close();
+    }
+  } catch (Throwable $e) {
+    $archivedTotal = 0;
+  }
+}
+
 $initialState = [
   'feed' => [
     'items' => $initialQuery['data'] ?? [],
@@ -117,6 +141,8 @@ $initialState = [
     'settings' => $initialQuery['settings'] ?? ppf_notifications_default_settings(),
     'filters' => $baseFilters,
     'unread' => $initialUnread,
+    'view' => 'inbox',
+    'archived_total' => $archivedTotal,
   ],
   'rules' => []
 ];
@@ -338,6 +364,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       flex-direction: column;
       gap: 6px;
     }
+    .panel-title-top {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
     .panel-title h2 {
       margin: 0;
       font-size: 20px;
@@ -355,6 +387,38 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       align-items: center;
       gap: 12px;
       flex-wrap: wrap;
+    }
+    .view-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgba(15,23,42,0.7);
+      border: 1px solid rgba(148,163,184,0.22);
+      box-shadow: inset 0 0 0 1px rgba(148,163,184,0.08);
+    }
+    .view-tab {
+      border: none;
+      border-radius: 999px;
+      padding: 6px 14px;
+      background: transparent;
+      color: rgba(226,232,240,0.9);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+    .view-tab:hover,
+    .view-tab:focus-visible {
+      outline: none;
+      background: rgba(56,189,248,0.18);
+      color: #f0f9ff;
+    }
+    .view-tab.is-active {
+      background: color-mix(in srgb, var(--brand, rgba(14,165,233,0.9)) 70%, rgba(15,23,42,0.6) 30%);
+      color: #0b1120;
+      box-shadow: 0 10px 24px rgba(14,165,233,0.28);
     }
     .category-tabs {
       display: flex;
@@ -630,6 +694,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         align-items: flex-start;
         gap: 12px;
       }
+      .panel-title-top {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .view-tabs {
+        width: 100%;
+        justify-content: flex-start;
+      }
       .panel-actions {
         width: 100%;
         justify-content: flex-start;
@@ -650,6 +723,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       </div>
       <div class="actions">
         <button type="button" class="ppf-btn" data-feed-action="mark-all" disabled>Mark all read</button>
+        <button type="button" class="ppf-btn" data-feed-action="archive-read" disabled>Archive read</button>
         <button type="button" class="ppf-btn" data-feed-action="refresh">Refresh</button>
       </div>
     </div>
@@ -657,8 +731,14 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     <section class="panel" data-feed-section>
       <div class="panel-header">
         <div class="panel-title">
-          <h2>Inbox</h2>
-          <p>Your latest alerts appear here. Use filters to focus on what's important.</p>
+          <div class="panel-title-top">
+            <h2 data-feed-title>Inbox</h2>
+            <div class="view-tabs" data-feed-views>
+              <button type="button" class="view-tab is-active" data-feed-view="inbox">Inbox</button>
+              <button type="button" class="view-tab" data-feed-view="archived">Archived</button>
+            </div>
+          </div>
+          <p data-feed-description>Your latest alerts appear here. Use filters to focus on what's important.</p>
         </div>
         <div class="status-indicator" data-summary>
           <strong>0</strong> unread notifications
@@ -760,14 +840,17 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       });
     }
 
-    var preconfiguredRuleMap = {};
+    var preconfiguredRuleMap = Object.create(null);
+
+    function cachePreconfiguredRule(rule) {
+      if (!rule || !(rule.metadata && rule.metadata.preconfigured)) { return; }
+      var key = ruleKey(rule);
+      if (!key) { return; }
+      preconfiguredRuleMap[key] = cloneRule(rule);
+    }
+
     if (Array.isArray(initialState.rules)) {
-      initialState.rules.forEach(function(rule){
-        if (!(rule && rule.metadata && rule.metadata.preconfigured)) { return; }
-        var key = ruleKey(rule);
-        if (!key || preconfiguredRuleMap[key]) { return; }
-        preconfiguredRuleMap[key] = cloneRule(rule);
-      });
+      initialState.rules.forEach(cachePreconfiguredRule);
     }
 
     function withPreconfiguredRules(rules) {
@@ -804,7 +887,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         unread: initialState.feed && typeof initialState.feed.unread === 'number' ? initialState.feed.unread : 0,
         settings: initialState.feed && initialState.feed.settings ? initialState.feed.settings : {},
         category: 'all',
-        loading: false
+        loading: false,
+        view: initialState.feed && typeof initialState.feed.view === 'string' ? initialState.feed.view : 'inbox',
+        archivedTotal: initialState.feed && typeof initialState.feed.archived_total === 'number' ? initialState.feed.archived_total : 0
       },
       rules: withPreconfiguredRules(Array.isArray(initialState.rules) ? initialState.rules.slice() : []),
       searchTimeout: null
@@ -816,6 +901,16 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       state.feed.category = state.feed.filters.category;
     }
 
+    if (state.feed.filters && state.feed.filters.status === 'archived') {
+      state.feed.view = 'archived';
+    }
+
+    if (state.feed.view !== 'archived') {
+      state.feed.view = 'inbox';
+    }
+
+    ensureViewConsistency();
+
     var center = document.querySelector('[data-notification-center]');
     if (!center) { return; }
 
@@ -824,8 +919,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var statusSelect = center.querySelector('select[data-filter="status"]');
     var searchInput = center.querySelector('input[data-filter="search"]');
     var markAllBtn = center.querySelector('[data-feed-action="mark-all"]');
+    var archiveReadBtn = center.querySelector('[data-feed-action="archive-read"]');
     var refreshBtn = center.querySelector('[data-feed-action="refresh"]');
     var summaryEl = center.querySelector('[data-summary]');
+    var panelTitleEl = center.querySelector('[data-feed-title]');
+    var panelDescriptionEl = center.querySelector('[data-feed-description]');
+    var viewTabsEl = center.querySelector('[data-feed-views]');
     var rulesContainer = center.querySelector('[data-rules-container]');
 
     function formatDate(iso) {
@@ -856,11 +955,38 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
     function renderSummary() {
       if (!summaryEl) return;
+      if (state.feed.view === 'archived') {
+        var total = 0;
+        if (state.feed.pagination && typeof state.feed.pagination.total === 'number') {
+          total = state.feed.pagination.total;
+        }
+        if ((!total || total < 0) && typeof state.feed.archivedTotal === 'number') {
+          total = state.feed.archivedTotal;
+        }
+        if (!total && Array.isArray(state.feed.items)) {
+          total = state.feed.items.filter(function(item){ return item && item.is_archived; }).length;
+        }
+        var archivedLabel = total === 1 ? 'notification' : 'notifications';
+        summaryEl.innerHTML = '<strong>' + total + '</strong> archived ' + archivedLabel + ' · Auto-delete after 30 days';
+        if (markAllBtn) {
+          markAllBtn.disabled = true;
+        }
+        if (archiveReadBtn) {
+          archiveReadBtn.disabled = true;
+        }
+        return;
+      }
       var count = state.feed.unread || 0;
       var label = count === 1 ? 'notification' : 'notifications';
       summaryEl.innerHTML = '<strong>' + count + '</strong> unread ' + label;
       if (markAllBtn) {
         markAllBtn.disabled = !(count > 0);
+      }
+      if (archiveReadBtn) {
+        var hasRead = Array.isArray(state.feed.items) && state.feed.items.some(function(item){
+          return item && item.is_read && !item.is_archived;
+        });
+        archiveReadBtn.disabled = !hasRead;
       }
     }
 
@@ -886,10 +1012,55 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       feedTabsEl.appendChild(fragment);
     }
 
+    function renderViewTabs() {
+      if (!viewTabsEl) return;
+      var buttons = viewTabsEl.querySelectorAll('[data-feed-view]');
+      buttons.forEach(function(btn){
+        var view = btn.dataset.feedView || 'inbox';
+        var isActive = view === state.feed.view || (!view && state.feed.view === 'inbox');
+        btn.classList.toggle('is-active', isActive);
+        if (view === 'inbox') {
+          var unread = state.feed.unread || 0;
+          btn.textContent = unread > 0 ? 'Inbox (' + unread + ')' : 'Inbox';
+        } else if (view === 'archived') {
+          var total = state.feed.archivedTotal || 0;
+          if ((!total || total < 0) && state.feed.view === 'archived' && state.feed.pagination && typeof state.feed.pagination.total === 'number') {
+            total = state.feed.pagination.total;
+          }
+          btn.textContent = total > 0 ? 'Archived (' + total + ')' : 'Archived';
+        }
+      });
+    }
+
+    function renderPanelHeader() {
+      if (panelTitleEl) {
+        panelTitleEl.textContent = state.feed.view === 'archived' ? 'Archived' : 'Inbox';
+      }
+      if (panelDescriptionEl) {
+        if (state.feed.view === 'archived') {
+          panelDescriptionEl.textContent = 'Previously archived notifications live here. Items are removed automatically after 30 days.';
+        } else {
+          panelDescriptionEl.textContent = "Your latest alerts appear here. Use filters to focus on what's important.";
+        }
+      }
+    }
+
+    function ensureViewConsistency() {
+      if (state.feed.view === 'archived') {
+        state.feed.filters.status = 'archived';
+      } else {
+        if (state.feed.filters.status === 'archived') {
+          state.feed.filters.status = 'all';
+        }
+      }
+    }
+
     function renderFeedList() {
       if (!feedListEl) return;
       feedListEl.innerHTML = '';
-      var filtered = state.feed.items.slice();
+      var filtered = state.feed.items.slice().filter(function(item){
+        return state.feed.view === 'archived' ? !!(item && item.is_archived) : !(item && item.is_archived);
+      });
       if (state.feed.category !== 'all') {
         filtered = filtered.filter(function(item){
           var meta = item.metadata || {};
@@ -1000,7 +1171,11 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         if (!fragment.children.length) {
           var empty = document.createElement('div');
           empty.className = 'empty-state';
-          empty.textContent = state.feed.category === 'all' ? 'No notifications yet.' : 'No notifications for this category.';
+          if (state.feed.view === 'archived') {
+            empty.textContent = 'No archived notifications yet.';
+          } else {
+            empty.textContent = state.feed.category === 'all' ? 'No notifications yet.' : 'No notifications for this category.';
+          }
           fragment.appendChild(empty);
         }
       }
@@ -1183,6 +1358,8 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     function renderAll() {
+      renderPanelHeader();
+      renderViewTabs();
       renderSummary();
       renderFeedTabs();
       renderFeedList();
@@ -1215,9 +1392,14 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       });
     }
 
-    function loadFeed() {
-      state.feed.loading = true;
-      renderFeedList();
+    function loadFeed(options) {
+      options = options || {};
+      ensureViewConsistency();
+      var showSpinner = !options.silent;
+      if (showSpinner) {
+        state.feed.loading = true;
+        renderFeedList();
+      }
       var params = new URLSearchParams();
       params.set('status', state.feed.filters.status || 'all');
       if (state.feed.filters.type) params.set('type', state.feed.filters.type);
@@ -1226,23 +1408,44 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       if (state.feed.filters.category) params.set('category', state.feed.filters.category);
       params.set('page', state.feed.pagination.page || 1);
       params.set('per_page', state.feed.pagination.per_page || 25);
-      fetchJson('api/notifications/index.php?' + params.toString()).then(function(json){
+      return fetchJson('api/notifications/index.php?' + params.toString()).then(function(json){
         state.feed.items = Array.isArray(json.data) ? json.data : [];
         state.feed.pagination = json.pagination || state.feed.pagination;
-        state.feed.filters = json.filters || state.feed.filters;
+        if (json.filters && typeof json.filters === 'object') {
+          state.feed.filters = Object.assign(state.feed.filters, json.filters);
+        }
+        state.feed.category = state.feed.filters.category && state.feed.filters.category !== 'all' ? state.feed.filters.category : 'all';
         state.feed.unread = typeof json.unread === 'number' ? json.unread : state.feed.unread;
+        if ((state.feed.filters.status || 'all') === 'archived') {
+          state.feed.view = 'archived';
+          if (json.pagination && typeof json.pagination.total === 'number') {
+            state.feed.archivedTotal = json.pagination.total;
+          }
+        } else if (state.feed.view === 'archived') {
+          state.feed.view = 'inbox';
+        }
+        if (statusSelect) {
+          statusSelect.value = state.feed.filters.status || 'all';
+        }
         renderAll();
       }).catch(function(err){
         console.error(err);
+        if (!showSpinner) {
+          renderAll();
+        }
       }).finally(function(){
         state.feed.loading = false;
-        renderFeedList();
+        if (showSpinner) {
+          renderFeedList();
+        }
       });
     }
 
     function loadRules() {
       fetchJson('api/notifications/index.php/rules').then(function(json){
-        state.rules = withPreconfiguredRules(Array.isArray(json.rules) ? json.rules : []);
+        var incoming = Array.isArray(json.rules) ? json.rules : [];
+        incoming.forEach(cachePreconfiguredRule);
+        state.rules = withPreconfiguredRules(incoming);
         renderRules();
       }).catch(function(err){
         console.error(err);
@@ -1272,6 +1475,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       } else {
         nextRules[idx] = rule;
       }
+      if (Array.isArray(nextRules)) {
+        nextRules.forEach(cachePreconfiguredRule);
+      }
       state.rules = withPreconfiguredRules(nextRules);
       renderRules();
     }
@@ -1281,7 +1487,19 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     if (statusSelect) {
       statusSelect.value = state.feed.filters.status || 'all';
       statusSelect.addEventListener('change', function(){
-        state.feed.filters.status = this.value;
+        var value = this.value || 'all';
+        state.feed.filters.status = value;
+        if (value === 'archived') {
+          state.feed.view = 'archived';
+          state.feed.category = 'all';
+          state.feed.filters.category = 'all';
+        } else if (state.feed.view === 'archived') {
+          state.feed.view = 'inbox';
+        }
+        state.feed.pagination.page = 1;
+        renderViewTabs();
+        renderPanelHeader();
+        renderFeedTabs();
         loadFeed();
       });
     }
@@ -1313,6 +1531,27 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       });
     }
 
+    if (viewTabsEl) {
+      viewTabsEl.addEventListener('click', function(event){
+        var btn = event.target.closest('[data-feed-view]');
+        if (!btn) { return; }
+        var view = btn.dataset.feedView || 'inbox';
+        if (view === state.feed.view) { return; }
+        state.feed.view = view === 'archived' ? 'archived' : 'inbox';
+        state.feed.pagination.page = 1;
+        if (state.feed.view === 'archived') {
+          state.feed.category = 'all';
+          state.feed.filters.category = 'all';
+        }
+        ensureViewConsistency();
+        if (statusSelect) {
+          statusSelect.value = state.feed.filters.status || 'all';
+        }
+        renderAll();
+        loadFeed();
+      });
+    }
+
     if (refreshBtn) {
       refreshBtn.addEventListener('click', function(){
         loadFeed();
@@ -1332,6 +1571,24 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           renderAll();
         }).catch(function(err){
           alert(err.message || 'Unable to mark notifications.');
+        });
+      });
+    }
+
+    if (archiveReadBtn) {
+      archiveReadBtn.addEventListener('click', function(){
+        if (archiveReadBtn.disabled || state.feed.view === 'archived') { return; }
+        archiveReadBtn.disabled = true;
+        fetchJson('api/notifications/index.php/bulk', withCsrfOptions('PATCH', { operation: 'archive_read' })).then(function(json){
+          if (json && typeof json.archived === 'number') {
+            state.feed.archivedTotal = (state.feed.archivedTotal || 0) + Math.max(0, json.archived);
+          }
+          state.feed.unread = typeof json.unread === 'number' ? json.unread : state.feed.unread;
+          return loadFeed();
+        }).catch(function(err){
+          alert(err.message || 'Unable to archive notifications.');
+        }).finally(function(){
+          archiveReadBtn.disabled = false;
         });
       });
     }
@@ -1357,11 +1614,18 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           });
         } else if (action === 'archive' || action === 'unarchive') {
           var archived = action === 'archive';
+          var before = state.feed.items.find(function(entry){ return entry.id === id; });
           fetchJson('api/notifications/index.php/' + id + '/archive', withCsrfOptions('PATCH', { archived: archived })).then(function(json){
             if (json && json.data) {
               state.feed.items = state.feed.items.map(function(entry){ return entry.id === id ? json.data : entry; });
               state.feed.unread = typeof json.unread === 'number' ? json.unread : state.feed.unread;
+              if (before && before.is_archived && !(json.data && json.data.is_archived)) {
+                state.feed.archivedTotal = Math.max(0, (state.feed.archivedTotal || 0) - 1);
+              } else if ((!before || !before.is_archived) && json.data && json.data.is_archived) {
+                state.feed.archivedTotal = (state.feed.archivedTotal || 0) + 1;
+              }
               renderAll();
+              loadFeed({ silent: true });
             }
           }).catch(function(err){
             alert(err.message || 'Unable to update notification.');
@@ -1430,13 +1694,17 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         };
 
         if (rule.id) {
-          fetchJson('api/notifications/index.php/rules/' + rule.id + '/channels', withCsrfOptions('PATCH', nextState)).then(function(json){
+          var patchBody = { center: !!nextState.center, email: !!nextState.email };
+          if (lookupKey) {
+            patchBody.type_key = lookupKey;
+          }
+          fetchJson('api/notifications/index.php/rules/' + rule.id + '/channels', withCsrfOptions('PATCH', patchBody)).then(function(json){
             clearPending();
             if (json && json.data) {
+              cachePreconfiguredRule(json.data);
               updateRuleInState(json.data);
-            } else {
-              loadRules();
             }
+            loadRules();
           }).catch(function(err){
             clearPending();
             alert(err.message || 'Unable to update rule.');
@@ -1490,6 +1758,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         fetchJson('api/notifications/index.php/rules', withCsrfOptions('POST', payload)).then(function(json){
           clearPending();
           if (json && json.data) {
+            cachePreconfiguredRule(json.data);
             updateRuleInState(json.data);
           }
           loadRules();
