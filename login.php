@@ -420,16 +420,21 @@ function normalizeB64url(input) {
   return pad ? safe + '='.repeat(4 - pad) : safe;
 }
 function b64urlToUint8Array(b64url) {
+  if (typeof b64url !== 'string' || b64url === '') {
+    throw new Error('Missing credential data.');
+  }
   const normalized = normalizeB64url(b64url);
   const bin = atob(normalized);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
-function b64urlToArrayBuffer(b64url) {
-  const bytes = b64urlToUint8Array(b64url);
-  // Slice so detached views never expose extra capacity
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+function requireB64urlBytes(label, value) {
+  try {
+    return b64urlToUint8Array(value);
+  } catch (err) {
+    throw new Error(`Invalid ${label}.`);
+  }
 }
 function bytesToB64(bytes) {
   let s = '';
@@ -458,17 +463,19 @@ document.getElementById('btn-passkey')?.addEventListener('click', async ()=>{
     const begin = await beginRes.json();
     if (!begin.ok) throw new Error(begin.error || 'init failed');
 
-    const pubKey = begin.publicKey;
-    pubKey.challenge = b64urlToArrayBuffer(pubKey.challenge);
-    if (Array.isArray(pubKey.allowCredentials)) {
-      pubKey.allowCredentials = pubKey.allowCredentials.map(c => ({
-        type: c.type || 'public-key',
-        id: b64urlToArrayBuffer(c.id),
-        transports: Array.isArray(c.transports) && c.transports.length ? c.transports : ['internal','hybrid','usb','nfc','ble']
-      }));
+    const pubKey = begin.publicKey || {};
+    pubKey.challenge = requireB64urlBytes('passkey challenge', pubKey.challenge);
+    if (Array.isArray(pubKey.allowCredentials) && pubKey.allowCredentials.length) {
+      pubKey.allowCredentials = pubKey.allowCredentials.map((c) => {
+        const copy = { ...c };
+        copy.type = copy.type || 'public-key';
+        copy.id = requireB64urlBytes('credential id', copy.id);
+        if (!Array.isArray(copy.transports) || copy.transports.length === 0) {
+          copy.transports = ['internal', 'hybrid', 'usb', 'nfc', 'ble'];
+        }
+        return copy;
+      });
     }
-
-    pubKey.authenticatorSelection = { authenticatorAttachment: 'platform' };
 
     const cred = await navigator.credentials.get({ publicKey: pubKey });
     if (!cred) throw new Error('No credential selected.');
