@@ -209,28 +209,49 @@ if (!function_exists('ppf_notification_rules_delete')) {
   }
 }
 
-if (!function_exists('ppf_notification_rules_toggle_email')) {
-  function ppf_notification_rules_toggle_email(mysqli $conn, int $tenantId, int $userId, int $ruleId, bool $sendEmail): ?array {
+if (!function_exists('ppf_notification_rules_update_channels')) {
+  function ppf_notification_rules_update_channels(mysqli $conn, int $tenantId, int $userId, int $ruleId, array $channelUpdates): ?array {
     $rule = ppf_notification_rules_get($conn, $tenantId, $userId, $ruleId);
     if (!$rule || !empty($rule['immutable'])) {
       return null;
     }
-    $channels = $rule['channels'];
-    $channels['email'] = $sendEmail;
-    $metadata = $rule['metadata'];
+
+    $channels = ['center' => false, 'email' => false];
+    if (is_array($rule['channels'])) {
+      foreach ($rule['channels'] as $key => $value) {
+        if (!in_array($key, ['center', 'email'], true)) {
+          continue;
+        }
+        $channels[$key] = (bool)$value;
+      }
+    }
+    foreach ($channelUpdates as $key => $value) {
+      if (!in_array($key, ['center', 'email'], true)) {
+        continue;
+      }
+      $channels[$key] = (bool)$value;
+    }
+
+    $metadata = is_array($rule['metadata']) ? $rule['metadata'] : [];
     $metadata['channels'] = $channels;
-    $metadata['send_email'] = $sendEmail;
+    $metadata['send_email'] = !empty($channels['email']);
+
     $jsonChannels = json_encode($channels);
     $jsonMetadata = json_encode($metadata);
+    if ($jsonChannels === false || $jsonMetadata === false) {
+      return null;
+    }
+
     $stmt = $conn->prepare('UPDATE notification_rules SET channels = ?, send_email = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND user_id = ? AND id = ?');
     if (!$stmt) {
       return null;
     }
-    $flag = $sendEmail ? 1 : 0;
+    $flag = !empty($channels['email']) ? 1 : 0;
     $stmt->bind_param('sisiii', $jsonChannels, $flag, $jsonMetadata, $tenantId, $userId, $ruleId);
     $stmt->execute();
     $ok = ppf_notifications_stmt_affected_rows($stmt) >= 0;
     $stmt->close();
+
     return $ok ? ppf_notification_rules_get($conn, $tenantId, $userId, $ruleId) : null;
   }
 }
