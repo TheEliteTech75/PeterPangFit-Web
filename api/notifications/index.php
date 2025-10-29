@@ -383,6 +383,20 @@ switch ($method) {
             'type_key' => $actionKey ?: 'custom.manual',
         ];
 
+        if ($actionKey) {
+            try {
+                $rule = ppf_notification_rules_get_by_key($conn, $tenantId, $userId, $actionKey);
+            } catch (Throwable $e) {
+                $rule = null;
+            }
+            if ($rule) {
+                $state = ppf_notifications_normalize_channels($rule['channels'] ?? null, ['center' => true, 'email' => false]);
+                if (empty($state['center']) && empty($state['email'])) {
+                    ppf_notifications_api_error(409, 'Notification rule is turned off.');
+                }
+            }
+        }
+
         try {
             $notificationId = ppf_notifications_record($conn, $userId, array_merge($data, [
                 'actor_user_id' => $userId,

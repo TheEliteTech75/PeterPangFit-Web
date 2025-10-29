@@ -14,15 +14,34 @@ if (!function_exists('fmt_when')) {
   }
 }
 
+if (!function_exists('ppf_notifications_normalize_channels')) {
+  function ppf_notifications_normalize_channels($channels, array $fallback = ['center' => false, 'email' => false]): array {
+    $normalized = [
+      'center' => isset($fallback['center']) ? (bool)$fallback['center'] : false,
+      'email' => isset($fallback['email']) ? (bool)$fallback['email'] : false,
+    ];
+    if (is_array($channels)) {
+      foreach ($channels as $key => $value) {
+        if (!array_key_exists($key, $normalized)) {
+          continue;
+        }
+        $normalized[$key] = (bool)$value;
+      }
+    }
+    return $normalized;
+  }
+}
+
 if (!function_exists('ppf_notification_rule_transform_row')) {
   function ppf_notification_rule_transform_row(array $row): array {
-    $channels = ['center' => true, 'email' => false];
+    $channelsRaw = null;
     if (!empty($row['channels'])) {
       $decoded = json_decode((string)$row['channels'], true);
       if (is_array($decoded)) {
-        $channels = array_merge($channels, $decoded);
+        $channelsRaw = $decoded;
       }
     }
+    $channels = ppf_notifications_normalize_channels($channelsRaw, ['center' => true, 'email' => false]);
     $metadata = [];
     if (!empty($row['metadata'])) {
       $decoded = json_decode((string)$row['metadata'], true);
@@ -220,15 +239,7 @@ if (!function_exists('ppf_notification_rules_update_channels')) {
       return null;
     }
 
-    $channels = ['center' => false, 'email' => false];
-    if (is_array($rule['channels'])) {
-      foreach ($rule['channels'] as $key => $value) {
-        if (!in_array($key, ['center', 'email'], true)) {
-          continue;
-        }
-        $channels[$key] = (bool)$value;
-      }
-    }
+    $channels = ppf_notifications_normalize_channels($rule['channels'] ?? null, ['center' => true, 'email' => false]);
     foreach ($channelUpdates as $key => $value) {
       if (!in_array($key, ['center', 'email'], true)) {
         continue;
@@ -1670,42 +1681,59 @@ if (!function_exists('ppf_notifications_record')) {
     }
     $defaults = $catalog[$typeKey] ?? [];
     $rule = ppf_notification_rules_get_by_key($conn, $tenantId, $userId, $typeKey);
-    $channels = ['center' => true, 'email' => false];
-    $sendEmail = false;
+    $channelFallback = ['center' => true, 'email' => false];
     $category = 'system';
+    $ruleImmutable = false;
     if ($rule) {
-      $channels = $rule['channels'];
-      $sendEmail = !empty($rule['send_email']);
-      $category = $rule['category'];
+      $channelFallback = ppf_notifications_normalize_channels($rule['channels'] ?? null, $channelFallback);
+      $category = $rule['category'] ?? $category;
+      $ruleImmutable = !empty($rule['immutable']);
     } elseif (!empty($defaults['channels']) && is_array($defaults['channels'])) {
-      $channels = array_merge($channels, $defaults['channels']);
-      $sendEmail = !empty($channels['email']);
-      $category = $defaults['category'] ?? 'system';
-    } else {
-      $sendEmail = !empty($defaults['send_email']);
-      if ($sendEmail) {
-        $channels['email'] = true;
-      }
+      $channelFallback = ppf_notifications_normalize_channels($defaults['channels'], $channelFallback);
       if (!empty($defaults['category'])) {
         $category = (string)$defaults['category'];
+      }
+    } else {
+      if (!empty($defaults['category'])) {
+        $category = (string)$defaults['category'];
+      }
+      if (!empty($defaults['send_email'])) {
+        $channelFallback['email'] = true;
       }
     }
 
     $payload = array_merge($defaults, $payloadData);
-    if (!isset($payload['category'])) {
+
+    $channels = $channelFallback;
+    if (isset($payload['channels']) && is_array($payload['channels'])) {
+      $channels = ppf_notifications_normalize_channels($payload['channels'], $channelFallback);
+    }
+    if ($ruleImmutable) {
+      $channels['center'] = true;
+      $channels['email'] = true;
+    }
+    $isCenterEnabled = !empty($channels['center']);
+    $isEmailEnabled = !empty($channels['email']);
+    if (!$isCenterEnabled && !$isEmailEnabled) {
+      return null;
+    }
+
+    $payload['channels'] = $channels;
+
+    if (!isset($payload['category']) || $payload['category'] === '') {
       $payload['category'] = $category;
     }
-    if (!isset($payload['channels'])) {
-      $payload['channels'] = $channels;
+
+    if (array_key_exists('send_email', $payload)) {
+      $payload['send_email'] = (bool)$payload['send_email'];
     }
-    if (!isset($payload['send_email'])) {
-      $payload['send_email'] = $sendEmail;
-    }
-    if (isset($defaults['immutable']) && !isset($payload['immutable'])) {
-      $payload['immutable'] = (bool)$defaults['immutable'];
-    }
-    if ($rule && !empty($rule['immutable'])) {
+    $payload['send_email'] = $isEmailEnabled;
+
+    if ($ruleImmutable) {
       $payload['immutable'] = true;
+      $payload['send_email'] = true;
+    } elseif (isset($defaults['immutable']) && !isset($payload['immutable'])) {
+      $payload['immutable'] = (bool)$defaults['immutable'];
     }
     if (!isset($payload['type']) && isset($payload['type_label'])) {
       $payload['type'] = $payload['type_label'];
