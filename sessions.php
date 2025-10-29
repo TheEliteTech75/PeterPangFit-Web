@@ -510,13 +510,13 @@ foreach ($sessions as $s) {
   .btn.brand:hover{transform:translateY(-1px);box-shadow:0 22px 50px rgba(56,189,248,0.45);}
   .btn.warn{background:var(--danger-bg);border-color:var(--danger-line);color:var(--danger);box-shadow:0 12px 30px rgba(127,29,29,0.35);}
   .btn[disabled]{opacity:.6;cursor:not-allowed;pointer-events:none;filter:grayscale(30%);}
-  .pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:rgba(56,189,248,0.08);font-size:12px;letter-spacing:.02em}
-  .pill.current{background:rgba(56,189,248,0.18);border-color:rgba(56,189,248,0.35);color:var(--text)}
-  .pill.active{background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.45);color:#04131f;font-weight:600}
+  .pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;border:1px solid rgba(148,163,184,0.32);background:rgba(148,163,184,0.12);font-size:12px;letter-spacing:.02em;color:var(--text)}
+  .pill.current{background:rgba(148,163,184,0.22);border-color:rgba(148,163,184,0.45);color:#e2e8f0}
+  .pill.active{background:rgba(34,197,94,0.22);border-color:rgba(34,197,94,0.45);color:#bbf7d0;font-weight:600}
   .pill.inactive{ background:var(--inactive-bg); border-color:var(--inactive-br); color:var(--inactive-text); }
-  .pill.expired{ background:var(--gold-bg); border-color:var(--gold); color:var(--gold-text); }
-  .pill.revoked{ background:rgba(127,29,29,0.28); border-color:var(--danger-line); color:var(--danger); }
-  .pill.vpn{ background:var(--gold-bg); border-color:var(--gold); color:var(--gold-text); }
+  .pill.expired{ background:rgba(250,204,21,0.22); border-color:rgba(250,204,21,0.45); color:#fef08a; }
+  .pill.revoked{ background:rgba(239,68,68,0.18); border-color:rgba(239,68,68,0.45); color:#fca5a5; }
+  .pill.vpn{ background:rgba(250,204,21,0.18); border-color:rgba(250,204,21,0.4); color:#fde68a; }
   /* iCloud pill: faded white bg + solid white outline */
   .pill.icloud{ background:rgba(255,255,255,0.12); border-color:#ffffff; color:#ffffff; }
 
