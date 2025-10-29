@@ -254,6 +254,10 @@ if (!function_exists('ppf_fix_permissions')) {
    */
   function ppf_fix_permissions(string $path, bool $isDir): void {
     $canExec = function_exists('exec');
+    if (!file_exists($path)) {
+      return; // nothing to do yet
+    }
+
     if (PHP_OS_FAMILY === 'Windows') {
       if (!$canExec) return;
       $p = str_replace('/', DIRECTORY_SEPARATOR, $path);
@@ -263,8 +267,30 @@ if (!function_exists('ppf_fix_permissions')) {
       // If you use a custom App Pool identity, uncomment + set:
       // $appPool = getenv('APP_POOL_ID') ?: 'DefaultAppPool';
       // @exec('icacls "' . $p . '" /grant "IIS AppPool\\'.$appPool.'":' . ($isDir ? '(OI)(CI)(M)' : '(M)'));
+      return;
+    }
+
+    if (is_link($path)) {
+      return; // avoid chmod on symlinks that may point outside our control
+    }
+
+    $canChmod = true;
+    if (function_exists('posix_geteuid')) {
+      $owner = @fileowner($path);
+      $procUser = @posix_geteuid();
+      if ($owner !== false && $procUser !== false && $owner !== $procUser && $procUser !== 0) {
+        $canChmod = false;
+      }
+    }
+
+    if (!$canChmod) {
+      return; // we do not own the file, so skip best-effort chmod to avoid warnings
+    }
+
+    if ($isDir) {
+      @chmod($path, 0755);
     } else {
-      if ($isDir) { @chmod($path, 0755); } else { @chmod($path, 0644); }
+      @chmod($path, 0644);
     }
   }
 }
