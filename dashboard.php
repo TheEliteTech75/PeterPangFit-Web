@@ -290,7 +290,7 @@ function read_sys_stats_snapshot(): array {
   $rx = null; $tx = null;
 
   $phpIniLoaded = (string) (php_ini_loaded_file() ?: '');
-  $phpIniHint = '/etc/php/8.4/apache2/php.ini';
+  $phpIniHint = defined('PPF_PHP_INI_HINT') ? (string)PPF_PHP_INI_HINT : '/etc/php/8.4/apache2/php.ini';
   $phpIniPath = $phpIniLoaded !== '' ? $phpIniLoaded : $phpIniHint;
   $phpIniReadable = false;
   $phpIniCandidates = array_values(array_unique(array_filter([
@@ -309,7 +309,9 @@ function read_sys_stats_snapshot(): array {
   if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
     $disk_total = @disk_total_space('C:'); $disk_free = @disk_free_space('C:');
   } else {
-    $linuxRoot = '/var/www/html/peterpangfitness/';
+    $linuxRoot = defined('PPF_LINUX_APP_ROOT') ? (string)PPF_LINUX_APP_ROOT : '/var/www/html/peterpangfitness/';
+    $linuxRoot = rtrim($linuxRoot, "/\\");
+    if ($linuxRoot === '') $linuxRoot = '/';
     if (!is_dir($linuxRoot)) $linuxRoot = __DIR__;
     $disk_total = @disk_total_space($linuxRoot);
     $disk_free  = @disk_free_space($linuxRoot);
@@ -2341,7 +2343,7 @@ $CAT_PALETTE = [
             $ramLbl = ($SYS['ram_used_pct'] !== null ? $ram.'%' : '—');
             $dskLbl = ($SYS['disk_used_pct'] !== null ? $dsk.'%' : '—');
             $phpIniPath = (string)($SYS['php_ini_path'] ?? '');
-            $phpIniHint = (string)($SYS['php_ini_hint'] ?? '/etc/php/8.4/apache2/php.ini');
+            $phpIniHint = (string)($SYS['php_ini_hint'] ?? (defined('PPF_PHP_INI_HINT') ? PPF_PHP_INI_HINT : '/etc/php/8.4/apache2/php.ini'));
             $phpIniReadable = !empty($SYS['php_ini_readable']);
             $phpIniLabel = $phpIniPath !== '' ? $phpIniPath : $phpIniHint;
           ?>

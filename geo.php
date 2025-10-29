@@ -9,6 +9,8 @@
 //
 // Composer: "geoip2/geoip2" or "maxmind-db/reader"
 
+require_once __DIR__ . '/ppf_env.php';
+
 if (!function_exists('ppf_geo_column_exists')) {
   function ppf_geo_column_exists(mysqli $conn, string $table, string $column): bool {
     $row = $conn->query("SELECT DATABASE()")->fetch_row();
@@ -152,13 +154,22 @@ if (!function_exists('ppf_geo_with_maxmind')) {
   /** @return array{city:string,region:string} */
   function ppf_geo_with_maxmind(string $ip): array {
     if (!ppf_geo_is_public_ip($ip)) return ['city'=>'', 'region'=>''];
-    $mmdb = ppf_geo_mmdb_find([
+    $candidates = [
       __DIR__ . '/data/GeoLite2-City.mmdb',
       '/var/www/html/peterpangfitness/data/GeoLite2-City.mmdb',
       __DIR__ . '/GeoLite2-City.mmdb',
-      '/var/www/html/peterpangfitness/GeoLite2-City.mmdb',
-      'C:\\data\\GeoLite2-City.mmdb',
-    ]);
+    ];
+    $linuxRoot = defined('PPF_LINUX_APP_ROOT') ? rtrim(PPF_LINUX_APP_ROOT, '/') : null;
+    if ($linuxRoot) {
+      $candidates[] = $linuxRoot . '/data/GeoLite2-City.mmdb';
+      $candidates[] = $linuxRoot . '/GeoLite2-City.mmdb';
+    } else {
+      $candidates[] = '/var/www/html/peterpangfitness/data/GeoLite2-City.mmdb';
+      $candidates[] = '/var/www/html/peterpangfitness/GeoLite2-City.mmdb';
+    }
+    $candidates[] = 'C:\\data\\GeoLite2-City.mmdb'; // legacy Windows fallback
+
+    $mmdb = ppf_geo_mmdb_find($candidates);
     if (!$mmdb) return ['city'=>'', 'region'=>''];
 
     $autoload = __DIR__ . '/vendor/autoload.php';

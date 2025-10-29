@@ -6,6 +6,8 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 
+require_once __DIR__ . '/ppf_env.php';
+
 function parse_linux_cpu_totals(?string $contents): ?array {
   if (!$contents) return null;
   foreach (explode("\n", $contents) as $line) {
@@ -214,7 +216,7 @@ function read_sys_stats_snapshot(): array {
   $rx = null; $tx = null;
 
   $phpIniLoaded = (string) (php_ini_loaded_file() ?: '');
-  $phpIniHint = '/etc/php/8.4/apache2/php.ini';
+  $phpIniHint = defined('PPF_PHP_INI_HINT') ? (string)PPF_PHP_INI_HINT : '/etc/php/8.4/apache2/php.ini';
   $phpIniPath = $phpIniLoaded !== '' ? $phpIniLoaded : $phpIniHint;
   $phpIniReadable = false;
   $phpIniCandidates = array_values(array_unique(array_filter([
@@ -233,7 +235,9 @@ function read_sys_stats_snapshot(): array {
   if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
     $disk_total = @disk_total_space('C:'); $disk_free = @disk_free_space('C:');
   } else {
-    $linuxRoot = '/var/www/html/peterpangfitness/';
+    $linuxRoot = defined('PPF_LINUX_APP_ROOT') ? (string)PPF_LINUX_APP_ROOT : '/var/www/html/peterpangfitness/';
+    $linuxRoot = rtrim($linuxRoot, "/\\");
+    if ($linuxRoot === '') $linuxRoot = '/';
     if (!is_dir($linuxRoot)) $linuxRoot = __DIR__;
     $disk_total = @disk_total_space($linuxRoot);
     $disk_free  = @disk_free_space($linuxRoot);

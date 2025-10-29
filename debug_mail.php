@@ -7,10 +7,12 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
+require_once __DIR__ . '/ppf_env.php';
+
 echo "PHP reachable.\n";
 
 $phpIniLoaded = php_ini_loaded_file();
-$phpIniHint = '/etc/php/8.4/apache2/php.ini';
+$phpIniHint = defined('PPF_PHP_INI_HINT') ? PPF_PHP_INI_HINT : '/etc/php/8.4/apache2/php.ini';
 if ($phpIniLoaded) {
   $ok = @is_readable($phpIniLoaded);
   echo 'php.ini: ' . $phpIniLoaded . ($ok ? " [OK]\n" : " [NOT READABLE]\n");

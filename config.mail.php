@@ -6,6 +6,8 @@
  *   B) Point HOST to the mail server’s LAN IP and firewall it to only allow your web server.
  */
 
+require_once __DIR__ . '/ppf_env.php';
+
 // ===== REQUIRED: fill these from Proton Mail Bridge =====
 define('MAIL_HOST', '127.0.0.1');          // '127.0.0.1' if tunneling, or the mail server IP
 define('MAIL_PORT', 1025);                  // Bridge default
@@ -22,11 +24,18 @@ define('MAIL_SECURE', '');
 define('MAIL_AUTH', true);
 
 // Absolute paths for PHPMailer if Composer autoload is unavailable (Linux + Windows)
-define('PHPMailer_HINTS', json_encode([
+$phpmailerHints = [
     __DIR__ . '/vendor/phpmailer/phpmailer/src/',   // default Composer install
     __DIR__ . '/PHPMailer/src/',                    // bundled library fallback
-    '/var/www/html/peterpangfitness/vendor/phpmailer/phpmailer/src/',
-    '/var/www/html/peterpangfitness/PHPMailer/src/',
-    'C:\\php\\src\\',                          // legacy Windows path
-    'C:\\php\\PHPMailer\\src\\',             // legacy Windows path
-], JSON_UNESCAPED_SLASHES));
+];
+
+if (defined('PPF_LINUX_APP_ROOT')) {
+    $linuxRoot = rtrim(PPF_LINUX_APP_ROOT, '/') . '/';
+    $phpmailerHints[] = $linuxRoot . 'vendor/phpmailer/phpmailer/src/';
+    $phpmailerHints[] = $linuxRoot . 'PHPMailer/src/';
+}
+
+$phpmailerHints[] = 'C:\\php\\src\\';          // legacy Windows path
+$phpmailerHints[] = 'C:\\php\\PHPMailer\\src\\'; // legacy Windows path
+
+define('PHPMailer_HINTS', json_encode(array_values(array_unique($phpmailerHints)), JSON_UNESCAPED_SLASHES));
