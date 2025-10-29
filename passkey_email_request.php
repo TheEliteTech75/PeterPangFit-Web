@@ -1,5 +1,6 @@
 <?php
 // passkey_email_request.php — stage a 6-digit email code for adding a passkey
+require_once __DIR__ . '/ppf_debug.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/send_email.php';

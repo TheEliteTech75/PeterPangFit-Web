@@ -1,5 +1,6 @@
 <?php
 // passkey_delete_email_request.php — send a 6-digit code for passkey deletion
+require_once __DIR__ . '/ppf_debug.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/send_email.php';
