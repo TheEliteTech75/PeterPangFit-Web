@@ -581,6 +581,13 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       border-color: rgba(56,189,248,0.45);
       color: #f0f9ff;
     }
+    .channel-toggle.is-pending {
+      opacity: 0.6;
+      cursor: progress;
+    }
+    .channel-toggle.is-pending input {
+      cursor: progress;
+    }
     .notification-card.is-disabled {
       opacity: 0.45;
       box-shadow: none;
@@ -790,6 +797,8 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       rules: withPreconfiguredRules(Array.isArray(initialState.rules) ? initialState.rules.slice() : []),
       searchTimeout: null
     };
+
+    var pendingRuleUpdates = Object.create(null);
 
     if (state.feed.filters && state.feed.filters.category && state.feed.filters.category !== 'all') {
       state.feed.category = state.feed.filters.category;
@@ -1001,6 +1010,28 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       return { center: center, email: email };
     }
 
+    function normalizeChannelState(channels) {
+      var center = !!(channels && channels.center);
+      var email = !!(channels && channels.email);
+      return { center: center, email: email };
+    }
+
+    function buildRuleWithChannels(rule, channels) {
+      if (!rule) { return null; }
+      var normalized = normalizeChannelState(channels);
+      var metadata = Object.assign({}, rule.metadata || {});
+      var metaChannels = Object.assign({}, metadata.channels || {});
+      metaChannels.center = normalized.center;
+      metaChannels.email = normalized.email;
+      metadata.channels = metaChannels;
+      metadata.send_email = !!normalized.email;
+      return Object.assign({}, rule, {
+        channels: { center: normalized.center, email: normalized.email },
+        send_email: !!normalized.email,
+        metadata: metadata
+      });
+    }
+
     function renderRules() {
       if (!rulesContainer) return;
       rulesContainer.innerHTML = '';
@@ -1095,14 +1126,19 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
           function appendToggle(labelText, channelKey, checked) {
             var labelEl = document.createElement('label');
-            labelEl.className = 'channel-toggle' + (checked ? ' is-active' : '');
+            var ruleIdKey = ruleId ? String(ruleId) : '';
+            var isPending = !!(ruleIdKey && pendingRuleUpdates[ruleIdKey]);
+            var className = 'channel-toggle';
+            if (checked) { className += ' is-active'; }
+            if (isPending) { className += ' is-pending'; }
+            labelEl.className = className;
             var input = document.createElement('input');
             input.type = 'checkbox';
             input.dataset.ruleToggle = channelKey;
             if (ruleId) { input.dataset.id = ruleId; }
             if (ruleTypeKey) { input.dataset.key = ruleTypeKey; }
             input.checked = checked;
-            input.disabled = isImmutable || !ruleId;
+            input.disabled = isImmutable || !ruleId || isPending;
             labelEl.appendChild(input);
             var text = document.createElement('span');
             text.textContent = labelText;
@@ -1324,7 +1360,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           renderRules();
           return;
         }
-        var nextState = resolveChannels(rule);
+        var ruleIdKey = String(rule.id);
+        if (pendingRuleUpdates[ruleIdKey]) {
+          return;
+        }
+        var previousState = resolveChannels(rule);
+        var nextState = { center: previousState.center, email: previousState.email };
         if (channelKey === 'center') {
           nextState.center = target.checked;
         } else if (channelKey === 'email') {
@@ -1332,18 +1373,34 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         } else {
           return;
         }
-        target.disabled = true;
+        pendingRuleUpdates[ruleIdKey] = true;
+        var optimisticRule = buildRuleWithChannels(rule, nextState);
+        if (optimisticRule) {
+          updateRuleInState(optimisticRule);
+        } else {
+          renderRules();
+        }
         fetchJson('api/notifications/index.php/rules/' + rule.id + '/channels', withCsrfOptions('PATCH', nextState)).then(function(json){
+          delete pendingRuleUpdates[ruleIdKey];
           if (json && json.data) {
             updateRuleInState(json.data);
           } else {
             loadRules();
           }
         }).catch(function(err){
+          delete pendingRuleUpdates[ruleIdKey];
           alert(err.message || 'Unable to update rule.');
-          loadRules();
-        }).finally(function(){
-          target.disabled = false;
+          var currentRule = state.rules.find(function(r){ return String(r.id || '') === ruleIdKey; });
+          if (currentRule) {
+            var revertRule = buildRuleWithChannels(currentRule, previousState);
+            if (revertRule) {
+              updateRuleInState(revertRule);
+            } else {
+              renderRules();
+            }
+          } else {
+            renderRules();
+          }
         });
       });
     }
