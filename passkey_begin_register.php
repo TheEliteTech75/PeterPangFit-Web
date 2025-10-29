@@ -2,6 +2,7 @@
 // passkey_begin_register.php — Begin WebAuthn registration
 // Returns a PublicKeyCredentialCreationOptions object (with helper hex fields your JS converts to bytes)
 
+require_once __DIR__ . '/ppf_debug.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/ppf_passkeys.php';
 

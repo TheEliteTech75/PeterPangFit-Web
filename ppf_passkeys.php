@@ -2,6 +2,8 @@
 // ppf_passkeys.php — shared helpers for passkeys + sessions
 if (!defined('PPF_PASSKEYS_INCLUDED')) define('PPF_PASSKEYS_INCLUDED', 1);
 
+require_once __DIR__ . '/ppf_debug.php';
+
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/send_email.php';
