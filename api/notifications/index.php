@@ -215,18 +215,60 @@ if ($isRuleRequest) {
                 ppf_notifications_api_error(404, 'Resource not found.');
             }
             ppf_notifications_api_csrf_required();
+            $body = ppf_notifications_api_decode_body();
+            $typeKey = isset($body['type_key']) ? trim((string)$body['type_key']) : '';
             $ruleId = ctype_digit($segments[0]) ? (int)$segments[0] : 0;
-            if ($ruleId <= 0) {
-                ppf_notifications_api_error(404, 'Notification rule not found.');
+            $rule = null;
+            if ($ruleId > 0) {
+                $rule = ppf_notification_rules_get($conn, $tenantId, $userId, $ruleId);
             }
-            $rule = ppf_notification_rules_get($conn, $tenantId, $userId, $ruleId);
-            if (!$rule) {
+            if (!$rule && $typeKey !== '') {
+                $rule = ppf_notification_rules_get_by_key($conn, $tenantId, $userId, $typeKey);
+                if ($rule && isset($rule['id'])) {
+                    $ruleId = (int)$rule['id'];
+                }
+                if (!$rule) {
+                    $definition = $catalog[$typeKey] ?? null;
+                    if ($definition) {
+                        $channels = ['center' => true, 'email' => false];
+                        if (!empty($definition['channels']) && is_array($definition['channels'])) {
+                            $channels = array_merge($channels, $definition['channels']);
+                        } elseif (!empty($definition['send_email'])) {
+                            $channels['email'] = true;
+                        }
+                        $payload = [
+                            'type_key' => $typeKey,
+                            'title' => (string)($definition['title'] ?? 'Notification'),
+                            'body' => (string)($definition['body'] ?? ''),
+                            'category' => (string)($definition['category'] ?? 'system'),
+                            'priority' => isset($definition['priority']) ? (int)$definition['priority'] : 0,
+                            'channels' => $channels,
+                            'send_email' => !empty($channels['email']),
+                            'metadata' => [],
+                        ];
+                        if (!empty($definition['preconfigured'])) {
+                            $payload['metadata']['preconfigured'] = true;
+                        }
+                        if (!empty($definition['immutable'])) {
+                            $payload['metadata']['immutable'] = true;
+                            $payload['immutable'] = true;
+                        }
+                        $newId = ppf_notification_rules_save($conn, $tenantId, $userId, $payload, null);
+                        if ($newId) {
+                            $rule = ppf_notification_rules_get($conn, $tenantId, $userId, $newId);
+                            if ($rule) {
+                                $ruleId = (int)$newId;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!$rule || ($ruleId <= 0 && (!isset($rule['id']) || !$rule['id']))) {
                 ppf_notifications_api_error(404, 'Notification rule not found.');
             }
             if (count($segments) === 2) {
                 $action = strtolower($segments[1]);
                 if ($action === 'channels') {
-                    $body = ppf_notifications_api_decode_body();
                     $updates = [];
                     if (array_key_exists('center', $body)) {
                         $updates['center'] = (bool)$body['center'];
@@ -240,7 +282,7 @@ if ($isRuleRequest) {
                     if (!empty($rule['immutable'])) {
                         ppf_notifications_api_error(403, 'Security rules cannot be modified.');
                     }
-                    $updated = ppf_notification_rules_update_channels($conn, $tenantId, $userId, $ruleId, $updates);
+                    $updated = ppf_notification_rules_update_channels($conn, $tenantId, $userId, (int)$ruleId, $updates);
                     if (!$updated) {
                         ppf_notifications_api_error(500, 'Unable to update rule channels.');
                     }

@@ -1694,7 +1694,11 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         };
 
         if (rule.id) {
-          fetchJson('api/notifications/index.php/rules/' + rule.id + '/channels', withCsrfOptions('PATCH', nextState)).then(function(json){
+          var patchBody = { center: !!nextState.center, email: !!nextState.email };
+          if (lookupKey) {
+            patchBody.type_key = lookupKey;
+          }
+          fetchJson('api/notifications/index.php/rules/' + rule.id + '/channels', withCsrfOptions('PATCH', patchBody)).then(function(json){
             clearPending();
             if (json && json.data) {
               cachePreconfiguredRule(json.data);

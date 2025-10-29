@@ -1918,6 +1918,17 @@ if (!function_exists('ppf_notifications_record')) {
       }
     }
 
+    if (!$rule && $typeKey !== '') {
+      try {
+        $stateChannels = ppf_notification_rule_state_get($conn, $tenantId, $userId, $typeKey);
+      } catch (Throwable $e) {
+        $stateChannels = null;
+      }
+      if ($stateChannels) {
+        $channelFallback = ppf_notifications_normalize_channels($stateChannels, $channelFallback);
+      }
+    }
+
     $payload = array_merge($defaults, $payloadData);
 
     $channels = $channelFallback;
