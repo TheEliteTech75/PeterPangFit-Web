@@ -553,108 +553,54 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     .status-indicator strong {
       color: var(--text, #f8fafc);
     }
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(2,6,23,0.68);
-      backdrop-filter: blur(10px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      z-index: 1000;
-    }
-    .modal-backdrop.is-active,
-    .modal-backdrop.is-visible {
+    .channel-toggle-group {
       display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
     }
-    .modal {
-      width: min(520px, 95vw);
-      background: rgba(10,17,30,0.95);
-      border-radius: 18px;
+    .channel-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(30,41,59,0.6);
       border: 1px solid rgba(148,163,184,0.25);
-      box-shadow: 0 30px 60px rgba(2,6,23,0.55);
-      padding: 22px 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      max-height: 90vh;
-      overflow-y: auto;
-    }
-    .modal h2 {
-      margin: 0;
-      font-size: 20px;
-      font-weight: 700;
-    }
-    .modal form {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .modal label {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
       font-size: 13px;
-      color: color-mix(in srgb, var(--muted, #cbd5f5) 80%, var(--text, #f8fafc) 20%);
+      color: color-mix(in srgb, var(--muted, #cbd5f5) 75%, var(--text, #f8fafc) 25%);
+      transition: background 0.2s ease, color 0.2s ease, border 0.2s ease;
     }
-    .modal select,
-    .modal input,
-    .modal textarea {
-      border-radius: 10px;
-      border: 1px solid rgba(148,163,184,0.3);
-      background: rgba(15,23,42,0.9);
-      color: var(--text, #f8fafc);
-      padding: 9px 12px;
-      font-size: 14px;
-    }
-    .modal textarea {
-      min-height: 120px;
-      resize: vertical;
-      line-height: 1.5;
-    }
-    .preview-field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      border-radius: 12px;
-      border: 1px dashed rgba(148,163,184,0.4);
-      padding: 12px 14px;
-      background: rgba(15,23,42,0.6);
-    }
-    .preview-label {
-      font-size: 12px;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-      color: color-mix(in srgb, var(--muted, #cbd5f5) 70%, var(--text, #f8fafc) 30%);
-    }
-    .preview-value {
-      margin: 0;
-      font-size: 14px;
-      color: var(--text, #f8fafc);
-      white-space: pre-wrap;
-    }
-    .channel-options {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 4px;
-    }
-    .channel-options label {
-      flex-direction: row;
-      align-items: center;
-      gap: 8px;
-      font-size: 14px;
-    }
-    .channel-options input {
+    .channel-toggle input {
       width: 18px;
       height: 18px;
+      accent-color: var(--brand, #38bdf8);
     }
-    .modal-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-      margin-top: 10px;
+    .channel-toggle.is-active {
+      background: rgba(56,189,248,0.18);
+      border-color: rgba(56,189,248,0.45);
+      color: #f0f9ff;
+    }
+    .channel-toggle.is-pending {
+      opacity: 0.6;
+      cursor: progress;
+    }
+    .channel-toggle.is-pending input {
+      cursor: progress;
+    }
+    .notification-card.is-disabled {
+      opacity: 0.45;
+      box-shadow: none;
+    }
+    .rule-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: color-mix(in srgb, var(--muted, #cbd5f5) 78%, var(--text, #f8fafc) 22%);
+    }
+    .rule-status strong {
+      color: var(--text, #f8fafc);
     }
     .meta-pill {
       display: inline-flex;
@@ -746,52 +692,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       <div class="panel-header">
         <div class="panel-title">
           <h2>Notification Rules</h2>
-          <p>Customize which events create alerts and whether email copies are sent.</p>
-        </div>
-        <div class="panel-actions">
-          <button type="button" class="ppf-btn brand" data-rule-action="create">Create rule</button>
+          <p>Toggle how you receive alerts. Turn on Portal or Email to activate a rule.</p>
         </div>
       </div>
       <div data-rules-container></div>
     </section>
   </main>
-
-  <div class="modal-backdrop" data-modal-backdrop>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="notificationModalTitle">
-      <h2 id="notificationModalTitle">Create notification rule</h2>
-      <form data-modal-form>
-        <label>
-          Category
-          <select name="category" required data-modal-field="category"></select>
-        </label>
-        <label>
-          Action
-          <select name="action" required data-modal-field="action"></select>
-        </label>
-        <input type="hidden" name="title" data-modal-field="title" />
-        <input type="hidden" name="body" data-modal-field="body" />
-        <div class="preview-field">
-          <span class="preview-label">Title</span>
-          <p class="preview-value" data-modal-preview="title">Select an action to preview the notification.</p>
-        </div>
-        <div class="preview-field">
-          <span class="preview-label">Message</span>
-          <p class="preview-value" data-modal-preview="body">Select an action to see the message that will be sent.</p>
-        </div>
-        <label>
-          Channels
-          <div class="channel-options">
-            <label><input type="checkbox" checked disabled /> Notification Center</label>
-            <label><input type="checkbox" value="email" data-modal-field="channel-email" /> Email</label>
-          </div>
-        </label>
-        <div class="modal-actions">
-          <button type="button" class="ppf-btn" data-modal-close>Cancel</button>
-          <button type="submit" class="ppf-btn brand" data-modal-submit>Save</button>
-        </div>
-      </form>
-    </div>
-  </div>
 
   <script>
     window.__PPF_NOTIFICATION_BOOTSTRAP__ = {
@@ -809,19 +715,6 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var initialState = bootstrap.state || {};
     var categories = bootstrap.categories || {};
     var catalog = bootstrap.catalog || {};
-    var catalogIndex = {};
-    Object.keys(catalog).forEach(function(categoryKey){
-      var list = Array.isArray(catalog[categoryKey]) ? catalog[categoryKey] : [];
-      list.forEach(function(item){
-        var key = item && (item.type_key || item.key);
-        if (!key || catalogIndex[key]) { return; }
-        catalogIndex[key] = Object.assign({ category: categoryKey }, item);
-      });
-    });
-    function lookupCatalogDefinition(typeKey) {
-      if (!typeKey) { return null; }
-      return catalogIndex[typeKey] || null;
-    }
     var types = bootstrap.types || {};
     var csrf = bootstrap.csrf || '';
     function cloneRule(rule) {
@@ -902,10 +795,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         loading: false
       },
       rules: withPreconfiguredRules(Array.isArray(initialState.rules) ? initialState.rules.slice() : []),
-      ruleEditing: null,
-      ruleModalMode: null,
       searchTimeout: null
     };
+
+    var pendingRuleUpdates = Object.create(null);
 
     if (state.feed.filters && state.feed.filters.category && state.feed.filters.category !== 'all') {
       state.feed.category = state.feed.filters.category;
@@ -922,22 +815,6 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var refreshBtn = center.querySelector('[data-feed-action="refresh"]');
     var summaryEl = center.querySelector('[data-summary]');
     var rulesContainer = center.querySelector('[data-rules-container]');
-    var createRuleBtn = center.querySelector('[data-rule-action="create"]');
-
-    var modalBackdrop = document.querySelector('[data-modal-backdrop]');
-    var modalForm = modalBackdrop ? modalBackdrop.querySelector('[data-modal-form]') : null;
-    var modalTitle = document.getElementById('notificationModalTitle');
-    var modalClose = modalBackdrop ? modalBackdrop.querySelector('[data-modal-close]') : null;
-    var modalSubmit = modalBackdrop ? modalBackdrop.querySelector('[data-modal-submit]') : null;
-    var fieldCategory = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="category"]') : null;
-    var fieldAction = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="action"]') : null;
-    var fieldTitle = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="title"]') : null;
-    var fieldBody = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="body"]') : null;
-    var fieldChannelEmail = modalBackdrop ? modalBackdrop.querySelector('[data-modal-field="channel-email"]') : null;
-    var previewTitle = modalBackdrop ? modalBackdrop.querySelector('[data-modal-preview="title"]') : null;
-    var previewBody = modalBackdrop ? modalBackdrop.querySelector('[data-modal-preview="body"]') : null;
-    var previewTitleDefault = previewTitle ? previewTitle.textContent : 'Select an action to preview the notification.';
-    var previewBodyDefault = previewBody ? previewBody.textContent : 'Select an action to see the message that will be sent.';
 
     function formatDate(iso) {
       if (!iso) return '';
@@ -1118,13 +995,50 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       feedListEl.appendChild(fragment);
     }
 
+    function resolveChannels(rule) {
+      var channels = rule && typeof rule === 'object' ? rule.channels : null;
+      var center = true;
+      var email = false;
+      if (channels && typeof channels === 'object') {
+        if (Object.prototype.hasOwnProperty.call(channels, 'center')) {
+          center = !!channels.center;
+        }
+        if (Object.prototype.hasOwnProperty.call(channels, 'email')) {
+          email = !!channels.email;
+        }
+      }
+      return { center: center, email: email };
+    }
+
+    function normalizeChannelState(channels) {
+      var center = !!(channels && channels.center);
+      var email = !!(channels && channels.email);
+      return { center: center, email: email };
+    }
+
+    function buildRuleWithChannels(rule, channels) {
+      if (!rule) { return null; }
+      var normalized = normalizeChannelState(channels);
+      var metadata = Object.assign({}, rule.metadata || {});
+      var metaChannels = Object.assign({}, metadata.channels || {});
+      metaChannels.center = normalized.center;
+      metaChannels.email = normalized.email;
+      metadata.channels = metaChannels;
+      metadata.send_email = !!normalized.email;
+      return Object.assign({}, rule, {
+        channels: { center: normalized.center, email: normalized.email },
+        send_email: !!normalized.email,
+        metadata: metadata
+      });
+    }
+
     function renderRules() {
       if (!rulesContainer) return;
       rulesContainer.innerHTML = '';
       if (!state.rules.length) {
         var empty = document.createElement('div');
         empty.className = 'empty-state';
-        empty.innerHTML = 'No rules yet. Use <strong>Create rule</strong> to add one.';
+        empty.textContent = 'No notification rules are available.';
         rulesContainer.appendChild(empty);
         return;
       }
@@ -1154,6 +1068,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         rules.forEach(function(rule){
           var card = document.createElement('article');
           card.className = 'notification-card';
+          var channelState = resolveChannels(rule);
+          if (rule && rule.immutable) {
+            channelState.center = true;
+            channelState.email = true;
+          }
+          var isActive = channelState.center || channelState.email;
+          if (!isActive) {
+            card.classList.add('is-disabled');
+          }
           if (rule.immutable) {
             card.classList.add('is-immutable');
           }
@@ -1165,7 +1088,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           var badge = document.createElement('span');
           badge.className = 'badge';
           badge.dataset.type = rule.immutable ? 'system' : 'info';
-          badge.textContent = rule.immutable ? 'Protected' : 'Custom';
+          badge.textContent = rule.immutable ? 'Security' : 'Rule';
           top.appendChild(badge);
           card.appendChild(top);
           if (rule.body) {
@@ -1176,50 +1099,64 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           }
           var metaLine = document.createElement('div');
           metaLine.className = 'notification-meta';
-          var channels = document.createElement('span');
-          var channelText = rule.send_email ? 'Notification Center + Email' : 'Notification Center only';
-          channels.textContent = channelText;
-          metaLine.appendChild(channels);
-          var actions = document.createElement('div');
-          actions.className = 'notification-actions';
+
+          var status = document.createElement('span');
+          status.className = 'rule-status';
+          var statusStrong = document.createElement('strong');
+          statusStrong.textContent = isActive ? 'On' : 'Off';
+          status.appendChild(statusStrong);
+          status.appendChild(document.createTextNode(' · '));
+          var detail = document.createElement('span');
+          if (isActive) {
+            var methods = [];
+            if (channelState.center) { methods.push('Portal'); }
+            if (channelState.email) { methods.push('Email'); }
+            detail.textContent = methods.join(' + ');
+          } else {
+            detail.textContent = 'Enable Portal or Email to turn on.';
+          }
+          status.appendChild(detail);
+          metaLine.appendChild(status);
+
+          var toggles = document.createElement('div');
+          toggles.className = 'channel-toggle-group';
           var ruleId = (rule && rule.id != null && rule.id !== '') ? String(rule.id) : '';
           var ruleTypeKey = ruleKey(rule);
+          var isImmutable = !!(rule && rule.immutable);
 
-          if (ruleTypeKey || ruleId) {
-            var viewBtn = document.createElement('button');
-            viewBtn.type = 'button';
-            viewBtn.className = 'action-link';
-            viewBtn.dataset.ruleAction = 'view';
-            if (ruleId) { viewBtn.dataset.id = ruleId; }
-            if (ruleTypeKey) { viewBtn.dataset.key = ruleTypeKey; }
-            viewBtn.textContent = 'View';
-            actions.appendChild(viewBtn);
+          function appendToggle(labelText, channelKey, checked) {
+            var labelEl = document.createElement('label');
+            var ruleIdKey = ruleId ? String(ruleId) : '';
+            var isPending = !!(ruleIdKey && pendingRuleUpdates[ruleIdKey]);
+            var className = 'channel-toggle';
+            if (checked) { className += ' is-active'; }
+            if (isPending) { className += ' is-pending'; }
+            labelEl.className = className;
+            var input = document.createElement('input');
+            input.type = 'checkbox';
+            input.dataset.ruleToggle = channelKey;
+            if (ruleId) { input.dataset.id = ruleId; }
+            if (ruleTypeKey) { input.dataset.key = ruleTypeKey; }
+            input.checked = checked;
+            input.disabled = isImmutable || !ruleId || isPending;
+            labelEl.appendChild(input);
+            var text = document.createElement('span');
+            text.textContent = labelText;
+            labelEl.appendChild(text);
+            toggles.appendChild(labelEl);
           }
 
-          if (!rule.immutable && ruleId) {
-            var editBtn = document.createElement('button');
-            editBtn.type = 'button';
-            editBtn.className = 'action-link';
-            editBtn.dataset.ruleAction = 'edit';
-            editBtn.dataset.id = ruleId;
-            if (ruleTypeKey) { editBtn.dataset.key = ruleTypeKey; }
-            editBtn.textContent = 'Edit';
-            actions.appendChild(editBtn);
+          appendToggle('Portal', 'center', channelState.center);
+          appendToggle('Email', 'email', channelState.email);
+          metaLine.appendChild(toggles);
 
-            var deleteBtn = document.createElement('button');
-            deleteBtn.type = 'button';
-            deleteBtn.className = 'action-link';
-            deleteBtn.dataset.ruleAction = 'delete';
-            deleteBtn.dataset.id = ruleId;
-            deleteBtn.textContent = 'Delete';
-            actions.appendChild(deleteBtn);
-          } else if (rule.immutable) {
+          if (isImmutable) {
             var lock = document.createElement('span');
             lock.className = 'meta-pill';
             lock.textContent = 'Security policy';
-            actions.appendChild(lock);
+            metaLine.appendChild(lock);
           }
-          metaLine.appendChild(actions);
+
           card.appendChild(metaLine);
           list.appendChild(card);
         });
@@ -1403,369 +1340,68 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       });
     }
 
-    function populateCategoryOptions(selected, isEditing) {
-      if (!fieldCategory) return { selected: null, count: 0 };
-      fieldCategory.innerHTML = '';
-      Object.keys(categories).forEach(function(key){
-        var metadata = categories[key] || {};
-        var isCustom = key === 'custom';
-        var hasCatalogEntries = Array.isArray(catalog[key]) && catalog[key].length > 0;
-        if (!isEditing) {
-          if (isCustom) { return; }
-          if (!hasCatalogEntries) { return; }
-        } else if (!hasCatalogEntries && (!selected || selected !== key)) {
+    if (rulesContainer) {
+      rulesContainer.addEventListener('change', function(event){
+        var target = event.target;
+        if (!target || !target.dataset.ruleToggle) { return; }
+        var channelKey = target.dataset.ruleToggle;
+        var id = target.dataset.id ? String(target.dataset.id) : '';
+        var lookupKey = target.dataset.key ? String(target.dataset.key) : '';
+        if (!id && !lookupKey) { return; }
+        var rule = null;
+        if (id) {
+          rule = state.rules.find(function(r){ return String(r.id || '') === id; });
+        }
+        if (!rule && lookupKey) {
+          rule = state.rules.find(function(r){ return ruleKey(r) === lookupKey; });
+        }
+        if (!rule) { return; }
+        if (rule.immutable || !rule.id) {
+          renderRules();
           return;
         }
-        var opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = metadata.label || key;
-        if (selected && selected === key) {
-          opt.selected = true;
-        }
-        fieldCategory.appendChild(opt);
-      });
-      if (!selected && fieldCategory.options.length) {
-        fieldCategory.selectedIndex = 0;
-      }
-      return {
-        selected: fieldCategory && fieldCategory.value ? fieldCategory.value : (selected || null),
-        count: fieldCategory ? fieldCategory.options.length : 0
-      };
-    }
-
-    function populateActionOptions(categoryKey, selected, isEditing, selectedLabel) {
-      if (!fieldAction) return false;
-      fieldAction.innerHTML = '';
-      if (!categoryKey) {
-        var emptyOpt = document.createElement('option');
-        emptyOpt.value = '';
-        emptyOpt.textContent = 'No available rules';
-        emptyOpt.disabled = true;
-        emptyOpt.selected = true;
-        fieldAction.appendChild(emptyOpt);
-        return false;
-      }
-      var options = catalog[categoryKey] || [];
-      var reserved = {};
-      state.rules.forEach(function(rule){
-        var key = ruleKey(rule);
-        if (!key) { return; }
-        if (selected && key === selected) { return; }
-        reserved[key] = true;
-      });
-      var available = 0;
-      if (options.length) {
-        options.forEach(function(optDef){
-          var value = optDef.type_key || optDef.key || '';
-          if (!value) { return; }
-          if (reserved[value]) { return; }
-          var opt = document.createElement('option');
-          opt.value = value;
-          opt.textContent = optDef.title || opt.value || 'Notification';
-          if (selected && selected === opt.value) {
-            opt.selected = true;
-          }
-          fieldAction.appendChild(opt);
-          available += 1;
-        });
-      }
-      if (!selected && fieldAction.options.length) {
-        fieldAction.selectedIndex = 0;
-      }
-      if (!available && isEditing && selected) {
-        var current = document.createElement('option');
-        current.value = selected;
-        var catalogDef = lookupCatalogDefinition(selected);
-        var label = selectedLabel || '';
-        if (!label && catalogDef && catalogDef.title) {
-          label = catalogDef.title;
-        }
-        if (!label && selected.indexOf('custom.') === 0) {
-          label = 'Custom reminder';
-        }
-        if (!label) {
-          label = selected || 'Current selection';
-        }
-        current.textContent = label;
-        current.selected = true;
-        fieldAction.appendChild(current);
-        available = 1;
-      }
-      if (!available) {
-        var placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = 'No available rules';
-        placeholder.disabled = true;
-        placeholder.selected = true;
-        fieldAction.appendChild(placeholder);
-      }
-      return available > 0;
-    }
-
-    function computeRuleContent(rule, typeKey) {
-      var selectedKey = typeKey || (rule && rule.type_key) || '';
-      var title = rule && rule.title ? String(rule.title) : '';
-      var body = rule && rule.body ? String(rule.body) : '';
-      var def = lookupCatalogDefinition(selectedKey);
-      if (def) {
-        if (!title && def.title) {
-          title = String(def.title);
-        }
-        if (!body && def.body) {
-          body = String(def.body);
-        }
-      }
-      return { title: title, body: body };
-    }
-
-    function updateRulePreview(rule, typeKey) {
-      var content = computeRuleContent(rule, typeKey);
-      var titleText = content.title || '';
-      var bodyText = content.body || '';
-      if (fieldTitle) {
-        fieldTitle.value = titleText;
-      }
-      if (fieldBody) {
-        fieldBody.value = bodyText;
-      }
-      if (previewTitle) {
-        previewTitle.textContent = titleText || previewTitleDefault;
-      }
-      if (previewBody) {
-        previewBody.textContent = bodyText || previewBodyDefault;
-      }
-    }
-
-    function computeEmailPreference(rule, typeKey) {
-      if (rule && typeof rule.send_email === 'boolean') {
-        return !!rule.send_email;
-      }
-      var def = lookupCatalogDefinition(typeKey);
-      if (def) {
-        if (typeof def.send_email === 'boolean') {
-          return !!def.send_email;
-        }
-        if (def.channels && typeof def.channels.email === 'boolean') {
-          return !!def.channels.email;
-        }
-      }
-      return false;
-    }
-
-    function applyRuleSelection(rule, typeKey) {
-      updateRulePreview(rule, typeKey);
-      if (fieldChannelEmail) {
-        fieldChannelEmail.checked = computeEmailPreference(rule, typeKey);
-      }
-    }
-
-    function getEditingRule() {
-      if (state.ruleModalMode !== 'edit' || !state.ruleEditing) { return null; }
-      var targetId = String(state.ruleEditing);
-      var match = state.rules.find(function(r){ return String(r.id || '') === targetId; });
-      return match || null;
-    }
-
-    function openRuleModal(rule, mode) {
-      if (!modalBackdrop || !modalForm) return;
-      var resolvedMode = mode || (rule ? 'edit' : 'create');
-      state.ruleModalMode = resolvedMode;
-      state.ruleEditing = (resolvedMode === 'edit' && rule && rule.id != null) ? String(rule.id) : null;
-      if (modalTitle) {
-        var titleText = 'Create notification rule';
-        if (resolvedMode === 'edit') {
-          titleText = 'Edit notification rule';
-        } else if (resolvedMode === 'view') {
-          titleText = 'View notification rule';
-        }
-        modalTitle.textContent = titleText;
-      }
-      if (modalClose) {
-        modalClose.textContent = resolvedMode === 'view' ? 'Close' : 'Cancel';
-      }
-      var categoryState = populateCategoryOptions(rule ? rule.category : null, resolvedMode !== 'create');
-      var category = categoryState && categoryState.selected ? categoryState.selected : '';
-      var hasOptions = populateActionOptions(category, rule ? rule.type_key : null, resolvedMode !== 'create', rule ? (rule.title || '') : '');
-      if (fieldCategory) {
-        if (resolvedMode === 'create') {
-          fieldCategory.disabled = !(categoryState && categoryState.count);
-        } else {
-          fieldCategory.disabled = true;
-        }
-      }
-      if (fieldAction) {
-        if (resolvedMode === 'create') {
-          fieldAction.disabled = !hasOptions;
-        } else {
-          fieldAction.disabled = true;
-        }
-      }
-      var activeType = fieldAction && fieldAction.value ? fieldAction.value : '';
-      applyRuleSelection(rule, activeType);
-      if (fieldChannelEmail) {
-        fieldChannelEmail.disabled = resolvedMode === 'view';
-      }
-      if (modalSubmit) {
-        if (resolvedMode === 'view') {
-          modalSubmit.disabled = true;
-          modalSubmit.hidden = true;
-        } else {
-          modalSubmit.hidden = false;
-          modalSubmit.disabled = resolvedMode === 'create' ? !hasOptions : false;
-          modalSubmit.textContent = resolvedMode === 'edit' ? 'Save changes' : 'Save';
-        }
-      }
-      modalBackdrop.classList.add('is-active');
-      setTimeout(function(){
-        if (resolvedMode === 'create' && fieldAction && !fieldAction.disabled) {
-          fieldAction.focus();
-        } else if (resolvedMode !== 'view' && fieldChannelEmail && !fieldChannelEmail.disabled) {
-          fieldChannelEmail.focus();
-        } else if (resolvedMode !== 'view' && modalSubmit && !modalSubmit.hidden) {
-          modalSubmit.focus();
-        } else if (modalClose) {
-          modalClose.focus();
-        }
-      }, 60);
-    }
-
-    function closeRuleModal() {
-      if (!modalBackdrop) return;
-      modalBackdrop.classList.remove('is-active');
-      modalBackdrop.classList.remove('is-visible');
-      state.ruleEditing = null;
-      state.ruleModalMode = null;
-      if (modalForm) {
-        modalForm.reset();
-      }
-      if (fieldCategory) {
-        fieldCategory.disabled = false;
-      }
-      if (fieldAction) {
-        fieldAction.disabled = false;
-      }
-      applyRuleSelection(null, '');
-      if (modalSubmit) {
-        modalSubmit.disabled = false;
-        modalSubmit.hidden = false;
-        modalSubmit.textContent = 'Save';
-      }
-      if (modalClose) {
-        modalClose.textContent = 'Cancel';
-      }
-      if (fieldChannelEmail) {
-        fieldChannelEmail.disabled = false;
-      }
-    }
-
-    if (modalClose) {
-      modalClose.addEventListener('click', function(){
-        closeRuleModal();
-      });
-    }
-
-    if (modalBackdrop) {
-      modalBackdrop.addEventListener('click', function(event){
-        if (event.target === modalBackdrop) {
-          closeRuleModal();
-        }
-      });
-    }
-
-    if (fieldCategory) {
-      fieldCategory.addEventListener('change', function(){
-        var hasOptions = populateActionOptions(this.value, null, false, '');
-        var mode = state.ruleModalMode;
-        if (mode === 'create' && fieldAction) {
-          fieldAction.disabled = !hasOptions;
-        }
-        if (mode === 'create' && modalSubmit) {
-          modalSubmit.disabled = !hasOptions;
-        }
-        var activeRule = mode === 'edit' ? getEditingRule() : null;
-        var nextType = fieldAction && fieldAction.value ? fieldAction.value : '';
-        applyRuleSelection(activeRule, nextType);
-      });
-    }
-
-    if (fieldAction) {
-      fieldAction.addEventListener('change', function(){
-        if (state.ruleModalMode !== 'create') { return; }
-        var nextType = this.value || '';
-        applyRuleSelection(null, nextType);
-      });
-    }
-
-    if (modalForm) {
-      modalForm.addEventListener('submit', function(event){
-        event.preventDefault();
-        if (state.ruleModalMode === 'view') {
-          closeRuleModal();
+        var ruleIdKey = String(rule.id);
+        if (pendingRuleUpdates[ruleIdKey]) {
           return;
         }
-        var payload = {
-          category: fieldCategory ? fieldCategory.value : '',
-          action: fieldAction ? fieldAction.value : '',
-          title: fieldTitle ? fieldTitle.value.trim() : '',
-          body: fieldBody ? fieldBody.value.trim() : '',
-          send_email: fieldChannelEmail ? fieldChannelEmail.checked : false
-        };
-        var isEdit = state.ruleModalMode === 'edit' && state.ruleEditing;
-        var method = isEdit ? 'PATCH' : 'POST';
-        var url = isEdit ? ('api/notifications/index.php/rules/' + state.ruleEditing) : 'api/notifications/index.php/rules';
-        if (modalSubmit) { modalSubmit.disabled = true; }
-        fetchJson(url, withCsrfOptions(method, payload)).then(function(json){
+        var previousState = resolveChannels(rule);
+        var nextState = { center: previousState.center, email: previousState.email };
+        if (channelKey === 'center') {
+          nextState.center = target.checked;
+        } else if (channelKey === 'email') {
+          nextState.email = target.checked;
+        } else {
+          return;
+        }
+        pendingRuleUpdates[ruleIdKey] = true;
+        var optimisticRule = buildRuleWithChannels(rule, nextState);
+        if (optimisticRule) {
+          updateRuleInState(optimisticRule);
+        } else {
+          renderRules();
+        }
+        fetchJson('api/notifications/index.php/rules/' + rule.id + '/channels', withCsrfOptions('PATCH', nextState)).then(function(json){
+          delete pendingRuleUpdates[ruleIdKey];
           if (json && json.data) {
             updateRuleInState(json.data);
           } else {
             loadRules();
           }
-          closeRuleModal();
         }).catch(function(err){
-          alert(err.message || 'Unable to save rule.');
-        }).finally(function(){
-          if (modalSubmit) { modalSubmit.disabled = false; }
-        });
-      });
-    }
-
-    if (createRuleBtn) {
-      createRuleBtn.addEventListener('click', function(){
-        openRuleModal(null, 'create');
-      });
-    }
-
-    if (rulesContainer) {
-      rulesContainer.addEventListener('click', function(event){
-        var target = event.target;
-        if (!target || !target.dataset.ruleAction) { return; }
-        var action = target.dataset.ruleAction;
-        var id = target.dataset.id ? String(target.dataset.id) : '';
-        var key = target.dataset.key ? String(target.dataset.key) : '';
-        var rule = null;
-        if (id) {
-          rule = state.rules.find(function(r){ return String(r.id || '') === id; });
-        }
-        if (!rule && key) {
-          rule = state.rules.find(function(r){ return ruleKey(r) === key; });
-        }
-        if (action === 'view') {
-          if (rule) {
-            openRuleModal(rule, 'view');
-          }
-        } else if (action === 'edit') {
-          if (!id || !rule) { return; }
-          openRuleModal(rule, 'edit');
-        } else if (action === 'delete') {
-          if (!id) { return; }
-          if (!confirm('Delete this notification rule?')) { return; }
-          fetchJson('api/notifications/index.php/rules/' + id, withCsrfOptions('DELETE')).then(function(){
-            state.rules = withPreconfiguredRules(state.rules.filter(function(r){ return String(r.id || '') !== id; }));
+          delete pendingRuleUpdates[ruleIdKey];
+          alert(err.message || 'Unable to update rule.');
+          var currentRule = state.rules.find(function(r){ return String(r.id || '') === ruleIdKey; });
+          if (currentRule) {
+            var revertRule = buildRuleWithChannels(currentRule, previousState);
+            if (revertRule) {
+              updateRuleInState(revertRule);
+            } else {
+              renderRules();
+            }
+          } else {
             renderRules();
-          }).catch(function(err){
-            alert(err.message || 'Unable to delete rule.');
-          });
-        }
+          }
+        });
       });
     }
 
