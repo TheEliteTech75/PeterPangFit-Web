@@ -427,7 +427,9 @@ function b64urlToUint8Array(b64url) {
   return bytes;
 }
 function b64urlToArrayBuffer(b64url) {
-  return b64urlToUint8Array(b64url).buffer;
+  const bytes = b64urlToUint8Array(b64url);
+  // Slice so detached views never expose extra capacity
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 function bytesToB64(bytes) {
   let s = '';
@@ -457,11 +459,11 @@ document.getElementById('btn-passkey')?.addEventListener('click', async ()=>{
     if (!begin.ok) throw new Error(begin.error || 'init failed');
 
     const pubKey = begin.publicKey;
-    pubKey.challenge = b64urlToUint8Array(pubKey.challenge);
+    pubKey.challenge = b64urlToArrayBuffer(pubKey.challenge);
     if (Array.isArray(pubKey.allowCredentials)) {
       pubKey.allowCredentials = pubKey.allowCredentials.map(c => ({
         type: c.type || 'public-key',
-        id: b64urlToUint8Array(c.id),
+        id: b64urlToArrayBuffer(c.id),
         transports: Array.isArray(c.transports) && c.transports.length ? c.transports : ['internal','hybrid','usb','nfc','ble']
       }));
     }
