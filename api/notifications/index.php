@@ -148,51 +148,7 @@ if ($isRuleRequest) {
             break;
 
         case 'POST':
-            ppf_notifications_api_csrf_required();
-            $payload = ppf_notifications_api_decode_body();
-            $actionKey = isset($payload['action']) ? (string)$payload['action'] : ((string)($payload['type_key'] ?? ''));
-            if ($actionKey === '') {
-                ppf_notifications_api_error(422, 'Action is required.');
-            }
-            $definition = $catalog[$actionKey] ?? null;
-            if ($definition && !empty($definition['immutable'])) {
-                ppf_notifications_api_error(403, 'Security rules are managed automatically.');
-            }
-            $categoryKey = isset($payload['category']) ? ppf_notifications_valid_category((string)$payload['category']) : ($definition['category'] ?? 'custom');
-            $title = trim((string)($payload['title'] ?? ''));
-            $body = trim((string)($payload['body'] ?? ''));
-            if ($title === '' && $definition) {
-                $title = (string)($definition['title'] ?? 'Notification');
-            }
-            if ($body === '' && $definition) {
-                $body = (string)($definition['body'] ?? '');
-            }
-            if ($title === '') {
-                ppf_notifications_api_error(422, 'Title is required.');
-            }
-            $sendEmail = !empty($payload['send_email']);
-            if (!$sendEmail && $definition && !empty($definition['send_email']) && !empty($definition['immutable'])) {
-                $sendEmail = true;
-            }
-            $channels = ['center' => true, 'email' => $sendEmail];
-            if (!empty($payload['channels']) && is_array($payload['channels'])) {
-                $channels['email'] = !empty($payload['channels']['email']);
-            }
-            $rulePayload = [
-                'type_key' => $actionKey,
-                'title' => $title,
-                'body' => $body,
-                'category' => $categoryKey,
-                'send_email' => $channels['email'],
-                'channels' => $channels,
-                'priority' => $definition['priority'] ?? 0,
-            ];
-            $ruleId = ppf_notification_rules_save($conn, $tenantId, $userId, $rulePayload, null);
-            if (!$ruleId) {
-                ppf_notifications_api_error(500, 'Unable to create notification rule.');
-            }
-            $rule = ppf_notification_rules_get($conn, $tenantId, $userId, $ruleId);
-            ppf_notifications_api_success(['data' => $rule]);
+            ppf_notifications_api_error(405, 'Notification rules are managed automatically.');
             break;
 
         case 'PATCH':
@@ -212,59 +168,31 @@ if ($isRuleRequest) {
                 $action = strtolower($segments[1]);
                 if ($action === 'channels') {
                     $body = ppf_notifications_api_decode_body();
-                    $email = !empty($body['email']);
-                    $updated = ppf_notification_rules_toggle_email($conn, $tenantId, $userId, $ruleId, $email);
+                    $updates = [];
+                    if (array_key_exists('center', $body)) {
+                        $updates['center'] = (bool)$body['center'];
+                    }
+                    if (array_key_exists('email', $body)) {
+                        $updates['email'] = (bool)$body['email'];
+                    }
+                    if (empty($updates)) {
+                        ppf_notifications_api_error(422, 'No channel changes provided.');
+                    }
+                    if (!empty($rule['immutable'])) {
+                        ppf_notifications_api_error(403, 'Security rules cannot be modified.');
+                    }
+                    $updated = ppf_notification_rules_update_channels($conn, $tenantId, $userId, $ruleId, $updates);
                     if (!$updated) {
                         ppf_notifications_api_error(500, 'Unable to update rule channels.');
                     }
                     ppf_notifications_api_success(['data' => $updated]);
                 }
             }
-            if (!empty($rule['immutable'])) {
-                ppf_notifications_api_error(403, 'This notification rule cannot be modified.');
-            }
-            $body = ppf_notifications_api_decode_body();
-            $category = isset($body['category']) ? ppf_notifications_valid_category((string)$body['category']) : $rule['category'];
-            $title = array_key_exists('title', $body) ? trim((string)$body['title']) : $rule['title'];
-            $message = array_key_exists('body', $body) ? trim((string)$body['body']) : $rule['body'];
-            $sendEmail = array_key_exists('send_email', $body) ? (bool)$body['send_email'] : (bool)$rule['send_email'];
-            $channels = $rule['channels'];
-            $channels['email'] = $sendEmail;
-            $updatePayload = [
-                'type_key' => $rule['type_key'],
-                'title' => $title,
-                'body' => $message,
-                'category' => $category,
-                'send_email' => $sendEmail,
-                'channels' => $channels,
-                'priority' => $rule['priority'],
-            ];
-            $updatedId = ppf_notification_rules_save($conn, $tenantId, $userId, $updatePayload, $ruleId);
-            if (!$updatedId) {
-                ppf_notifications_api_error(500, 'Unable to update notification rule.');
-            }
-            $updated = ppf_notification_rules_get($conn, $tenantId, $userId, $updatedId);
-            ppf_notifications_api_success(['data' => $updated]);
+            ppf_notifications_api_error(405, 'Notification rules are managed automatically.');
             break;
 
         case 'DELETE':
-            if (count($segments) !== 1 || !ctype_digit($segments[0])) {
-                ppf_notifications_api_error(404, 'Resource not found.');
-            }
-            ppf_notifications_api_csrf_required();
-            $ruleId = (int)$segments[0];
-            $rule = ppf_notification_rules_get($conn, $tenantId, $userId, $ruleId);
-            if (!$rule) {
-                ppf_notifications_api_error(404, 'Notification rule not found.');
-            }
-            if (!empty($rule['immutable'])) {
-                ppf_notifications_api_error(403, 'Security rules cannot be deleted.');
-            }
-            $deleted = ppf_notification_rules_delete($conn, $tenantId, $userId, $ruleId);
-            if (!$deleted) {
-                ppf_notifications_api_error(500, 'Unable to delete notification rule.');
-            }
-            ppf_notifications_api_success(['deleted' => $ruleId]);
+            ppf_notifications_api_error(405, 'Notification rules are managed automatically.');
             break;
 
         default:
