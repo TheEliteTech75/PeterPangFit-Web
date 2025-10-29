@@ -109,38 +109,178 @@ if ($upd = $conn->prepare("UPDATE invites SET accepted_at = COALESCE(accepted_at
 <meta charset="UTF-8">
 <title>Complete Registration - Peter Pang Fit</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{
-    color-scheme:dark;
-    --bg:#05070d; --bg-alt:#03040a; --panel:rgba(9,14,28,0.92); --text:#f8fafc; --brand:#38bdf8;
-    --line:rgba(148,163,184,0.18); --err-border:#4a2020; --err-text:#fca5a5;
+  :root {
+    color-scheme: dark;
+    --bg: #05070d;
+    --bg-alt: #03040a;
+    --surface: rgba(9, 14, 28, 0.92);
+    --surface-strong: rgba(15, 23, 42, 0.94);
+    --surface-soft: rgba(30, 41, 59, 0.35);
+    --border: rgba(148, 163, 184, 0.26);
+    --border-strong: rgba(56, 189, 248, 0.55);
+    --primary: #6ee7b7;
+    --primary-strong: #22d3a2;
+    --accent: #38bdf8;
+    --danger: #f87171;
+    --text: #f8fafc;
+    --muted: #9ba4c2;
+    --muted-strong: #cbd5f5;
+    --muted-soft: rgba(148, 163, 184, 0.72);
+    --shadow-lg: 0 34px 60px rgba(2, 6, 23, 0.55);
+    font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
-  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:
-      radial-gradient(circle at top left, rgba(56,189,248,0.18), transparent 55%),
-      radial-gradient(circle at bottom right, rgba(110,231,183,0.12), transparent 60%),
-      linear-gradient(155deg, var(--bg), var(--bg-alt)); color:var(--text); }
-  .wrap { max-width: 900px; margin: 60px auto; background:var(--panel); padding:32px; border-radius:8px; }
-  h1 { margin-top:0; color:var(--brand); }
-  label { display:block; margin:12px 0 6px; }
-  input, select {
-    width:100%; padding:12px; border:0; border-radius:6px; background:#1a1a1a; color:#fff; box-sizing:border-box;
+
+  *, *::before, *::after {
+    box-sizing: border-box;
   }
-  .grid { display:grid; grid-template-columns: repeat(12, 1fr); gap:12px; }
-  .span-12{grid-column:span 12} .span-6{grid-column:span 6} .span-4{grid-column:span 4} .span-3{grid-column:span 3}
-  .btn { margin-top:16px; background:#38bdf8; color:#000; padding:12px 16px; border:0; border-radius:6px; font-weight:bold; cursor:pointer; }
-  .btn:hover { background:#22d3a2; }
-  .hint { color:#cbd5f5; font-size:.9rem; }
+
+  body {
+    margin: 0;
+    font-family: inherit;
+    color: var(--text);
+    background:
+      radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 55%),
+      radial-gradient(circle at bottom right, rgba(110, 231, 183, 0.12), transparent 60%),
+      linear-gradient(160deg, var(--bg), var(--bg-alt));
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 960px;
+    margin: clamp(40px, 5vw, 72px) auto;
+    background: var(--surface);
+    padding: clamp(28px, 5vw, 48px);
+    border-radius: 28px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(22px);
+  }
+
+  h1 {
+    margin-top: 0;
+    color: var(--accent);
+    font-size: clamp(1.65rem, 1.2vw + 1.2rem, 2.1rem);
+    letter-spacing: -0.01em;
+  }
+
+  label {
+    display: block;
+    margin: 12px 0 6px;
+    color: var(--muted-strong);
+    font-weight: 600;
+    font-size: 0.92rem;
+  }
+
+  input,
+  select {
+    width: 100%;
+    padding: 13px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(15, 23, 42, 0.65);
+    color: var(--text);
+    font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  input:focus,
+  select:focus {
+    outline: none;
+    border-color: var(--border-strong);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+  }
+
+  .span-12 { grid-column: span 12; }
+  .span-6 { grid-column: span 6; }
+  .span-4 { grid-column: span 4; }
+  .span-3 { grid-column: span 3; }
+
+  .btn {
+    margin-top: 16px;
+    padding: 14px 18px;
+    border: none;
+    border-radius: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+    color: #02131f;
+    box-shadow: 0 16px 40px rgba(56, 189, 248, 0.35);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .btn:hover,
+  .btn:focus {
+    transform: translateY(-1px);
+    box-shadow: 0 20px 48px rgba(110, 231, 183, 0.38);
+  }
+
+  .hint {
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.55;
+  }
+
   .flash.err {
-    margin: 0 0 18px 0; padding:12px; border-radius:10px;
-    border:1px solid var(--err-border); color:var(--err-text); background:rgba(8,13,23,0.85); font-size:14px;
+    margin: 0 0 18px 0;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(248, 113, 113, 0.32);
+    color: #fecaca;
+    background: rgba(248, 113, 113, 0.12);
+    font-size: 0.92rem;
+    font-weight: 600;
   }
-  .badge { display:inline-block; margin-bottom:10px; padding:4px 8px; border-radius:999px; font-size:12px; background:#1c2838; color:#bae6fd; border:1px solid rgba(30,58,138,0.45); }
+
+  .badge {
+    display: inline-block;
+    margin-bottom: 14px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    background: var(--surface-soft);
+    color: var(--muted-strong);
+    border: 1px solid rgba(148, 163, 184, 0.32);
+  }
 
   /* Password requirements list (same look/feel as profile.php) */
   ul.req{font-size:13px;margin:8px 0 0 0;padding-left:0}
-  ul.req li{margin:6px 0;list-style:none;padding-left:22px;position:relative;color:#fca5a5}
+  ul.req li{margin:6px 0;list-style:none;padding-left:22px;position:relative;color:var(--danger);transition:color 0.2s ease}
   ul.req li::before{content:'•';position:absolute;left:8px;top:0.2rem;opacity:.7}
-  ul.req li.ok{color:#a7f3d0}
+  ul.req li.ok{color:#bbf7d0}
+
+  @media (max-width: 900px) {
+    .wrap {
+      margin: clamp(24px, 6vw, 48px) 16px;
+      border-radius: 22px;
+    }
+
+    .grid {
+      gap: 14px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .grid {
+      grid-template-columns: repeat(12, 1fr);
+    }
+
+    .span-6,
+    .span-4,
+    .span-3 {
+      grid-column: span 12;
+    }
+  }
 </style>
 </head>
 <body>
