@@ -1139,9 +1139,13 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           function appendToggle(labelText, channelKey, checked) {
             var labelEl = document.createElement('label');
             var pendingKey = rulePendingKey(rule) || (ruleTypeKey ? 'key:' + ruleTypeKey : '');
-            var isPending = !!(pendingKey && pendingRuleUpdates[pendingKey]);
+            var pendingEntry = pendingKey ? pendingRuleUpdates[pendingKey] : null;
+            var pendingChannels = pendingEntry && pendingEntry.channels;
+            var hasPendingValue = pendingChannels && Object.prototype.hasOwnProperty.call(pendingChannels, channelKey);
+            var effectiveChecked = hasPendingValue ? !!pendingChannels[channelKey] : checked;
+            var isPending = !!pendingEntry;
             var className = 'channel-toggle';
-            if (checked) { className += ' is-active'; }
+            if (effectiveChecked) { className += ' is-active'; }
             if (isPending) { className += ' is-pending'; }
             labelEl.className = className;
             var input = document.createElement('input');
@@ -1149,7 +1153,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
             input.dataset.ruleToggle = channelKey;
             if (ruleId) { input.dataset.id = ruleId; }
             if (ruleTypeKey) { input.dataset.key = ruleTypeKey; }
-            input.checked = checked;
+            input.checked = effectiveChecked;
             input.disabled = isImmutable || isPending;
             labelEl.appendChild(input);
             var text = document.createElement('span');
@@ -1407,7 +1411,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           return;
         }
         if (pendingKey) {
-          pendingRuleUpdates[pendingKey] = true;
+          pendingRuleUpdates[pendingKey] = {
+            channels: { center: !!nextState.center, email: !!nextState.email }
+          };
         }
 
         var optimisticRule = buildRuleWithChannels(rule, nextState);
