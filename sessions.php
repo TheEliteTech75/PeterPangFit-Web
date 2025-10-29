@@ -519,6 +519,14 @@ foreach ($sessions as $s) {
   .pill.vpn{ background:rgba(250,204,21,0.18); border-color:rgba(250,204,21,0.4); color:#fde68a; }
   /* iCloud pill: faded white bg + solid white outline */
   .pill.icloud{ background:rgba(255,255,255,0.12); border-color:#ffffff; color:#ffffff; }
+  body.ppf-themed.sessions-page .pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;border:1px solid rgba(148,163,184,0.32);background:rgba(148,163,184,0.12);font-size:12px;letter-spacing:.02em;color:var(--text)}
+  body.ppf-themed.sessions-page .pill.current{background:rgba(148,163,184,0.22);border-color:rgba(148,163,184,0.45);color:#e2e8f0}
+  body.ppf-themed.sessions-page .pill.active{background:rgba(34,197,94,0.22);border-color:rgba(34,197,94,0.45);color:#bbf7d0;font-weight:600}
+  body.ppf-themed.sessions-page .pill.inactive{ background:var(--inactive-bg); border-color:var(--inactive-br); color:var(--inactive-text); }
+  body.ppf-themed.sessions-page .pill.expired{ background:rgba(250,204,21,0.22); border-color:rgba(250,204,21,0.45); color:#fef08a; }
+  body.ppf-themed.sessions-page .pill.revoked{ background:rgba(239,68,68,0.18); border-color:rgba(239,68,68,0.45); color:#fca5a5; }
+  body.ppf-themed.sessions-page .pill.vpn{ background:rgba(250,204,21,0.18); border-color:rgba(250,204,21,0.4); color:#fde68a; }
+  body.ppf-themed.sessions-page .pill.icloud{ background:rgba(255,255,255,0.12); border-color:#ffffff; color:#ffffff; }
 
   .table-wrap{overflow-x:auto;border-radius:16px;border:1px solid var(--line);background:rgba(15,23,42,0.65);backdrop-filter:blur(16px);box-shadow:0 22px 45px rgba(2,6,23,0.45);}
   table{width:100%;border-collapse:collapse;min-width:1160px;color:var(--text);}
@@ -563,7 +571,7 @@ foreach ($sessions as $s) {
   .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:rgba(148,163,184,0.2)}
   </style>
 </head>
-<body>
+<body class="sessions-page">
 <main class="wrap">
   <h1 style="margin:0 0 10px 0;">Sessions</h1>
   <p class="muted" style="margin:0 0 18px 0;">Admin view of all login sessions across the platform.</p>
