@@ -417,6 +417,11 @@ switch ($method) {
                 $unread = ppf_notifications_api_unread($conn, $tenantId, $userId, null);
                 ppf_notifications_api_success(['processed' => $ok ? ['all'] : [], 'unread' => $unread]);
             }
+            if ($operation === 'archive_read') {
+                $archived = ppf_notifications_archive_read($conn, $tenantId, $userId);
+                $unread = ppf_notifications_api_unread($conn, $tenantId, $userId, null);
+                ppf_notifications_api_success(['archived' => $archived, 'unread' => $unread]);
+            }
             $ids = array_filter(array_map('intval', (array)($body['ids'] ?? [])), function ($id) {
                 return $id > 0;
             });

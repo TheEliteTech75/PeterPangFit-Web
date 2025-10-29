@@ -960,6 +960,7 @@ if (!function_exists('ppf_notifications_fetch_recent')) {
     $tenantId = ppf_current_tenant_id();
     ppf_notifications_bootstrap($conn);
     ppf_notifications_seed_defaults($conn, $tenantId, $userId);
+    ppf_notifications_prune_archived($conn, $tenantId, $userId);
     $settings = ppf_notifications_settings_get($conn, $tenantId, $userId);
     $limit = max(1, min(25, $limit));
     $stmt = $conn->prepare("SELECT * FROM notification_messages WHERE tenant_id = ? AND user_id = ? AND is_archived = 0 ORDER BY created_at DESC LIMIT ?");
@@ -994,6 +995,7 @@ if (!function_exists('ppf_notifications_unread_count')) {
   function ppf_notifications_unread_count(mysqli $conn, int $tenantId, int $userId, ?array $settings = null): int {
     ppf_notifications_bootstrap($conn);
     ppf_notifications_seed_defaults($conn, $tenantId, $userId);
+    ppf_notifications_prune_archived($conn, $tenantId, $userId);
     if ($settings === null) {
       $settings = ppf_notifications_settings_get($conn, $tenantId, $userId);
     }
@@ -1031,6 +1033,7 @@ if (!function_exists('ppf_notifications_query')) {
   function ppf_notifications_query(mysqli $conn, int $tenantId, int $userId, array $filters, array $options = []): array {
     ppf_notifications_bootstrap($conn);
     ppf_notifications_seed_defaults($conn, $tenantId, $userId);
+    ppf_notifications_prune_archived($conn, $tenantId, $userId);
     $settings = ppf_notifications_settings_get($conn, $tenantId, $userId);
     $where = ['tenant_id = ?', 'user_id = ?'];
     $params = [$tenantId, $userId];
@@ -1222,6 +1225,57 @@ if (!function_exists('ppf_notifications_delete')) {
       ppf_notifications_log_event($conn, $tenantId, $userId, $notificationId, 'archived', $userId);
     }
     return $rows > 0;
+  }
+}
+
+if (!function_exists('ppf_notifications_prune_archived')) {
+  function ppf_notifications_prune_archived(mysqli $conn, int $tenantId, int $userId, int $days = 30): int {
+    ppf_notifications_bootstrap($conn);
+    $days = max(1, (int)$days);
+    static $pruned = [];
+    $key = $tenantId . ':' . $userId . ':' . $days;
+    if (isset($pruned[$key])) {
+      return 0;
+    }
+    $pruned[$key] = true;
+    $threshold = date('Y-m-d H:i:s', time() - ($days * 86400));
+    $stmt = $conn->prepare('DELETE FROM notification_messages WHERE tenant_id = ? AND user_id = ? AND is_archived = 1 AND archived_at IS NOT NULL AND archived_at < ?');
+    if (!$stmt) {
+      return 0;
+    }
+    $stmt->bind_param('iis', $tenantId, $userId, $threshold);
+    $stmt->execute();
+    $affected = (int)$stmt->affected_rows;
+    $stmt->close();
+    return max(0, $affected);
+  }
+}
+
+if (!function_exists('ppf_notifications_archive_read')) {
+  function ppf_notifications_archive_read(mysqli $conn, int $tenantId, int $userId): int {
+    ppf_notifications_bootstrap($conn);
+    $stmt = $conn->prepare('SELECT id FROM notification_messages WHERE tenant_id = ? AND user_id = ? AND is_archived = 0 AND is_read = 1');
+    if (!$stmt) {
+      return 0;
+    }
+    $stmt->bind_param('ii', $tenantId, $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $ids = [];
+    if ($res) {
+      while ($row = $res->fetch_assoc()) {
+        $ids[] = (int)$row['id'];
+      }
+      $res->close();
+    }
+    $stmt->close();
+    $updated = 0;
+    foreach ($ids as $id) {
+      if (ppf_notifications_set_archived($conn, $tenantId, $userId, $id, true)) {
+        $updated++;
+      }
+    }
+    return $updated;
   }
 }
 
