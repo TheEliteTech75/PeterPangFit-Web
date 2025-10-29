@@ -1,5 +1,6 @@
 <?php
 // passkey_email_verify.php — verify email code + current password for adding a passkey
+require_once __DIR__ . '/ppf_debug.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/logs.php';

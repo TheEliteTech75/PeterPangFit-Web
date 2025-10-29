@@ -1,5 +1,6 @@
 <?php
 // login_handler.php — validates credentials, then branches to 2FA if required
+require_once __DIR__ . '/ppf_debug.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
 
 require_once __DIR__ . '/db.php';

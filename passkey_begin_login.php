@@ -1,5 +1,6 @@
 <?php
 // passkey_begin_login.php — Begin WebAuthn assertion for a specific email
+require_once __DIR__ . '/ppf_debug.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
 header('Content-Type: application/json');
 

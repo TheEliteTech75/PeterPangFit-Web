@@ -1,5 +1,6 @@
 <?php
 // passkey_delete.php — delete a passkey (requires password)
+require_once __DIR__ . '/ppf_debug.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/logs.php';
