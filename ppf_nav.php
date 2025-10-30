@@ -116,6 +116,14 @@ if ($isAdmin || $isTrainer) {
         ],
       ],
       [
+        'href' => 'trainers.php',
+        'label' => 'Trainers',
+        'submenu' => [
+          ['href' => 'trainers.php?tab=active',   'label' => 'Active Trainers'],
+          ['href' => 'trainers.php?tab=inactive', 'label' => 'Inactive Trainers'],
+        ],
+      ],
+      [
         'href' => 'trainer_sessions.php',
         'label' => 'Sessions',
       ],
