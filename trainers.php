@@ -194,6 +194,7 @@ try {
             if (!$emails) {
                 throw new Exception('Please enter at least one valid email address.');
             }
+            $flashType = 'ok';
 
             $sent = [];
 
@@ -727,7 +728,9 @@ require_once __DIR__ . '/ppf_nav.php';
 .add-trainer-grid .field{margin-bottom:0}
 .add-trainer-grid .field.full{grid-column:1 / -1}
 @media (max-width:720px){.add-trainer-grid{grid-template-columns:1fr}}
-.password-reqs{margin-top:6px;font-size:12px;line-height:1.4}
+.password-reqs{font-size:12px;line-height:1.4}
+.password-reqs-wrap{display:block;margin-top:-6px}
+.password-reqs-wrap .password-reqs{margin-top:0}
 .password-reqs .ok{color:#22c55e}.password-reqs .bad{color:#ef4444}.password-reqs .hint{color:var(--muted,#9ba4c2)}
 .tagbox{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px;border:1px solid var(--input-border,rgba(148,163,184,.28));border-radius:10px;background:var(--input-bg,rgba(15,23,42,.6))}
 .tagbox-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -834,6 +837,12 @@ require_once __DIR__ . '/ppf_nav.php';
             <div class="field full">
                 <label for="add_password">Password</label>
                 <input class="input" id="add_password" name="add_password" type="password" required>
+            </div>
+            <div class="field full">
+                <label for="add_password_confirm">Confirm Password</label>
+                <input class="input" id="add_password_confirm" name="add_password_confirm" type="password" required>
+            </div>
+            <div class="field full password-reqs-wrap">
                 <div class="password-reqs" id="add-trainer-password-reqs">
                     <div><span data-req="len" class="bad">• At least 12 characters</span></div>
                     <div><span data-req="upper" class="bad">• At least one uppercase letter</span></div>
@@ -841,10 +850,6 @@ require_once __DIR__ . '/ppf_nav.php';
                     <div><span data-req="digit" class="bad">• At least one number</span></div>
                     <div><span data-req="special" class="bad">• At least one special character</span></div>
                 </div>
-            </div>
-            <div class="field full">
-                <label for="add_password_confirm">Confirm Password</label>
-                <input class="input" id="add_password_confirm" name="add_password_confirm" type="password" required>
             </div>
         </div>
         <div class="actions">
@@ -977,10 +982,10 @@ require_once __DIR__ . '/ppf_nav.php';
 
   function addEmail(raw){
     const email = sanitize(raw);
-    if (!email) return;
-    if (!emailPattern.test(email)) return;
+    if (!email) return false;
+    if (!emailPattern.test(email)) return false;
     const key = email.toLowerCase();
-    if (emails.has(key)) return;
+    if (emails.has(key)) return false;
 
     emails.add(key);
     const tag = createTag(email);
@@ -992,6 +997,31 @@ require_once __DIR__ . '/ppf_nav.php';
     hiddenInput.value = email;
     hiddenInput.dataset.email = key;
     hidden.appendChild(hiddenInput);
+    return true;
+  }
+
+  function commitBuffer(keepPartial){
+    const value = input.value;
+    if (!value) return '';
+    const segments = value.split(/[\s,;]+/);
+    const endsWithDelimiter = /[\s,;]$/.test(value);
+    let remainderSegment = '';
+    if (keepPartial && !endsWithDelimiter){
+      remainderSegment = segments.pop() || '';
+    }
+    let addedAny = false;
+    segments.filter(Boolean).forEach(part => {
+      if (addEmail(part)){
+        addedAny = true;
+      }
+    });
+    if (addedAny){
+      if (keepPartial && !endsWithDelimiter){
+        return remainderSegment;
+      }
+      return '';
+    }
+    return remainderSegment || sanitize(value);
   }
 
   function removeEmail(email, tagEl){
@@ -1010,10 +1040,12 @@ require_once __DIR__ . '/ppf_nav.php';
   tagBox.addEventListener('click', () => input.focus());
 
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter'){
+    if (e.key === 'Enter' || e.key === ' ' || e.key === ',' || e.key === ';'){
       e.preventDefault();
-      addEmail(input.value);
-      input.value = '';
+      const remainder = commitBuffer(true);
+      if (input.value !== remainder){
+        input.value = remainder;
+      }
     } else if (e.key === 'Backspace' && !input.value){
       const last = tagsEl.lastElementChild;
       if (last){
@@ -1023,26 +1055,25 @@ require_once __DIR__ . '/ppf_nav.php';
   });
 
   input.addEventListener('input', () => {
-    const value = input.value;
-    if (!value) return;
-    if (/[,;\s]$/.test(value)){
-      addEmail(value);
-      input.value = '';
-      return;
+    const remainder = commitBuffer(true);
+    if (input.value !== remainder){
+      input.value = remainder;
     }
-    const parts = value.split(/[\s,;]+/).filter(Boolean);
-    if (parts.length > 1){
-      parts.slice(0, -1).forEach(part => addEmail(part));
-      input.value = parts[parts.length - 1] || '';
+  });
+
+  input.addEventListener('blur', () => {
+    const remainder = commitBuffer(false);
+    if (input.value !== remainder){
+      input.value = remainder;
     }
   });
 
   const form = input.closest('form');
   if (form){
     form.addEventListener('submit', (e) => {
-      if (input.value){
-        addEmail(input.value);
-        input.value = '';
+      const remainder = commitBuffer(false);
+      if (input.value !== remainder){
+        input.value = remainder;
       }
       if (emails.size === 0){
         e.preventDefault();
