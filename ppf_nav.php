@@ -182,7 +182,7 @@ if ($isAdmin) {
   $systemItems[] = ['href' => 'sessions.php', 'label' => 'Login Sessions'];
   $systemItems[] = ['href' => 'logs.php', 'label' => 'Logs'];
 }
-$systemItems[] = ['href' => 'notifications.php', 'label' => 'Notification Center'];
+$systemItems[] = ['href' => 'notifications.php', 'label' => 'Notifications'];
 
 if (!empty($systemItems)) {
   $sections[] = [
