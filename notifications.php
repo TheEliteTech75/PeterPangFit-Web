@@ -1388,6 +1388,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         rules.forEach(function(rule){
           var card = document.createElement('article');
           card.className = 'notification-card';
+          card.setAttribute('data-rule-card', '');
+          var ruleId = (rule && rule.id != null && rule.id !== '') ? String(rule.id) : '';
+          var ruleTypeKey = ruleKey(rule);
+          if (ruleId) {
+            card.setAttribute('data-rule-id', ruleId);
+          }
+          if (ruleTypeKey) {
+            card.setAttribute('data-rule-key', ruleTypeKey);
+          }
           var channelState = resolveChannels(rule);
           if (rule && rule.immutable) {
             channelState.center = true;
@@ -1442,12 +1451,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
           var toggles = document.createElement('div');
           toggles.className = 'channel-toggle-group';
+          var isImmutable = !!(rule && rule.immutable);
           if (isImmutable) {
             toggles.classList.add('is-fixed');
           }
-          var ruleId = (rule && rule.id != null && rule.id !== '') ? String(rule.id) : '';
-          var ruleTypeKey = ruleKey(rule);
-          var isImmutable = !!(rule && rule.immutable);
 
           function appendToggle(labelText, channelKey, checked) {
             var labelEl = document.createElement('label');
@@ -1590,6 +1597,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       var targetId = (rule.id !== undefined && rule.id !== null && rule.id !== '') ? String(rule.id) : null;
       var idx = -1;
       var key = ruleKey(rule);
+      var replacement = cloneRule(rule);
       if (targetId !== null) {
         idx = nextRules.findIndex(function(existing){
           return existing && existing.id !== undefined && existing.id !== null && String(existing.id) === targetId;
@@ -1606,9 +1614,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
             return ruleKey(existing) !== key;
           });
         }
-        nextRules.push(rule);
+        nextRules.push(replacement);
       } else {
-        nextRules[idx] = rule;
+        nextRules[idx] = replacement;
       }
       if (Array.isArray(nextRules)) {
         nextRules.forEach(cachePreconfiguredRule);
@@ -1817,6 +1825,17 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         var channelKey = target.dataset.ruleToggle;
         var id = target.dataset.id ? String(target.dataset.id) : '';
         var lookupKey = target.dataset.key ? String(target.dataset.key) : '';
+        if (!id || !lookupKey) {
+          var owner = target.closest('[data-rule-card]');
+          if (owner) {
+            if (!id && owner.dataset.ruleId) {
+              id = String(owner.dataset.ruleId);
+            }
+            if (!lookupKey && owner.dataset.ruleKey) {
+              lookupKey = String(owner.dataset.ruleKey);
+            }
+          }
+        }
         if (!id && !lookupKey) { return; }
         var rule = null;
         if (id) {
