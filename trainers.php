@@ -194,6 +194,7 @@ try {
             if (!$emails) {
                 throw new Exception('Please enter at least one valid email address.');
             }
+            $flashType = 'ok';
 
             $sent = [];
 
