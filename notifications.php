@@ -240,6 +240,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      flex-wrap: wrap;
     }
     main.wrap {
       max-width: 1180px;
@@ -253,6 +254,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       display: flex;
       flex-direction: column;
       gap: 6px;
+      flex: 1 1 320px;
     }
     .subheader h1 {
       margin: 0;
@@ -265,11 +267,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       color: color-mix(in srgb, var(--muted, #cbd5f5) 85%, var(--text, #f8fafc) 15%);
       font-size: 14px;
     }
-    .subheader .actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
+    .subheader .page-tabs {
+      margin-left: auto;
+      align-self: flex-end;
+      margin-bottom: 0;
     }
     .ppf-btn {
       display: inline-flex;
@@ -394,6 +395,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       align-items: center;
       gap: 12px;
       flex-wrap: wrap;
+    }
+    .panel-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 12px;
     }
     .view-tabs,
     .page-tabs {
@@ -702,6 +709,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         flex-direction: column;
         align-items: flex-start;
       }
+      .subheader .page-tabs {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 12px;
+        justify-content: flex-start;
+      }
       .toolbar {
         flex-direction: column;
         align-items: stretch;
@@ -714,6 +727,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
+      }
+      .panel-meta {
+        width: 100%;
+        align-items: flex-start;
       }
       .panel-title-top {
         flex-direction: column;
@@ -745,21 +762,14 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         <h1>Notification Center</h1>
         <p>Stay up to date with workouts, billing, security alerts, and your own reminders.</p>
       </div>
-      <div class="actions" data-feed-actions aria-hidden="false">
-        <button type="button" class="ppf-btn" data-feed-action="mark-all" disabled>Mark all read</button>
-        <button type="button" class="ppf-btn" data-feed-action="archive-read" disabled>Archive read</button>
-        <button type="button" class="ppf-btn" data-feed-action="refresh">Refresh</button>
+      <div class="page-tabs" data-main-tabs role="tablist" aria-label="Notification views">
+        <button type="button" class="page-tab is-active" data-main-view="inbox" role="tab" aria-selected="true" tabindex="0" aria-controls="notifications-inbox-panel" id="notifications-inbox-tab">Inbox</button>
+        <button type="button" class="page-tab" data-main-view="rules" role="tab" aria-selected="false" tabindex="-1" aria-controls="notifications-rules-panel" id="notifications-rules-tab">Rules</button>
       </div>
     </div>
   </div>
 
   <main class="wrap" data-notification-center>
-
-    <div class="page-tabs" data-main-tabs role="tablist" aria-label="Notification views">
-      <button type="button" class="page-tab is-active" data-main-view="inbox" role="tab" aria-selected="true" tabindex="0" aria-controls="notifications-inbox-panel" id="notifications-inbox-tab">Inbox</button>
-      <button type="button" class="page-tab" data-main-view="rules" role="tab" aria-selected="false" tabindex="-1" aria-controls="notifications-rules-panel" id="notifications-rules-tab">Rules</button>
-    </div>
-
     <section class="panel" data-feed-section aria-hidden="false" id="notifications-inbox-panel" role="tabpanel" aria-labelledby="notifications-inbox-tab">
       <div class="panel-header">
         <div class="panel-title">
@@ -772,8 +782,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           </div>
           <p data-feed-description>Your latest alerts appear here. Use filters to focus on what's important.</p>
         </div>
-        <div class="status-indicator" data-summary>
-          <strong>0</strong> unread notifications
+        <div class="panel-meta">
+          <div class="panel-actions" data-feed-actions aria-hidden="false">
+            <button type="button" class="ppf-btn" data-feed-action="mark-all" disabled>Mark all read</button>
+            <button type="button" class="ppf-btn" data-feed-action="archive-read" disabled>Archive read</button>
+            <button type="button" class="ppf-btn" data-feed-action="refresh">Refresh</button>
+          </div>
+          <div class="status-indicator" data-summary>
+            <strong>0</strong> unread notifications
+          </div>
         </div>
       </div>
 
@@ -979,7 +996,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var center = document.querySelector('[data-notification-center]');
     if (!center) { return; }
 
-    var mainTabsEl = center.querySelector('[data-main-tabs]');
+    var mainTabsEl = document.querySelector('[data-main-tabs]');
     var feedSectionEl = center.querySelector('[data-feed-section]');
     var rulesSectionEl = center.querySelector('[data-rules-section]');
     var feedListEl = center.querySelector('[data-feed-list]');
@@ -994,7 +1011,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var panelDescriptionEl = center.querySelector('[data-feed-description]');
     var viewTabsEl = center.querySelector('[data-feed-views]');
     var rulesContainer = center.querySelector('[data-rules-container]');
-    var feedActionsEl = document.querySelector('[data-feed-actions]');
+    var feedActionsEl = center.querySelector('[data-feed-actions]');
 
     function formatDate(iso) {
       if (!iso) return '';
