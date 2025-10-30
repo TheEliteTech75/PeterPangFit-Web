@@ -12,7 +12,7 @@ require_once __DIR__ . '/ppf_env.php';
 define('MAIL_HOST', '127.0.0.1');          // '127.0.0.1' if tunneling, or the mail server IP
 define('MAIL_PORT', 1025);                  // Bridge default
 define('MAIL_USERNAME', 'p4wn3d5972@proton.me'); // From Bridge
-define('MAIL_PASSWORD', 'pwa3kdggg-rOZxmpljbWSw'); // From Bridge
+define('MAIL_PASSWORD', 'Uh7Zaa9_f-z3lg82-vfsCA'); // From Bridge
 
 // Your sender identity
 define('MAIL_FROM', 'peterpangfit@pwncore.net'); // your Proton address or custom domain address routed to Proton

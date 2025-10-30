@@ -189,7 +189,14 @@ if ($res = $conn->query($sql)) {
     .status.Cancelled{color:#fca5a5}
     .nowrap{white-space:nowrap}
     .controls{display:flex;gap:8px}
-  </style>
+  
+/* === PPF Invite Status Colors === */
+.status-Registered { background: rgba(34,197,94,0.25); color: #22c55e; }    /* Green */
+.status-Pending { background: rgba(251,146,60,0.25); color: #fb923c; }      /* Orange */
+.status-Canceled { background: rgba(239,68,68,0.25); color: #ef4444; }      /* Red */
+.status-Accepted { background: rgba(234,179,8,0.25); color: #eab308; }      /* Yellow */
+
+</style>
 </head>
 <body>
 
@@ -285,7 +292,18 @@ if ($res = $conn->query($sql)) {
           <td class="nowrap"><?php echo h(fmt_dt($row['accepted_at'] ?? null)); ?></td>
           <td class="nowrap"><?php echo h(fmt_dt($row['completed_at'] ?? null)); ?></td>
           <td class="nowrap"><?php echo h(fmt_dt($row['expires_at'])); ?></td>
-          <td><span class="status <?php echo h($row['status']); ?>"><?php echo h($row['status']); ?></span></td>
+          <?php
+$_ppf_status = $row['status'] ?? '';
+$_ppf_colors = [
+  'Registered' => '#22c55e',
+  'Pending'    => '#fb923c',
+  'Canceled'   => '#ef4444',
+  'Cancelled'  => '#ef4444',
+  'Accepted'   => '#eab308',
+];
+$_ppf_style = isset($_ppf_colors[$_ppf_status]) ? ' style="color: ' . $_ppf_colors[$_ppf_status] . ' !important;"' : '';
+?>
+<td><span class="status <?php echo h($_ppf_status); ?>"<?php echo $_ppf_style; ?>><?php echo h($_ppf_status); ?></span></td>
           <td>
             <div class="controls">
               <?php if ($row['status'] === 'Pending'): ?>

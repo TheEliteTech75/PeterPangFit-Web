@@ -753,7 +753,44 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     .panel.is-hidden {
       display: none;
     }
-  </style>
+  
+/* === PPF dual overrides: keep subheader tabs big; table tabs small === */
+.page-tabs { gap: 10px !important; padding: 6px !important; }
+.page-tabs .page-tab {
+  padding: 12px 18px !important;
+  font-size: 16px !important;
+  min-height: 44px !important;
+  line-height: 1.2 !important;
+  border-radius: 999px;
+}
+
+
+/* === PPF tuned override: table Inbox/Archived tabs slightly smaller === */
+.view-tabs { gap: 5px !important; padding: 4px !important; }
+.view-tabs .view-tab {
+  padding: 5px 10px !important;
+  font-size: 13px !important;
+  min-height: 30px !important;
+  line-height: 1.15 !important;
+  border-radius: 999px;
+}
+
+
+/* === PPF enhancement: highlight active/selected tabs === */
+.page-tab.is-active, .view-tab.is-active {
+  background: color-mix(in srgb, var(--brand, rgba(14,165,233,0.9)) 70%, rgba(15,23,42,0.6) 30%) !important;
+  color: #0b1120 !important;
+  box-shadow: 0 10px 24px rgba(14,165,233,0.28);
+  transform: scale(1.05);
+  transition: all 0.2s ease-in-out;
+}
+
+.page-tab:hover:not(.is-active), .view-tab:hover:not(.is-active) {
+  background: rgba(56,189,248,0.18);
+  color: #f0f9ff;
+}
+
+</style>
 </head>
 <body>
   <div class="subheader-bar">

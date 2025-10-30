@@ -382,7 +382,7 @@ if ($rs = $conn->query($sql)) {
     $pastAutoLogout     = ($lastTs !== false && $lastTs <  $inactiveCutTs);
     $veryOldFallback    = ($lastSeen !== '' && strcmp($lastSeen, $fallbackExpireCut) < 0);
 
-    $row['is_active']   = (!$row['is_revoked'] && $seenActiveWindow);
+    $row['is_active']   = (!$row['is_revoked'] && ($seenActiveWindow || $row['is_current']));
     $row['is_expired']  = (!$row['is_revoked'] && !$row['is_current'] && ($pastAutoLogout || $veryOldFallback));
     $row['is_inactive'] = (
       !$row['is_current'] &&

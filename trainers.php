@@ -677,7 +677,28 @@ require_once __DIR__ . '/ppf_nav.php';
         .trainer-row.editing{background:rgba(56,189,248,0.08)}
         @media (max-width:900px){th,td{padding:8px;font-size:13px}.btn.small{font-size:12px}}
         @media (max-width:720px){th,td{padding:6px;font-size:12px}.brand{font-size:18px}}
-    </style>
+    
+/* === PPF: Trainers modal enhancements === */
+.add-trainer-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+@media (max-width:720px){.add-trainer-grid{grid-template-columns:1fr}}
+.password-reqs{margin-top:6px;font-size:12px;line-height:1.4}
+.password-reqs .ok{color:#22c55e}.password-reqs .bad{color:#ef4444}.password-reqs .hint{color:var(--muted,#9ba4c2)}
+.tagbox{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px;border:1px solid var(--input-border,rgba(148,163,184,.28));border-radius:10px;background:var(--input-bg,rgba(15,23,42,.6))}
+.tagbox input{border:none;outline:none;background:transparent;flex:1;min-width:140px;padding:6px;color:var(--text,#f8fafc)}
+.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:var(--badge-muted,rgba(148,163,184,.16));color:var(--text,#f8fafc);font-size:13px;font-weight:600}
+.tag .x{cursor:pointer;font-weight:700;opacity:.8}.tag .x:hover{opacity:1}
+
+
+/* === PPF fix: widen Add Trainer modal === */
+.modal#addModal {
+  width: 760px !important;
+  max-width: 92vw !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+.modal#addModal form { width: 100%; }
+
+</style>
 </head>
 <body>
 <main class="wrap">
@@ -722,7 +743,13 @@ require_once __DIR__ . '/ppf_nav.php';
         <input type="hidden" name="action" value="send_invite">
         <div class="field">
             <label for="invite_email">Trainer Email</label>
-            <input class="input" id="invite_email" name="invite_email" type="email" placeholder="name@example.com" required>
+            
+<div class="tagbox" id="invite-tagbox">
+  <div id="invite-tags"></div>
+  <input id="invite-input" type="text" placeholder="Enter emails and press Enter, comma, semicolon, or space">
+</div>
+<div id="invite-hidden"></div>
+
         </div>
         <div class="actions">
             <button class="btn" type="button" data-modal-close>Cancel</button>
@@ -736,35 +763,39 @@ require_once __DIR__ . '/ppf_nav.php';
     <form method="post" data-modal-form>
         <input type="hidden" name="csrf_token" value="<?php echo trainers_h($csrf); ?>">
         <input type="hidden" name="action" value="add_trainer">
-        <div class="field">
+        <div class="add-trainer-grid">
+<div class="add-trainer-grid">
+<div class="field">
             <label for="add_first_name">First Name</label>
             <input class="input" id="add_first_name" name="add_first_name" type="text" required>
         </div>
-        <div class="field">
+<div class="field">
             <label for="add_last_name">Last Name</label>
             <input class="input" id="add_last_name" name="add_last_name" type="text" required>
         </div>
-        <div class="field">
+<div class="field">
             <label for="add_email">Email</label>
             <input class="input" id="add_email" name="add_email" type="email" placeholder="name@example.com" required>
         </div>
-        <div class="field">
+<div class="field">
             <label for="add_phone">Phone Number</label>
             <input class="input" id="add_phone" name="add_phone" type="text" placeholder="(555) 123-4567">
         </div>
-        <div class="field">
+<div class="field">
             <label for="add_password">Password</label>
             <input class="input" id="add_password" name="add_password" type="password" required>
-        </div>
-        <div class="field">
+<div class="password-reqs" id="add-trainer-password-reqs">
+
+  <div><span data-req="len" class="bad">• At least 12 characters</span></div>
+<div class="field">
             <label for="add_password_confirm">Confirm Password</label>
-            <input class="input" id="add_password_confirm" name="add_password_confirm" type="password" required>
-        </div>
-        <div class="actions">
+            <input class="input" id="add_password_confirm" name="add_password_confirm" type="password" required></div>
+</div>
+<div class="actions">
             <button class="btn" type="button" data-modal-close>Cancel</button>
             <button class="btn brand" type="submit" data-processing-text="Processing...">Add Trainer</button>
         </div>
-    </form>
+</form>
 </div>
 
 <script>
@@ -810,5 +841,95 @@ require_once __DIR__ . '/ppf_nav.php';
     });
 })();
 </script>
+
+<script>
+(function(){
+  const modal = document.getElementById('addModal');
+  if (!modal) return;
+  const pwd = modal.querySelector('#add_password');
+  const cpw = modal.querySelector('#add_password_confirm');
+  const reqBox = modal.querySelector('#add-trainer-password-reqs');
+  if (!pwd || !cpw || !reqBox) return;
+  const req = {
+    len: reqBox.querySelector('[data-req="len"]'),
+    upper: reqBox.querySelector('[data-req="upper"]'),
+    lower: reqBox.querySelector('[data-req="lower"]'),
+    digit: reqBox.querySelector('[data-req="digit"]'),
+    special: reqBox.querySelector('[data-req="special"]')
+  };
+  function update(){
+    const v = pwd.value || '';
+    const tests = {
+      len: v.length >= 12,
+      upper: /[A-Z]/.test(v),
+      lower: /[a-z]/.test(v),
+      digit: /[0-9]/.test(v),
+      special: /[!@#$%^&*()\-_=+\[\]{};:'",.<>/?`~|\\]/.test(v)
+    };
+    Object.keys(tests).forEach(k => {
+      const el = req[k]; if (!el) return;
+      el.classList.toggle('ok', tests[k]);
+      el.classList.toggle('bad', !tests[k]);
+    });
+    cpw.setCustomValidity(cpw.value && cpw.value !== v ? 'Passwords do not match.' : '');
+  }
+  pwd.addEventListener('input', update);
+  cpw.addEventListener('input', update);
+  update();
+})();
+
+(function(){
+  const tagBox = document.getElementById('invite-tagbox');
+  const input = document.getElementById('invite-input');
+  const tagsEl = document.getElementById('invite-tags');
+  const hidden = document.getElementById('invite-hidden');
+  if (!tagBox || !input || !hidden || !tagsEl) return;
+  const emails = new Set();
+  function isEmail(s){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
+  function addEmail(raw){
+    const email = (raw || '').trim().replace(/[;,]+$/, '');
+    if (!email || !isEmail(email) || emails.has(email)) return;
+    emails.add(email);
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.innerHTML = '<span>'+email+'</span><span class="x" title="Remove">&times;</span>';
+    tag.querySelector('.x').addEventListener('click', () => removeEmail(email, tag));
+    tagsEl.appendChild(tag);
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = 'emails[]';
+    hiddenInput.value = email;
+    hidden.appendChild(hiddenInput);
+  }
+  function removeEmail(email, tagEl){
+    emails.delete(email);
+    if (tagEl && tagEl.parentNode) tagEl.parentNode.removeChild(tagEl);
+    [...hidden.querySelectorAll('input[name="emails[]"]')].forEach(inp => { if (inp.value === email) inp.remove(); });
+  }
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter'){
+      e.preventDefault(); addEmail(input.value); input.value = '';
+    }
+    if (e.key === 'Backspace' && !input.value){
+      const last = tagsEl.lastElementChild;
+      if (last){ removeEmail(last.firstChild.textContent, last); }
+    }
+  });
+  input.addEventListener('input', () => {
+    if (/[,;\s]$/.test(input.value)){ addEmail(input.value); input.value=''; }
+  });
+  const form = input.closest('form');
+  if (form){
+    form.addEventListener('submit', (e) => {
+      if (input.value){ addEmail(input.value); input.value=''; }
+      if (emails.size === 0){
+        e.preventDefault();
+        alert('Please add at least one valid email address.');
+      }
+    });
+  }
+})();
+</script>
+
 </body>
 </html>
