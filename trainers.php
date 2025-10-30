@@ -734,7 +734,7 @@ require_once __DIR__ . '/ppf_nav.php';
 .password-reqs .ok{color:#22c55e}.password-reqs .bad{color:#ef4444}.password-reqs .hint{color:var(--muted,#9ba4c2)}
 .tagbox{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px;border:1px solid var(--input-border,rgba(148,163,184,.28));border-radius:10px;background:var(--input-bg,rgba(15,23,42,.6))}
 .tagbox-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.tagbox input{border:none;outline:none;background:transparent;flex:1;min-width:140px;padding:6px;color:var(--text,#f8fafc)}
+.tagbox input{border:none !important;outline:none;background:transparent!important;box-shadow:none!important;flex:1;min-width:140px;padding:6px 0;color:var(--text,#f8fafc)}
 .tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:var(--badge-muted,rgba(148,163,184,.16));color:var(--text,#f8fafc);font-size:13px;font-weight:600}
 .tag .x{cursor:pointer;font-weight:700;opacity:.8;display:inline-flex;align-items:center;justify-content:center;min-width:14px}.tag .x:hover{opacity:1}
 .tag .x:focus{outline:2px solid var(--brand,#38bdf8);outline-offset:2px}
@@ -1040,9 +1040,9 @@ require_once __DIR__ . '/ppf_nav.php';
   tagBox.addEventListener('click', () => input.focus());
 
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ' || e.key === ',' || e.key === ';'){
+    if (e.key === 'Enter'){
       e.preventDefault();
-      const remainder = commitBuffer(true);
+      const remainder = commitBuffer(false);
       if (input.value !== remainder){
         input.value = remainder;
       }
