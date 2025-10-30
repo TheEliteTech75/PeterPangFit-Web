@@ -135,6 +135,7 @@ if ($userId > 0) {
 }
 
 $initialState = [
+  'view' => 'inbox',
   'feed' => [
     'items' => $initialQuery['data'] ?? [],
     'pagination' => $initialQuery['pagination'] ?? ['page' => 1, 'per_page' => 25, 'total' => 0],
@@ -239,6 +240,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      flex-wrap: wrap;
     }
     main.wrap {
       max-width: 1180px;
@@ -252,6 +254,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       display: flex;
       flex-direction: column;
       gap: 6px;
+      flex: 1 1 320px;
     }
     .subheader h1 {
       margin: 0;
@@ -264,11 +267,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       color: color-mix(in srgb, var(--muted, #cbd5f5) 85%, var(--text, #f8fafc) 15%);
       font-size: 14px;
     }
-    .subheader .actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
+    .subheader .page-tabs {
+      margin-left: auto;
+      align-self: flex-end;
+      margin-bottom: 0;
     }
     .ppf-btn {
       display: inline-flex;
@@ -394,7 +396,14 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       gap: 12px;
       flex-wrap: wrap;
     }
-    .view-tabs {
+    .panel-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 12px;
+    }
+    .view-tabs,
+    .page-tabs {
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -404,7 +413,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       border: 1px solid rgba(148,163,184,0.22);
       box-shadow: inset 0 0 0 1px rgba(148,163,184,0.08);
     }
-    .view-tab {
+    .page-tabs {
+      align-self: flex-start;
+      margin-bottom: 4px;
+    }
+    .view-tab,
+    .page-tab {
       border: none;
       border-radius: 999px;
       padding: 6px 14px;
@@ -416,12 +430,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       transition: background 0.2s ease, color 0.2s ease;
     }
     .view-tab:hover,
-    .view-tab:focus-visible {
+    .view-tab:focus-visible,
+    .page-tab:hover,
+    .page-tab:focus-visible {
       outline: none;
       background: rgba(56,189,248,0.18);
       color: #f0f9ff;
     }
-    .view-tab.is-active {
+    .view-tab.is-active,
+    .page-tab.is-active {
       background: color-mix(in srgb, var(--brand, rgba(14,165,233,0.9)) 70%, rgba(15,23,42,0.6) 30%);
       color: #0b1120;
       box-shadow: 0 10px 24px rgba(14,165,233,0.28);
@@ -692,6 +709,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         flex-direction: column;
         align-items: flex-start;
       }
+      .subheader .page-tabs {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 12px;
+        justify-content: flex-start;
+      }
       .toolbar {
         flex-direction: column;
         align-items: stretch;
@@ -704,6 +727,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
+      }
+      .panel-meta {
+        width: 100%;
+        align-items: flex-start;
       }
       .panel-title-top {
         flex-direction: column;
@@ -723,6 +750,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         align-items: flex-start;
       }
     }
+    .panel.is-hidden {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -732,17 +762,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         <h1>Notification Center</h1>
         <p>Stay up to date with workouts, billing, security alerts, and your own reminders.</p>
       </div>
-      <div class="actions">
-        <button type="button" class="ppf-btn" data-feed-action="mark-all" disabled>Mark all read</button>
-        <button type="button" class="ppf-btn" data-feed-action="archive-read" disabled>Archive read</button>
-        <button type="button" class="ppf-btn" data-feed-action="refresh">Refresh</button>
+      <div class="page-tabs" data-main-tabs role="tablist" aria-label="Notification views">
+        <button type="button" class="page-tab is-active" data-main-view="inbox" role="tab" aria-selected="true" tabindex="0" aria-controls="notifications-inbox-panel" id="notifications-inbox-tab">Inbox</button>
+        <button type="button" class="page-tab" data-main-view="rules" role="tab" aria-selected="false" tabindex="-1" aria-controls="notifications-rules-panel" id="notifications-rules-tab">Rules</button>
       </div>
     </div>
   </div>
 
   <main class="wrap" data-notification-center>
-
-    <section class="panel" data-feed-section>
+    <section class="panel" data-feed-section aria-hidden="false" id="notifications-inbox-panel" role="tabpanel" aria-labelledby="notifications-inbox-tab">
       <div class="panel-header">
         <div class="panel-title">
           <div class="panel-title-top">
@@ -754,8 +782,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
           </div>
           <p data-feed-description>Your latest alerts appear here. Use filters to focus on what's important.</p>
         </div>
-        <div class="status-indicator" data-summary>
-          <strong>0</strong> unread notifications
+        <div class="panel-meta">
+          <div class="panel-actions" data-feed-actions aria-hidden="false">
+            <button type="button" class="ppf-btn" data-feed-action="mark-all" disabled>Mark all read</button>
+            <button type="button" class="ppf-btn" data-feed-action="archive-read" disabled>Archive read</button>
+            <button type="button" class="ppf-btn" data-feed-action="refresh">Refresh</button>
+          </div>
+          <div class="status-indicator" data-summary>
+            <strong>0</strong> unread notifications
+          </div>
         </div>
       </div>
 
@@ -782,7 +817,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       <div data-feed-list></div>
     </section>
 
-    <section class="panel" data-rules-section>
+    <section class="panel is-hidden" data-rules-section aria-hidden="true" id="notifications-rules-panel" role="tabpanel" aria-labelledby="notifications-rules-tab">
       <div class="panel-header">
         <div class="panel-title">
           <h2>Notification Rules</h2>
@@ -922,6 +957,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     var state = {
+      mainView: typeof initialState.view === 'string' ? initialState.view : 'inbox',
       feed: {
         items: initialState.feed && Array.isArray(initialState.feed.items) ? initialState.feed.items.slice() : [],
         pagination: initialState.feed && initialState.feed.pagination ? initialState.feed.pagination : { page: 1, per_page: 25, total: 0 },
@@ -951,11 +987,18 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       state.feed.view = 'inbox';
     }
 
+    if (state.mainView !== 'rules' && state.mainView !== 'inbox') {
+      state.mainView = 'inbox';
+    }
+
     ensureViewConsistency();
 
     var center = document.querySelector('[data-notification-center]');
     if (!center) { return; }
 
+    var mainTabsEl = document.querySelector('[data-main-tabs]');
+    var feedSectionEl = center.querySelector('[data-feed-section]');
+    var rulesSectionEl = center.querySelector('[data-rules-section]');
     var feedListEl = center.querySelector('[data-feed-list]');
     var feedTabsEl = center.querySelector('[data-feed-tabs]');
     var statusSelect = center.querySelector('select[data-filter="status"]');
@@ -968,6 +1011,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var panelDescriptionEl = center.querySelector('[data-feed-description]');
     var viewTabsEl = center.querySelector('[data-feed-views]');
     var rulesContainer = center.querySelector('[data-rules-container]');
+    var feedActionsEl = center.querySelector('[data-feed-actions]');
 
     function formatDate(iso) {
       if (!iso) return '';
@@ -976,6 +1020,53 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         return iso;
       }
       return date.toLocaleString();
+    }
+
+    function renderMainView() {
+      var view = state.mainView === 'rules' ? 'rules' : 'inbox';
+      if (view !== state.mainView) {
+        state.mainView = view;
+      }
+      var isInbox = view === 'inbox';
+      if (feedSectionEl) {
+        var hideFeed = !isInbox;
+        feedSectionEl.classList.toggle('is-hidden', hideFeed);
+        feedSectionEl.setAttribute('aria-hidden', hideFeed ? 'true' : 'false');
+        if (hideFeed) {
+          feedSectionEl.setAttribute('hidden', 'hidden');
+        } else {
+          feedSectionEl.removeAttribute('hidden');
+        }
+      }
+      if (rulesSectionEl) {
+        var hideRules = isInbox;
+        rulesSectionEl.classList.toggle('is-hidden', hideRules);
+        rulesSectionEl.setAttribute('aria-hidden', hideRules ? 'true' : 'false');
+        if (hideRules) {
+          rulesSectionEl.setAttribute('hidden', 'hidden');
+        } else {
+          rulesSectionEl.removeAttribute('hidden');
+        }
+      }
+      if (feedActionsEl) {
+        feedActionsEl.style.display = isInbox ? '' : 'none';
+        feedActionsEl.setAttribute('aria-hidden', isInbox ? 'false' : 'true');
+        if (isInbox) {
+          feedActionsEl.removeAttribute('hidden');
+        } else {
+          feedActionsEl.setAttribute('hidden', 'hidden');
+        }
+      }
+      if (mainTabsEl) {
+        var buttons = mainTabsEl.querySelectorAll('[data-main-view]');
+        Array.prototype.forEach.call(buttons, function(btn) {
+          var target = btn.getAttribute('data-main-view');
+          var isActive = target === view || (!target && view === 'inbox');
+          btn.classList.toggle('is-active', isActive);
+          btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+          btn.setAttribute('tabindex', isActive ? '0' : '-1');
+        });
+      }
     }
 
     function groupByCategory(items, extractor) {
@@ -1297,6 +1388,15 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         rules.forEach(function(rule){
           var card = document.createElement('article');
           card.className = 'notification-card';
+          card.setAttribute('data-rule-card', '');
+          var ruleId = (rule && rule.id != null && rule.id !== '') ? String(rule.id) : '';
+          var ruleTypeKey = ruleKey(rule);
+          if (ruleId) {
+            card.setAttribute('data-rule-id', ruleId);
+          }
+          if (ruleTypeKey) {
+            card.setAttribute('data-rule-key', ruleTypeKey);
+          }
           var channelState = resolveChannels(rule);
           if (rule && rule.immutable) {
             channelState.center = true;
@@ -1351,12 +1451,10 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 
           var toggles = document.createElement('div');
           toggles.className = 'channel-toggle-group';
+          var isImmutable = !!(rule && rule.immutable);
           if (isImmutable) {
             toggles.classList.add('is-fixed');
           }
-          var ruleId = (rule && rule.id != null && rule.id !== '') ? String(rule.id) : '';
-          var ruleTypeKey = ruleKey(rule);
-          var isImmutable = !!(rule && rule.immutable);
 
           function appendToggle(labelText, channelKey, checked) {
             var labelEl = document.createElement('label');
@@ -1398,6 +1496,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     function renderAll() {
+      renderMainView();
       renderPanelHeader();
       renderViewTabs();
       renderSummary();
@@ -1498,6 +1597,7 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       var targetId = (rule.id !== undefined && rule.id !== null && rule.id !== '') ? String(rule.id) : null;
       var idx = -1;
       var key = ruleKey(rule);
+      var replacement = cloneRule(rule);
       if (targetId !== null) {
         idx = nextRules.findIndex(function(existing){
           return existing && existing.id !== undefined && existing.id !== null && String(existing.id) === targetId;
@@ -1514,9 +1614,9 @@ if ($csrfJson === false) { $csrfJson = '""'; }
             return ruleKey(existing) !== key;
           });
         }
-        nextRules.push(rule);
+        nextRules.push(replacement);
       } else {
-        nextRules[idx] = rule;
+        nextRules[idx] = replacement;
       }
       if (Array.isArray(nextRules)) {
         nextRules.forEach(cachePreconfiguredRule);
@@ -1526,6 +1626,47 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     }
 
     renderAll();
+
+    if (mainTabsEl) {
+      mainTabsEl.addEventListener('click', function(event){
+        var button = event.target.closest('[data-main-view]');
+        if (!button || !mainTabsEl.contains(button)) { return; }
+        var view = button.getAttribute('data-main-view');
+        if (view !== 'rules') {
+          view = 'inbox';
+        }
+        if (state.mainView === view) { return; }
+        state.mainView = view;
+        renderMainView();
+      });
+      mainTabsEl.addEventListener('keydown', function(event){
+        var key = event.key;
+        if (!key) { return; }
+        if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'Home' && key !== 'End') {
+          return;
+        }
+        var tabs = mainTabsEl.querySelectorAll('[data-main-view]');
+        if (!tabs.length) { return; }
+        var activeElement = document.activeElement;
+        var currentIndex = Array.prototype.indexOf.call(tabs, activeElement);
+        var targetIndex = currentIndex;
+        if (key === 'Home') {
+          targetIndex = 0;
+        } else if (key === 'End') {
+          targetIndex = tabs.length - 1;
+        } else if (key === 'ArrowRight' || key === 'ArrowDown') {
+          targetIndex = (currentIndex + 1) % tabs.length;
+        } else if (key === 'ArrowLeft' || key === 'ArrowUp') {
+          targetIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+        }
+        if (targetIndex < 0 || targetIndex >= tabs.length) { return; }
+        var targetTab = tabs[targetIndex];
+        if (!targetTab) { return; }
+        event.preventDefault();
+        targetTab.focus();
+        targetTab.click();
+      });
+    }
 
     if (statusSelect) {
       statusSelect.value = state.feed.filters.status || 'all';
@@ -1684,6 +1825,17 @@ if ($csrfJson === false) { $csrfJson = '""'; }
         var channelKey = target.dataset.ruleToggle;
         var id = target.dataset.id ? String(target.dataset.id) : '';
         var lookupKey = target.dataset.key ? String(target.dataset.key) : '';
+        if (!id || !lookupKey) {
+          var owner = target.closest('[data-rule-card]');
+          if (owner) {
+            if (!id && owner.dataset.ruleId) {
+              id = String(owner.dataset.ruleId);
+            }
+            if (!lookupKey && owner.dataset.ruleKey) {
+              lookupKey = String(owner.dataset.ruleKey);
+            }
+          }
+        }
         if (!id && !lookupKey) { return; }
         var rule = null;
         if (id) {
