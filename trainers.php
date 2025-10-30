@@ -1040,13 +1040,15 @@ require_once __DIR__ . '/ppf_nav.php';
   tagBox.addEventListener('click', () => input.focus());
 
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter'){
+    const key = e.key;
+    const isDelimiter = key === ' ' || key === 'Spacebar' || key === ',' || key === 'Comma' || key === ';' || key === 'Semicolon';
+    if (key === 'Enter' || isDelimiter){
       e.preventDefault();
       const remainder = commitBuffer(false);
       if (input.value !== remainder){
         input.value = remainder;
       }
-    } else if (e.key === 'Backspace' && !input.value){
+    } else if (key === 'Backspace' && !input.value){
       const last = tagsEl.lastElementChild;
       if (last){
         removeEmail(last.dataset.email || '', last);
