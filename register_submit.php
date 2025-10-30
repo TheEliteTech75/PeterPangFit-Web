@@ -220,17 +220,17 @@ try {
     // Mark invite as used
     ensure_invite_columns($conn);
 
-if ($inv['user_id']) {
-    $iu = $conn->prepare("UPDATE invites SET used = 1, registered_at = NOW() WHERE id = ?");
-    $iu->bind_param("i", $inv['id']);
-} else {
-    $iu = $conn->prepare("UPDATE invites SET used = 1, user_id = ?, registered_at = NOW() WHERE id = ?");
-    $iu->bind_param("ii", $user_id, $inv['id']);
-}
-if (!$iu->execute()) {
-    throw new Exception('Failed to mark invite as used.');
-}
-$iu->close();
+    if ($inv['user_id']) {
+        $iu = $conn->prepare("UPDATE invites SET used = 1, completed_at = NOW() WHERE id = ?");
+        $iu->bind_param("i", $inv['id']);
+    } else {
+        $iu = $conn->prepare("UPDATE invites SET used = 1, user_id = ?, completed_at = NOW() WHERE id = ?");
+        $iu->bind_param("ii", $user_id, $inv['id']);
+    }
+    if (!$iu->execute()) {
+        throw new Exception('Failed to mark invite as used.');
+    }
+    $iu->close();
 
     $conn->commit();
 
