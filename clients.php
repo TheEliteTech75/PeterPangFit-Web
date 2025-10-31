@@ -2010,7 +2010,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
     font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif}
   a{color:var(--text);text-decoration:none}
 
-  .wrap{width:100%;max-width:100%;margin:24px auto;padding:0 var(--page-pad);box-sizing:border-box}
+  .wrap{width:100%;max-width:100%;margin:24px auto;padding:0 clamp(14px,3vw,28px);box-sizing:border-box}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}
   .row{display:flex;gap:16px;align-items:center}
   .btn{

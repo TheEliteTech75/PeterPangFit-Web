@@ -118,12 +118,13 @@ function ts_status_badge(string $status): string {
   <title>Trainer Sessions</title>
   <style>
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Helvetica,Arial,sans-serif;background:var(--page-canvas);color:var(--text);}
+    .wrap{width:100%;max-width:100%;margin:24px auto;padding:0 clamp(14px,3vw,28px);box-sizing:border-box;}
     .btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 14px;border-radius:12px;border:1px solid var(--chip-border);background:var(--chip-bg);color:var(--text);text-decoration:none;font-size:14px;cursor:pointer;transition:transform .2s ease, box-shadow .2s ease, background .2s ease;box-shadow:0 12px 24px color-mix(in srgb, var(--chip-border) 35%, transparent 65%);}
     .btn:hover{transform:translateY(-1px);box-shadow:0 16px 32px color-mix(in srgb, var(--chip-border) 45%, transparent 55%);}
     .btn.brand{background:color-mix(in srgb, var(--brand) 28%, transparent 72%);border-color:color-mix(in srgb, var(--brand-strong, var(--brand)) 55%, transparent 45%);}
     .btn.warn{background:color-mix(in srgb, var(--danger) 24%, transparent 76%);border-color:color-mix(in srgb, var(--danger) 55%, transparent 45%);color:color-mix(in srgb, var(--danger) 70%, var(--text) 30%);}
     .btn.small{padding:6px 10px;font-size:13px;}
-    .ts-wrap{max-width:1200px;margin:18px auto;padding:0 20px 60px;display:flex;flex-direction:column;gap:18px;}
+    .wrap.ts-wrap{display:flex;flex-direction:column;gap:18px;padding-bottom:60px;}
     .ts-card{background:var(--panel-elevated);border:1px solid var(--card-border);border-radius:18px;padding:18px;box-shadow:var(--card-shadow);}
     .ts-card h2{margin:0 0 12px 0;font-size:18px;}
     .ts-card h3{margin:16px 0 10px;font-size:16px;}
@@ -187,14 +188,14 @@ function ts_status_badge(string $status): string {
     .flash-inline.ok{border-color:color-mix(in srgb, var(--success) 55%, transparent 45%);color:color-mix(in srgb, var(--success) 75%, var(--text) 25%);}
     .flash-inline.err{border-color:color-mix(in srgb, var(--danger) 55%, transparent 45%);color:color-mix(in srgb, var(--danger) 75%, var(--text) 25%);}
     @media (max-width:720px){
-      .ts-wrap{padding:0 14px 40px;}
+      .wrap.ts-wrap{padding-bottom:40px;}
       .ts-inline-form label{min-width:140px;}
     }
   </style>
 </head>
 <body class="ppf-themed">
 
-  <main class="ts-wrap">
+  <main class="wrap ts-wrap">
 
     <?php
     ppf_subheader([

@@ -221,14 +221,12 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       background: var(--surface, #020617);
       color: var(--text, #f8fafc);
     }
-    .notifications-shell {
-      width: min(1180px, 100%);
-      margin: 0 auto;
-    }
     main.wrap {
-      max-width: 1180px;
-      margin: 0 auto 48px;
-      padding: 24px 20px 60px;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      margin: 24px auto;
+      padding: 0 clamp(14px, 3vw, 28px) 60px;
       display: flex;
       flex-direction: column;
       gap: 18px;
@@ -749,22 +747,20 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 </head>
 <body>
   <main class="wrap" data-notification-center>
-    <div class="notifications-shell">
-      <?php
-      ppf_subheader([
-        'title_html' => '<h1 class="ppf-subheader__title">Notification Center</h1>',
-        'subtitle_html' => '<p class="notifications-intro">Stay up to date with workouts, billing, security alerts, and your own reminders.</p>',
-        'actions' => function (): void {
-          ?>
-          <div class="page-tabs" data-main-tabs role="tablist" aria-label="Notification views">
-            <button type="button" class="page-tab is-active" data-main-view="inbox" role="tab" aria-selected="true" tabindex="0" aria-controls="notifications-inbox-panel" id="notifications-inbox-tab">Inbox</button>
-            <button type="button" class="page-tab" data-main-view="rules" role="tab" aria-selected="false" tabindex="-1" aria-controls="notifications-rules-panel" id="notifications-rules-tab">Rules</button>
-          </div>
-          <?php
-        },
-      ]);
-      ?>
-    </div>
+    <?php
+    ppf_subheader([
+      'title_html' => '<h1 class="ppf-subheader__title">Notification Center</h1>',
+      'subtitle_html' => '<p class="notifications-intro">Stay up to date with workouts, billing, security alerts, and your own reminders.</p>',
+      'actions' => function (): void {
+        ?>
+        <div class="page-tabs" data-main-tabs role="tablist" aria-label="Notification views">
+          <button type="button" class="page-tab is-active" data-main-view="inbox" role="tab" aria-selected="true" tabindex="0" aria-controls="notifications-inbox-panel" id="notifications-inbox-tab">Inbox</button>
+          <button type="button" class="page-tab" data-main-view="rules" role="tab" aria-selected="false" tabindex="-1" aria-controls="notifications-rules-panel" id="notifications-rules-tab">Rules</button>
+        </div>
+        <?php
+      },
+    ]);
+    ?>
 
     <section class="panel" data-feed-section aria-hidden="false" id="notifications-inbox-panel" role="tabpanel" aria-labelledby="notifications-inbox-tab">
       <div class="panel-header">
