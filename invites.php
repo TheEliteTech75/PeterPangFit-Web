@@ -12,6 +12,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/send_email.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
 
@@ -36,18 +37,131 @@ if (!in_array($roleKey, ['trainer', 'trainer_admin'], true) && !ppf_is_admin_rol
 
 $flash = null;
 
+function ppf_determine_invite_type(array $row): string {
+    $roleKey = ppf_role_key($row['user_role'] ?? '');
+    if ($roleKey === 'trainer' || $roleKey === 'trainer_admin') {
+        return 'trainer';
+    }
+    if ($roleKey === 'client') {
+        return 'client';
+    }
+
+    $createdTs = !empty($row['created_at']) ? strtotime((string)$row['created_at']) : false;
+    $expiresTs = !empty($row['expires_at']) ? strtotime((string)$row['expires_at']) : false;
+    if ($createdTs && $expiresTs) {
+        $hours = ($expiresTs - $createdTs) / 3600;
+        if ($hours >= 36) {
+            return 'trainer';
+        }
+    }
+
+    return 'client';
+}
+
+function ppf_cleanup_invite_user_record(mysqli $conn, array $inviteRow): void {
+    $userId = (int)($inviteRow['user_id'] ?? 0);
+    if ($userId <= 0) {
+        return;
+    }
+
+    $status = $inviteRow['status'] ?? '';
+    if (!in_array($status, ['Cancelled', 'Canceled', 'Expired'], true)) {
+        return;
+    }
+
+    $user = null;
+    if ($stmt = $conn->prepare('SELECT id, role, password_hash FROM users WHERE id = ? LIMIT 1')) {
+        $stmt->bind_param('i', $userId);
+        if ($stmt->execute()) {
+            $res = $stmt->get_result();
+            if ($res && $res->num_rows === 1) {
+                $user = $res->fetch_assoc();
+            }
+        }
+        $stmt->close();
+    }
+
+    if (!$user) {
+        if ($upd = $conn->prepare('UPDATE invites SET user_id = NULL WHERE user_id = ?')) {
+            $upd->bind_param('i', $userId);
+            $upd->execute();
+            $upd->close();
+        }
+        return;
+    }
+
+    $roleKey = ppf_role_key($user['role'] ?? '');
+    if (!in_array($roleKey, ['client', 'trainer'], true)) {
+        return;
+    }
+
+    $passwordHash = (string)($user['password_hash'] ?? '');
+    if ($passwordHash !== '') {
+        return;
+    }
+
+    $hasActiveInvite = false;
+    if ($chk = $conn->prepare('SELECT COUNT(*) AS cnt FROM invites WHERE user_id = ? AND cancelled_at IS NULL AND COALESCE(used,0) = 0 AND (expires_at IS NULL OR expires_at >= NOW())')) {
+        $chk->bind_param('i', $userId);
+        if ($chk->execute()) {
+            $res = $chk->get_result();
+            if ($res && ($row = $res->fetch_assoc())) {
+                $hasActiveInvite = ((int)($row['cnt'] ?? 0) > 0);
+            }
+        }
+        $chk->close();
+    }
+
+    if ($hasActiveInvite) {
+        return;
+    }
+
+    $deleted = false;
+    if ($del = $conn->prepare('DELETE FROM users WHERE id = ? LIMIT 1')) {
+        $del->bind_param('i', $userId);
+        if ($del->execute()) {
+            $deleted = ($del->affected_rows > 0);
+        }
+        $del->close();
+    }
+
+    if ($deleted) {
+        if ($upd = $conn->prepare('UPDATE invites SET user_id = NULL WHERE user_id = ?')) {
+            $upd->bind_param('i', $userId);
+            $upd->execute();
+            $upd->close();
+        }
+    }
+}
+
 // Handle cancel action (uses hidden ID; not displayed)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     if ($action === 'cancel') {
         $invite_id = (int)($_POST['invite_id'] ?? 0);
         if ($invite_id > 0) {
+            $inviteRow = null;
+            if ($fetch = $conn->prepare('SELECT id, user_id, email, expires_at, cancelled_at, created_at, COALESCE(used,0) AS used FROM invites WHERE id = ? LIMIT 1')) {
+                $fetch->bind_param('i', $invite_id);
+                if ($fetch->execute()) {
+                    $res = $fetch->get_result();
+                    if ($res && $res->num_rows === 1) {
+                        $inviteRow = $res->fetch_assoc();
+                    }
+                }
+                $fetch->close();
+            }
+
             if ($stmt = $conn->prepare("UPDATE invites SET cancelled_at = NOW() WHERE id = ? AND cancelled_at IS NULL")) {
                 $stmt->bind_param("i", $invite_id);
                 if ($stmt->execute()) {
                     $flash = $stmt->affected_rows > 0
                         ? "Invite was cancelled."
                         : "No change — invite may already be cancelled.";
+                    if ($stmt->affected_rows > 0 && $inviteRow) {
+                        $inviteRow['status'] = 'Cancelled';
+                        ppf_cleanup_invite_user_record($conn, $inviteRow);
+                    }
                 } else {
                     $flash = "Database error while cancelling invite.";
                 }
@@ -58,16 +172,159 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $flash = "Invalid invite reference.";
         }
+    } elseif ($action === 'resend') {
+        $invite_id = (int)($_POST['invite_id'] ?? 0);
+        if ($invite_id <= 0) {
+            $flash = 'Invalid invite reference.';
+        } else {
+            $row = null;
+            $sql = "SELECT i.id, i.email, i.created_at, i.expires_at, i.cancelled_at, COALESCE(i.used,0) AS used, i.user_id, u.role AS user_role"
+                 . " FROM invites i"
+                 . " LEFT JOIN users u ON u.id = i.user_id"
+                 . " WHERE i.id = ?"
+                 . " LIMIT 1";
+            if ($stmt = $conn->prepare($sql)) {
+                $stmt->bind_param('i', $invite_id);
+                if ($stmt->execute()) {
+                    $res = $stmt->get_result();
+                    if ($res && $res->num_rows === 1) {
+                        $row = $res->fetch_assoc();
+                    }
+                }
+                $stmt->close();
+            }
+
+            if (!$row) {
+                $flash = 'Invite not found.';
+            } else {
+                $cancelled = !empty($row['cancelled_at']);
+                $expired = false;
+                if (!empty($row['expires_at'])) {
+                    $expiresTs = strtotime((string)$row['expires_at']);
+                    $expired = $expiresTs !== false && $expiresTs < time();
+                }
+                $used = ((int)($row['used'] ?? 0) === 1);
+
+                if (!$cancelled && !$expired) {
+                    $flash = 'Only expired or cancelled invites can be resent.';
+                } elseif ($used) {
+                    $flash = 'This invite has already been used.';
+                } else {
+                    $type = ppf_determine_invite_type($row);
+                    $email = trim((string)($row['email'] ?? ''));
+                    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        $flash = 'Invite email address is invalid.';
+                    } else {
+                        $token = bin2hex(random_bytes(32));
+                        $expiresAt = ($type === 'trainer')
+                            ? date('Y-m-d H:i:s', time() + 48 * 3600)
+                            : date('Y-m-d H:i:s', time() + 24 * 3600);
+
+                        $conn->begin_transaction();
+                        try {
+                            $userId = null;
+                            if ($lookup = $conn->prepare('SELECT id, role, password_hash FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1')) {
+                                $lookup->bind_param('s', $email);
+                                $lookup->execute();
+                                $res = $lookup->get_result();
+                                if ($res && ($u = $res->fetch_assoc())) {
+                                    if (!empty($u['password_hash'])) {
+                                        throw new Exception('This user already has an active account.');
+                                    }
+                                    $userId = (int)$u['id'];
+                                    $currentRole = ppf_role_key($u['role'] ?? '');
+                                    $desiredRole = ($type === 'trainer') ? 'trainer' : 'client';
+                                    if ($currentRole !== $desiredRole) {
+                                        $roleValue = ($type === 'trainer') ? 'trainer' : 'client';
+                                        if ($updateRole = $conn->prepare('UPDATE users SET role = ? WHERE id = ?')) {
+                                            $updateRole->bind_param('si', $roleValue, $userId);
+                                            $updateRole->execute();
+                                            $updateRole->close();
+                                        }
+                                    }
+                                }
+                                $lookup->close();
+                            }
+
+                            if (!$userId) {
+                                if ($type === 'trainer') {
+                                    $sqlInsert = 'INSERT INTO users (email, role, is_client, is_active, created_at) VALUES (?, "trainer", 0, 1, NOW())';
+                                    if (!$ins = $conn->prepare($sqlInsert)) {
+                                        throw new Exception('Failed to prepare trainer account.');
+                                    }
+                                    $ins->bind_param('s', $email);
+                                } else {
+                                    $sqlInsert = 'INSERT INTO users (email, role, created_at) VALUES (?, "client", NOW())';
+                                    if (!$ins = $conn->prepare($sqlInsert)) {
+                                        throw new Exception('Failed to prepare client account.');
+                                    }
+                                    $ins->bind_param('s', $email);
+                                }
+
+                                if (!$ins->execute()) {
+                                    $ins->close();
+                                    throw new Exception('Failed to create user account for invite.');
+                                }
+                                $userId = $ins->insert_id;
+                                $ins->close();
+                            }
+
+                            $creator = (int)($USER_ID ?? 0);
+                            $sqlInsertInvite = 'INSERT INTO invites (user_id, email, token, expires_at, cancelled_at, used, created_by, created_at) VALUES (?, ?, ?, ?, NULL, 0, ?, NOW())';
+                            if (!$newInvite = $conn->prepare($sqlInsertInvite)) {
+                                throw new Exception('Failed to prepare invite insert.');
+                            }
+                            $newInvite->bind_param('isssi', $userId, $email, $token, $expiresAt, $creator);
+                            if (!$newInvite->execute()) {
+                                $newInvite->close();
+                                throw new Exception('Failed to create invite.');
+                            }
+                            $newInvite->close();
+
+                            $conn->commit();
+
+                            $subject = ($type === 'trainer')
+                                ? "You're invited to join Peter Pang Fit as a Trainer"
+                                : "You're invited to join Peter Pang Fit";
+                            $link = 'https://peterpang.pwncore.net/register.php?token=' . urlencode($token);
+                            if ($type === 'trainer') {
+                                $body = "Hello,\n\n"
+                                  . "You have been invited to register as a trainer. This link expires in 48 hours.\n\n"
+                                  . $link . "\n\n"
+                                  . "If it expires, please ask an administrator for a new invite.\n\n— Peter Pang Fit";
+                            } else {
+                                $body = "Hi,\n\n"
+                                  . "You’ve been invited to complete your registration. This link expires in 24 hours.\n\n"
+                                  . $link . "\n\n"
+                                  . "If it expires, your trainer can send a new one.\n\n— Peter Pang Fit";
+                            }
+
+                            if (!send_plain_email($email, $email, $subject, $body)) {
+                                $flash = 'Invite was created, but email sending failed.';
+                            } else {
+                                $flash = 'Invite resent to ' . $email . '. Expires ' . $expiresAt . '.';
+                            }
+                        } catch (Throwable $e) {
+                            $conn->rollback();
+                            $flash = 'Failed to resend invite: ' . $e->getMessage();
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 // Load invites; do not expose IDs in UI
 $invites = [];
 $sql = "
-  SELECT id, email, token, created_at, accepted_at, completed_at,
-         expires_at, cancelled_at, created_by, COALESCE(used,0) AS used
-  FROM invites
-  ORDER BY created_at DESC
+  SELECT i.id, i.email, i.token, i.created_at, i.accepted_at, i.completed_at,
+         i.expires_at, i.cancelled_at, i.created_by, COALESCE(i.used,0) AS used,
+         i.user_id, u.first_name AS user_first_name, u.last_name AS user_last_name,
+         u.role AS user_role
+  FROM invites i
+  LEFT JOIN users u ON u.id = i.user_id
+  ORDER BY i.created_at DESC
 ";
 if ($res = $conn->query($sql)) {
     $now = new DateTimeImmutable('now');
@@ -88,6 +345,12 @@ if ($res = $conn->query($sql)) {
             $row['status'] = 'Accepted';
         } else {
             $row['status'] = 'Pending';
+        }
+
+        $row['_invite_type'] = ppf_determine_invite_type($row);
+
+        if (in_array($row['status'], ['Cancelled', 'Canceled', 'Expired'], true)) {
+            ppf_cleanup_invite_user_record($conn, $row);
         }
 
         $invites[] = $row;
@@ -208,8 +471,6 @@ if ($res = $conn->query($sql)) {
     <span class="muted">Create and manage invitations</span>
   </div>
   <div class="btnset">
-    <!-- If your create page is named differently, adjust the href -->
-    <a class="btn brand" href="create_invite_form.php" id="btnCreateInvite">Create Invite</a>
     <a class="btn" href="dashboard.php">Back to Dashboard</a>
     <a class="btn" href="clients.php?tab=active">View Clients</a>
   </div>
@@ -312,6 +573,12 @@ $_ppf_style = isset($_ppf_colors[$_ppf_status]) ? ' style="color: ' . $_ppf_colo
                   <!-- ID stays backend-only -->
                   <input type="hidden" name="invite_id" value="<?php echo (int)$row['id']; ?>">
                   <button type="submit" class="btn warn">Cancel</button>
+                </form>
+              <?php elseif (in_array($row['status'], ['Expired', 'Cancelled', 'Canceled'], true)): ?>
+                <form method="post" onsubmit="return confirm('Send a new invite to this email?');" style="display:inline">
+                  <input type="hidden" name="action" value="resend">
+                  <input type="hidden" name="invite_id" value="<?php echo (int)$row['id']; ?>">
+                  <button type="submit" class="btn">Resend</button>
                 </form>
               <?php else: ?>
                 <span class="muted">No actions</span>

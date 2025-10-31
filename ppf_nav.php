@@ -134,9 +134,6 @@ if ($isAdmin || $hasTrainerAccess) {
     [
       'href' => 'invites.php',
       'label' => 'Invites',
-      'submenu' => [
-        ['href' => 'invites.php?open=create', 'label' => 'Send Invite'],
-      ],
     ],
   ]);
 
