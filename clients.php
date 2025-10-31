@@ -1431,6 +1431,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // IMPORTANT: include header/nav *after* POST/redirects to avoid "headers already sent"
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
+require_once __DIR__ . '/ppf_subheader.php';
 
 // ---------- Load clients (split active / inactive) ----------
 $active = []; $inactive = [];
@@ -1787,7 +1788,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
         </thead>
         <tbody>
         <?php if (!$clients): ?>
-          <tr><td colspan="<?php echo $colspan; ?>" class="muted" style="padding:24px">No clients found.</td></tr>
+          <tr data-no-matches="1"><td colspan="<?php echo $colspan; ?>" class="muted" style="padding:24px">No clients found.</td></tr>
         <?php else: $index = 0; foreach ($clients as $c):
           $id   = (int)$c['id'];
           $pw   = (string)($c['password_hash'] ?? '');
@@ -2038,14 +2039,6 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   [data-exp-body] > div > div:first-child,
   .plan-expand > td > div > div:first-child { color: #ffffff; font-weight: 600; }
 
-  .subheader{
-    position: sticky; top: 0; z-index: 40; background: var(--panel);
-    border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
-    margin-bottom: 14px; display:flex; align-items:center; justify-content:space-between; gap:12px;
-  }
-  .subheader .left{display:flex;align-items:center;gap:10px}
-  .brand{font-weight:800;font-size:20px;letter-spacing:.2px}
-  .btnset{display:flex;gap:8px;flex-wrap:wrap}
   .clients-table-container{display:flex;flex-direction:column;gap:12px}
   .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .actions form{margin:0;display:flex}
@@ -2110,8 +2103,6 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   @media (max-width:900px){ th,td{padding:8px 6px;font-size:13px} .btn.small{font-size:11px} }
   @media (max-width:700px){
     th,td{padding:6px 4px;font-size:12px}
-    .brand{font-size:18px}
-    .subheader{padding:8px 10px}
     .table-tools{flex-direction:column;align-items:stretch;gap:10px}
     .table-tools__bulk{width:100%;justify-content:flex-start}
     .table-tools__bulk .input{width:100%;min-width:0}
@@ -2182,19 +2173,22 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 <body>
 <main class="wrap">
 
-  <div class="subheader">
-    <div class="left">
-      <div class="brand">Clients</div>
-      <span class="muted">Manage active & inactive clients</span>
-    </div>
-    <div class="btnset">
-      <button class="btn brand" type="button" data-client-invite-open>Send Invite</button>
-      <a class="btn" href="dashboard.php">Back to Dashboard</a>
-      <a class="btn" href="invites.php">Manage Invites</a>
-      <a class="btn" href="workout_plans.php">Workout Plans</a>
-      <a class="btn" href="users.php">All Users</a>
-    </div>
-  </div>
+  <?php
+  ppf_subheader([
+    'title' => 'Clients',
+    'subtitle' => 'Manage active & inactive clients',
+    'actions' => function (): void {
+      ?>
+      <div class="btnset">
+        <button class="btn brand" type="button" data-client-invite-open>Send Invite</button>
+        <a class="btn" href="dashboard.php">Back to Dashboard</a>
+        <a class="btn" href="invites.php">Manage Invites</a>
+        <a class="btn" href="workout_plans.php">Workout Plans</a>
+      </div>
+      <?php
+    },
+  ]);
+  ?>
 
   <?php if ($flash): ?>
     <div class="panel" style="padding:10px 12px;margin-bottom:14px;border-left:3px solid <?php echo $flash_type==='ok'?'#22c55e':'#ef4444'; ?>">
@@ -2689,16 +2683,24 @@ const CLIENT_SORT_TYPES = {
 
   rows.forEach(row => refreshSearchCache(row.dataset.uid));
 
-  const noMatchesRow = document.createElement('tr');
-  noMatchesRow.dataset.noMatches = '1';
-  const emptyTd = document.createElement('td');
+  let noMatchesRow = tbody.querySelector('tr[data-no-matches]');
+  let emptyTd = noMatchesRow ? noMatchesRow.querySelector('td') : null;
+  if (!noMatchesRow) {
+    noMatchesRow = document.createElement('tr');
+    noMatchesRow.dataset.noMatches = '1';
+  }
+  if (!emptyTd) {
+    emptyTd = document.createElement('td');
+    noMatchesRow.appendChild(emptyTd);
+  }
   emptyTd.colSpan = table.querySelectorAll('thead th').length;
   emptyTd.className = 'muted';
-  emptyTd.style.padding = '18px';
-  emptyTd.textContent = 'No matching clients.';
-  noMatchesRow.appendChild(emptyTd);
-  noMatchesRow.style.display = 'none';
-  tbody.appendChild(noMatchesRow);
+  emptyTd.style.padding = '24px';
+  emptyTd.textContent = 'No clients found.';
+  if (!noMatchesRow.parentNode) {
+    tbody.appendChild(noMatchesRow);
+  }
+  noMatchesRow.style.display = rows.length ? 'none' : '';
 
   function updateSelectAll(){
     if (!selectAll) return;
