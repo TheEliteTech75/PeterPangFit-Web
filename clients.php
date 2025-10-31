@@ -6,6 +6,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/ppf_lockout.php'; // unlock action
+require_once __DIR__ . '/send_email.php';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function is_trainer_admin($role){
@@ -382,12 +383,33 @@ $tab = ($_GET['tab'] ?? 'active') === 'inactive' ? 'inactive' : 'active';
 
 ensure_is_active_column($conn);
 ensure_user_plan_exercise_tracking_columns($conn);
+ensure_invite_columns($conn);
 
 $HAS_UPE_UPDATED_AT = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_at');
 $HAS_UPE_UPDATED_BY = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_by');
 
 // ---------- POST Actions ----------
+function clients_flash(?string $type = null, ?string $message = null): ?array {
+  if ($type !== null || $message !== null) {
+    $_SESSION['clients_flash'] = ['type' => $type, 'message' => $message];
+    return null;
+  }
+
+  if (!empty($_SESSION['clients_flash'])) {
+    $flash = $_SESSION['clients_flash'];
+    unset($_SESSION['clients_flash']);
+    return is_array($flash) ? $flash : null;
+  }
+
+  return null;
+}
+
 $flash = null; $flash_type = 'ok';
+if ($storedFlash = clients_flash()) {
+  $flash_type = ($storedFlash['type'] ?? 'ok') === 'err' ? 'err' : 'ok';
+  $flash = (string)($storedFlash['message'] ?? '');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $t = $_POST['csrf_token'] ?? '';
   if (!$csrf || !hash_equals($csrf, $t)) {
@@ -397,6 +419,162 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $uid    = (int)($_POST['user_id'] ?? 0);
 
     try {
+      if ($action === 'send_invite') {
+        $rawEmails = $_POST['emails'] ?? [];
+        if (!is_array($rawEmails)) {
+          $rawEmails = [$rawEmails];
+        }
+
+        $hasTypedEmail = false;
+        foreach ($rawEmails as $value) {
+          if (trim((string)$value) !== '') {
+            $hasTypedEmail = true;
+            break;
+          }
+        }
+
+        if (!$hasTypedEmail) {
+          $fallback = trim((string)($_POST['invite_email'] ?? ''));
+          if ($fallback !== '') {
+            $rawEmails = preg_split('/[\s,;]+/', $fallback) ?: [];
+          }
+        }
+
+        $emails = [];
+        foreach ($rawEmails as $raw) {
+          $email = trim((string)$raw);
+          if ($email === '') continue;
+          if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new Exception('Please enter a valid email address: ' . $email);
+          }
+          $lower = mb_strtolower($email);
+          if (!isset($emails[$lower])) {
+            $emails[$lower] = $email;
+          }
+        }
+
+        if (!$emails) {
+          throw new Exception('Please enter at least one valid email address.');
+        }
+
+        $sent = [];
+        $failed = [];
+
+        foreach ($emails as $email) {
+          $conn->begin_transaction();
+          try {
+            $userId = null;
+            $existing = null;
+
+            $lookup = $conn->prepare('SELECT id, role, is_client, is_active, password_hash FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
+            if (!$lookup) {
+              throw new Exception('Failed to prepare user lookup.');
+            }
+            $lookup->bind_param('s', $email);
+            $lookup->execute();
+            $res = $lookup->get_result();
+            if ($res && ($row = $res->fetch_assoc())) {
+              $existing = $row;
+            }
+            $lookup->close();
+
+            if ($existing) {
+              $userId = (int)$existing['id'];
+              $roleKey = ppf_role_key($existing['role'] ?? '');
+              if ($roleKey !== '' && $roleKey !== 'client') {
+                throw new Exception('That email (' . $email . ') is already in use for a different role.');
+              }
+              if (!empty($existing['password_hash'])) {
+                throw new Exception('That email (' . $email . ') already has an account.');
+              }
+
+              $needsUpdate = ($roleKey !== 'client') || ((int)($existing['is_client'] ?? 0) !== 1) || ((int)($existing['is_active'] ?? 0) !== 1);
+              if ($needsUpdate) {
+                $update = $conn->prepare("UPDATE users SET role='client', is_client=1, is_active=1 WHERE id=?");
+                if ($update) {
+                  $update->bind_param('i', $userId);
+                  $update->execute();
+                  $update->close();
+                }
+              }
+            } else {
+              $sql = "INSERT INTO users (email, role, is_client, is_active, created_at) VALUES (?, 'client', 1, 1, NOW())";
+              $ins = $conn->prepare($sql);
+              if (!$ins) {
+                throw new Exception('Failed to prepare client account for ' . $email . '.');
+              }
+              $ins->bind_param('s', $email);
+              if (!$ins->execute()) {
+                $ins->close();
+                throw new Exception('Failed to prepare client account for ' . $email . '.');
+              }
+              $userId = $ins->insert_id;
+              $ins->close();
+            }
+
+            if ($userId <= 0) {
+              throw new Exception('Failed to prepare client account for ' . $email . '.');
+            }
+
+            $token = bin2hex(random_bytes(32));
+            $expiresAt = (new DateTimeImmutable('+24 hours'))->format('Y-m-d H:i:s');
+
+            $inviteSql = 'INSERT INTO invites (user_id, email, token, expires_at, cancelled_at, used, created_by, created_at) VALUES (?, ?, ?, ?, NULL, 0, ?, NOW())';
+            $invite = $conn->prepare($inviteSql);
+            if (!$invite) {
+              throw new Exception('Failed to prepare invite for ' . $email . '.');
+            }
+            $createdBy = (int)($USER_ID ?? 0);
+            $invite->bind_param('isssi', $userId, $email, $token, $expiresAt, $createdBy);
+            if (!$invite->execute()) {
+              $invite->close();
+              throw new Exception('Failed to create invite for ' . $email . '.');
+            }
+            $invite->close();
+
+            $conn->commit();
+
+            $baseUrl = 'https://peterpang.pwncore.net';
+            $link = $baseUrl . '/register.php?token=' . urlencode($token);
+            $subject = "You're invited to join Peter Pang Fit";
+            $body = "Hi,\n\n"
+              . "You’ve been invited to complete your registration. This link expires in 24 hours.\n\n"
+              . $link . "\n\n"
+              . "If it expires, your trainer can send a new one.\n\n— Peter Pang Fit";
+
+            if (!send_plain_email($email, $email, $subject, $body)) {
+              $failed[] = $email;
+            } else {
+              $sent[] = $email;
+            }
+
+            ppf_log_user_admin_action($conn, 'client_invite_created', $userId, [
+              'email' => $email,
+              'expires_at' => $expiresAt,
+            ]);
+          } catch (Throwable $e) {
+            $conn->rollback();
+            throw $e;
+          }
+        }
+
+        if ($failed) {
+          if ($sent) {
+            $flash = 'Invites sent to ' . implode(', ', $sent) . ', but email delivery failed for: ' . implode(', ', $failed) . '. Tokens expire in 24 hours.';
+          } else {
+            $flash = 'Email delivery failed for: ' . implode(', ', $failed) . '. Tokens expire in 24 hours.';
+          }
+          $flash_type = 'err';
+        } else {
+          if (count($sent) === 1) {
+            $flash = 'Invite sent to ' . $sent[0] . '. Expires in 24 hours.';
+          } else {
+            $flash = 'Invites sent to ' . implode(', ', $sent) . '. Expires in 24 hours.';
+          }
+          $flash_type = 'ok';
+        }
+      }
+
       if ($action === 'bulk_action') {
         if (!is_trainer_admin($USER_ROLE ?? null)) {
           throw new Exception('You do not have permission to perform bulk actions.');
@@ -1237,7 +1415,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
       }
 
-      if (in_array($action, ['update_client','invite_client','resend_invite','deactivate_client','reactivate_client','unlock_user','unassign_plan','bulk_action'], true)) {
+      if (in_array($action, ['send_invite','update_client','invite_client','resend_invite','deactivate_client','reactivate_client','unlock_user','unassign_plan','bulk_action'], true)) {
+        if ($flash !== null && $flash !== '') {
+          clients_flash($flash_type, $flash);
+        }
         header('Location: clients.php?tab=' . urlencode($tab));
         exit;
       }
@@ -1869,6 +2050,23 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   .clients-table-container{display:flex;flex-direction:column;gap:12px}
   .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .actions form{margin:0;display:flex}
+  .client-invite-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:none;z-index:3000}
+  .client-invite-backdrop.open{display:block}
+  .client-invite-modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,94vw);background:rgba(9,14,28,0.92);border:1px solid var(--line);border-radius:14px;padding:18px;display:none;z-index:3001}
+  .client-invite-modal.open{display:block}
+  .client-invite-modal h3{margin:0 0 12px 0;font-size:18px}
+  .client-invite-modal .field{margin-bottom:12px;display:flex;flex-direction:column;gap:6px}
+  .client-invite-modal .actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .client-invite-tagbox{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px;border:1px solid var(--line);border-radius:10px;background:rgba(15,23,42,0.6)}
+  .client-invite-tagbox:focus-within{border-color:var(--brand)}
+  .client-invite-tags{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+  .client-invite-tagbox input{border:none!important;outline:none;background:transparent!important;box-shadow:none!important;flex:1;min-width:140px;padding:6px 0;color:var(--text)}
+  .client-invite-tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(148,163,184,0.18);color:var(--text);font-size:13px;font-weight:600}
+  .client-invite-tag .remove{cursor:pointer;font-weight:700;opacity:.8;display:inline-flex;align-items:center;justify-content:center;min-width:14px}
+  .client-invite-tag .remove:hover{opacity:1}
+  .client-invite-tag .remove:focus{outline:2px solid var(--brand);outline-offset:2px}
+  .client-invite-hidden{display:none}
+  .client-invite-hint{font-size:12px;line-height:1.4;color:var(--muted)}
   .table-tools{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between}
   .table-tools__search{flex:1 1 260px;max-width:420px}
   .table-tools__bulk{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -1991,6 +2189,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
       <span class="muted">Manage active & inactive clients</span>
     </div>
     <div class="btnset">
+      <button class="btn brand" type="button" data-client-invite-open>Send Invite</button>
       <a class="btn" href="dashboard.php">Back to Dashboard</a>
       <a class="btn" href="invites.php">Manage Invites</a>
       <a class="btn" href="workout_plans.php">Workout Plans</a>
@@ -2017,6 +2216,228 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
   </div>
 
 </main>
+
+<div class="client-invite-backdrop" data-client-invite-backdrop></div>
+<div class="client-invite-modal" id="clientInviteModal" role="dialog" aria-modal="true" aria-labelledby="clientInviteTitle">
+  <h3 id="clientInviteTitle">Send Client Invite</h3>
+  <form method="post" data-client-invite-form>
+    <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+    <input type="hidden" name="action" value="send_invite">
+    <div class="field">
+      <label for="client-invite-input">Client Emails</label>
+      <div class="client-invite-tagbox" data-client-invite-tagbox>
+        <div class="client-invite-tags" data-client-invite-tags></div>
+        <input id="client-invite-input" name="invite_email" type="text" placeholder="Type an email and press space, enter, comma, or semicolon">
+      </div>
+      <div class="client-invite-hidden" data-client-invite-hidden></div>
+      <div class="client-invite-hint">Each email becomes a pill after space, enter, comma, or semicolon.</div>
+    </div>
+    <div class="actions">
+      <button class="btn" type="button" data-client-invite-close>Cancel</button>
+      <button class="btn brand" type="submit" data-processing-text="Sending…">Send Invites</button>
+    </div>
+  </form>
+</div>
+
+<script>
+(function(){
+  const modal = document.getElementById('clientInviteModal');
+  const backdrop = document.querySelector('[data-client-invite-backdrop]');
+  if (!modal || !backdrop) return;
+
+  const openModal = () => {
+    modal.classList.add('open');
+    backdrop.classList.add('open');
+    const focusTarget = modal.querySelector('#client-invite-input');
+    if (focusTarget) focusTarget.focus();
+  };
+
+  const closeModal = () => {
+    modal.classList.remove('open');
+    backdrop.classList.remove('open');
+  };
+
+  document.querySelectorAll('[data-client-invite-open]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openModal();
+    });
+  });
+
+  modal.querySelectorAll('[data-client-invite-close]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      closeModal();
+    });
+  });
+
+  backdrop.addEventListener('click', closeModal);
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && modal.classList.contains('open')) {
+      closeModal();
+    }
+  });
+
+  const form = modal.querySelector('[data-client-invite-form]');
+  if (form) {
+    form.addEventListener('submit', () => {
+      const submitBtn = form.querySelector('button[type="submit"]');
+      if (!submitBtn) return;
+      const processing = submitBtn.getAttribute('data-processing-text') || 'Processing...';
+      submitBtn.dataset.originalText = submitBtn.textContent;
+      submitBtn.textContent = processing;
+      submitBtn.disabled = true;
+    });
+  }
+})();
+</script>
+
+<script>
+(function(){
+  const modal = document.getElementById('clientInviteModal');
+  if (!modal) return;
+  const tagBox = modal.querySelector('[data-client-invite-tagbox]');
+  const input = modal.querySelector('#client-invite-input');
+  const tagsEl = modal.querySelector('[data-client-invite-tags]');
+  const hidden = modal.querySelector('[data-client-invite-hidden]');
+  const form = modal.querySelector('[data-client-invite-form]');
+  if (!tagBox || !input || !tagsEl || !hidden || !form) return;
+
+  const emails = new Set();
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function sanitize(raw){
+    return (raw || '').trim().replace(/[\s,;]+$/g, '');
+  }
+
+  function removeEmail(email, tagEl){
+    const key = (email || '').toLowerCase();
+    emails.delete(key);
+    if (tagEl && tagEl.parentNode){
+      tagEl.parentNode.removeChild(tagEl);
+    }
+    hidden.querySelectorAll('input[name="emails[]"]').forEach(inp => {
+      if ((inp.dataset.email && inp.dataset.email === key) || inp.value.toLowerCase() === key){
+        inp.remove();
+      }
+    });
+  }
+
+  function createTag(email){
+    const tag = document.createElement('span');
+    tag.className = 'client-invite-tag';
+    tag.dataset.email = email;
+
+    const text = document.createElement('span');
+    text.textContent = email;
+
+    const remove = document.createElement('span');
+    remove.className = 'remove';
+    remove.setAttribute('role', 'button');
+    remove.setAttribute('tabindex', '0');
+    remove.setAttribute('aria-label', 'Remove ' + email);
+    remove.textContent = '×';
+    remove.addEventListener('click', () => removeEmail(email, tag));
+    remove.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Enter' || evt.key === ' '){
+        evt.preventDefault();
+        removeEmail(email, tag);
+      }
+    });
+
+    tag.appendChild(text);
+    tag.appendChild(remove);
+    return tag;
+  }
+
+  function addEmail(raw){
+    const email = sanitize(raw);
+    if (!email) return false;
+    if (!emailPattern.test(email)) return false;
+    const key = email.toLowerCase();
+    if (emails.has(key)) return false;
+
+    emails.add(key);
+    const tag = createTag(email);
+    tagsEl.appendChild(tag);
+
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = 'emails[]';
+    hiddenInput.value = email;
+    hiddenInput.dataset.email = key;
+    hidden.appendChild(hiddenInput);
+    return true;
+  }
+
+  function commitBuffer(keepPartial){
+    const value = input.value;
+    if (!value) return '';
+    const segments = value.split(/[\s,;]+/);
+    const endsWithDelimiter = /[\s,;]$/.test(value);
+    let remainderSegment = '';
+    if (keepPartial && !endsWithDelimiter){
+      remainderSegment = segments.pop() || '';
+    }
+    let addedAny = false;
+    segments.filter(Boolean).forEach(part => {
+      if (addEmail(part)){
+        addedAny = true;
+      }
+    });
+    if (addedAny){
+      if (keepPartial && !endsWithDelimiter){
+        return remainderSegment;
+      }
+      return '';
+    }
+    return remainderSegment || sanitize(value);
+  }
+
+  tagBox.addEventListener('click', () => input.focus());
+
+  input.addEventListener('keydown', (e) => {
+    const key = e.key;
+    const isDelimiter = key === ' ' || key === 'Spacebar' || key === ',' || key === 'Comma' || key === ';' || key === 'Semicolon';
+    if (key === 'Enter' || isDelimiter){
+      e.preventDefault();
+      const remainder = commitBuffer(false);
+      if (input.value !== remainder){
+        input.value = remainder;
+      }
+    } else if (key === 'Backspace' && !input.value){
+      const last = tagsEl.lastElementChild;
+      if (last){
+        removeEmail(last.dataset.email || '', last);
+      }
+    }
+  });
+
+  input.addEventListener('input', () => {
+    const remainder = commitBuffer(true);
+    if (input.value !== remainder){
+      input.value = remainder;
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    const remainder = commitBuffer(false);
+    if (input.value !== remainder){
+      input.value = remainder;
+    }
+  });
+
+  form.addEventListener('submit', (e) => {
+    const remainder = commitBuffer(false);
+    if (input.value !== remainder){
+      input.value = remainder;
+    }
+    if (emails.size === 0){
+      e.preventDefault();
+      alert('Please add at least one valid email address.');
+    }
+  });
+})();
+</script>
 
 <!-- Pick Plan modal -->
 <div class="backdrop" id="bdPickPlan" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000"></div>

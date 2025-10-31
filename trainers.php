@@ -138,6 +138,27 @@ $csrf = $_SESSION['csrf_token'];
 
 $flash = null;
 $flashType = 'ok';
+
+function trainers_flash(?string $type = null, ?string $message = null): ?array
+{
+    if ($type !== null || $message !== null) {
+        $_SESSION['trainers_flash'] = ['type' => $type, 'message' => $message];
+        return null;
+    }
+
+    if (!empty($_SESSION['trainers_flash'])) {
+        $flash = $_SESSION['trainers_flash'];
+        unset($_SESSION['trainers_flash']);
+        return is_array($flash) ? $flash : null;
+    }
+
+    return null;
+}
+
+if ($storedFlash = trainers_flash()) {
+    $flashType = ($storedFlash['type'] ?? 'ok') === 'err' ? 'err' : 'ok';
+    $flash = (string)($storedFlash['message'] ?? '');
+}
 $tab = (isset($_GET['tab']) && $_GET['tab'] === 'inactive') ? 'inactive' : 'active';
 $editId = isset($_GET['edit']) ? (int)$_GET['edit'] : 0;
 
@@ -156,72 +177,117 @@ try {
         $action = $_POST['action'] ?? '';
 
         if ($action === 'send_invite') {
-            $email = trim($_POST['invite_email'] ?? '');
-            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                throw new Exception('Please enter a valid email address.');
+            $rawEmails = $_POST['emails'] ?? [];
+            if (!is_array($rawEmails)) {
+                $rawEmails = [$rawEmails];
             }
 
-            $conn->begin_transaction();
-            try {
-                $userId = null;
-                $stmt = $conn->prepare('SELECT id, role FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
-                $stmt->bind_param('s', $email);
-                $stmt->execute();
-                $res = $stmt->get_result();
-                if ($res && ($row = $res->fetch_assoc())) {
-                    $userId = (int)$row['id'];
-                    $roleKey = ppf_role_key($row['role'] ?? '');
-                    if ($roleKey !== 'trainer') {
-                        throw new Exception('That email is already in use for a different role.');
-                    }
+            $hasTypedEmail = false;
+            foreach ($rawEmails as $value) {
+                if (trim((string)$value) !== '') {
+                    $hasTypedEmail = true;
+                    break;
                 }
-                $stmt->close();
-
-                if (!$userId) {
-                    $sql = 'INSERT INTO users (email, role, is_client, is_active, created_at) VALUES (?, \'trainer\', 0, 1, NOW())';
-                    $ins = $conn->prepare($sql);
-                    $ins->bind_param('s', $email);
-                    if (!$ins->execute()) {
-                        throw new Exception('Failed to prepare trainer account.');
-                    }
-                    $userId = $ins->insert_id;
-                    $ins->close();
-                }
-
-                $token = bin2hex(random_bytes(32));
-                $expiresAt = (new DateTimeImmutable('+48 hours'))->format('Y-m-d H:i:s');
-
-                $inviteSql = 'INSERT INTO invites (user_id, email, token, expires_at, cancelled_at, used, created_by, created_at) VALUES (?, ?, ?, ?, NULL, 0, ?, NOW())';
-                $invite = $conn->prepare($inviteSql);
-                $createdBy = (int)($USER_ID ?? 0);
-                $invite->bind_param('isssi', $userId, $email, $token, $expiresAt, $createdBy);
-                if (!$invite->execute()) {
-                    throw new Exception('Failed to create invite.');
-                }
-                $invite->close();
-
-                $conn->commit();
-
-                $baseUrl = 'https://peterpang.pwncore.net';
-                $link = $baseUrl . '/register.php?token=' . urlencode($token);
-                $subject = "You're invited to join Peter Pang Fit as a Trainer";
-                $body = "Hello,\n\n"
-                    . "You have been invited to register as a trainer. This link expires in 48 hours.\n\n"
-                    . $link . "\n\n"
-                    . "If it expires, please ask an administrator for a new invite.\n\n— Peter Pang Fit";
-                @send_plain_email($email, $email, $subject, $body);
-
-                if (function_exists('ppf_log')) {
-                    $details = json_encode(['email' => $email, 'expires_at' => $expiresAt], JSON_UNESCAPED_SLASHES);
-                    ppf_log($conn, $USER_ID ?? null, $USER_EMAIL ?? null, $USER_ROLE ?? null, 'trainer_invite_created', 'user', (string)$userId, $details);
-                }
-
-                $flash = 'Invite sent to ' . trainers_h($email) . '. Expires in 48 hours.';
-                $flashType = 'ok';
-            } catch (Throwable $e) {
-                $conn->rollback();
-                throw $e;
             }
+
+            if (!$hasTypedEmail) {
+                $fallback = trim((string)($_POST['invite_email'] ?? ''));
+                if ($fallback !== '') {
+                    $rawEmails = preg_split('/[\s,;]+/', $fallback) ?: [];
+                }
+            }
+
+            $emails = [];
+            foreach ($rawEmails as $raw) {
+                $email = trim((string)$raw);
+                if ($email === '') {
+                    continue;
+                }
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    throw new Exception('Please enter a valid email address: ' . $email);
+                }
+                $lower = mb_strtolower($email);
+                if (!isset($emails[$lower])) {
+                    $emails[$lower] = $email;
+                }
+            }
+
+            if (!$emails) {
+                throw new Exception('Please enter at least one valid email address.');
+            }
+
+            $sent = [];
+
+            foreach ($emails as $email) {
+                $conn->begin_transaction();
+                try {
+                    $userId = null;
+                    $stmt = $conn->prepare('SELECT id, role FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
+                    $stmt->bind_param('s', $email);
+                    $stmt->execute();
+                    $res = $stmt->get_result();
+                    if ($res && ($row = $res->fetch_assoc())) {
+                        $userId = (int)$row['id'];
+                        $roleKey = ppf_role_key($row['role'] ?? '');
+                        if ($roleKey !== 'trainer') {
+                            throw new Exception('That email (' . $email . ') is already in use for a different role.');
+                        }
+                    }
+                    $stmt->close();
+
+                    if (!$userId) {
+                        $sql = 'INSERT INTO users (email, role, is_client, is_active, created_at) VALUES (?, \'trainer\', 0, 1, NOW())';
+                        $ins = $conn->prepare($sql);
+                        $ins->bind_param('s', $email);
+                        if (!$ins->execute()) {
+                            throw new Exception('Failed to prepare trainer account for ' . $email . '.');
+                        }
+                        $userId = $ins->insert_id;
+                        $ins->close();
+                    }
+
+                    $token = bin2hex(random_bytes(32));
+                    $expiresAt = (new DateTimeImmutable('+48 hours'))->format('Y-m-d H:i:s');
+
+                    $inviteSql = 'INSERT INTO invites (user_id, email, token, expires_at, cancelled_at, used, created_by, created_at) VALUES (?, ?, ?, ?, NULL, 0, ?, NOW())';
+                    $invite = $conn->prepare($inviteSql);
+                    $createdBy = (int)($USER_ID ?? 0);
+                    $invite->bind_param('isssi', $userId, $email, $token, $expiresAt, $createdBy);
+                    if (!$invite->execute()) {
+                        throw new Exception('Failed to create invite for ' . $email . '.');
+                    }
+                    $invite->close();
+
+                    $conn->commit();
+
+                    $baseUrl = 'https://peterpang.pwncore.net';
+                    $link = $baseUrl . '/register.php?token=' . urlencode($token);
+                    $subject = "You're invited to join Peter Pang Fit as a Trainer";
+                    $body = "Hello,\n\n"
+                        . "You have been invited to register as a trainer. This link expires in 48 hours.\n\n"
+                        . $link . "\n\n"
+                        . "If it expires, please ask an administrator for a new invite.\n\n— Peter Pang Fit";
+                    @send_plain_email($email, $email, $subject, $body);
+
+                    if (function_exists('ppf_log')) {
+                        $details = json_encode(['email' => $email, 'expires_at' => $expiresAt], JSON_UNESCAPED_SLASHES);
+                        ppf_log($conn, $USER_ID ?? null, $USER_EMAIL ?? null, $USER_ROLE ?? null, 'trainer_invite_created', 'user', (string)$userId, $details);
+                    }
+
+                    $sent[] = $email;
+                } catch (Throwable $e) {
+                    $conn->rollback();
+                    throw $e;
+                }
+            }
+
+            if (count($sent) === 1) {
+                $flash = 'Invite sent to ' . $sent[0] . '. Expires in 48 hours.';
+            } else {
+                $flash = 'Invites sent to ' . implode(', ', $sent) . '. Expires in 48 hours.';
+            }
+            $flashType = 'ok';
+            trainers_flash($flashType, $flash);
 
             trainers_redirect_tab($tab);
         }
@@ -292,6 +358,7 @@ try {
 
             $flash = 'Trainer added successfully.';
             $flashType = 'ok';
+            trainers_flash($flashType, $flash);
             trainers_redirect_tab('active');
         }
 
@@ -388,6 +455,7 @@ try {
 
             $flash = 'Trainer updated successfully.';
             $flashType = 'ok';
+            trainers_flash($flashType, $flash);
             trainers_redirect_tab($tab);
 
         }
@@ -414,6 +482,7 @@ try {
 
             $flash = 'Trainer deactivated.';
             $flashType = 'ok';
+            trainers_flash($flashType, $flash);
             trainers_redirect_tab('inactive');
         }
 
@@ -439,6 +508,7 @@ try {
 
             $flash = 'Trainer reactivated.';
             $flashType = 'ok';
+            trainers_flash($flashType, $flash);
             trainers_redirect_tab('active');
         }
 
@@ -680,13 +750,23 @@ require_once __DIR__ . '/ppf_nav.php';
     
 /* === PPF: Trainers modal enhancements === */
 .add-trainer-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.add-trainer-grid .field{margin-bottom:0}
+.add-trainer-grid .field.full{grid-column:1 / -1}
 @media (max-width:720px){.add-trainer-grid{grid-template-columns:1fr}}
-.password-reqs{margin-top:6px;font-size:12px;line-height:1.4}
+.password-reqs{font-size:12px;line-height:1.4}
+.password-reqs-wrap{display:block;margin-top:-6px}
+.password-reqs-wrap .password-reqs{margin-top:0}
 .password-reqs .ok{color:#22c55e}.password-reqs .bad{color:#ef4444}.password-reqs .hint{color:var(--muted,#9ba4c2)}
 .tagbox{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px;border:1px solid var(--input-border,rgba(148,163,184,.28));border-radius:10px;background:var(--input-bg,rgba(15,23,42,.6))}
-.tagbox input{border:none;outline:none;background:transparent;flex:1;min-width:140px;padding:6px;color:var(--text,#f8fafc)}
+.tagbox-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tagbox input{border:none !important;outline:none;background:transparent!important;box-shadow:none!important;flex:1;min-width:140px;padding:6px 0;color:var(--text,#f8fafc)}
 .tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:var(--badge-muted,rgba(148,163,184,.16));color:var(--text,#f8fafc);font-size:13px;font-weight:600}
-.tag .x{cursor:pointer;font-weight:700;opacity:.8}.tag .x:hover{opacity:1}
+.tag .x{cursor:pointer;font-weight:700;opacity:.8;display:inline-flex;align-items:center;justify-content:center;min-width:14px}.tag .x:hover{opacity:1}
+.tag .x:focus{outline:2px solid var(--brand,#38bdf8);outline-offset:2px}
+
+#invite-hidden{display:none}
+
+.field-hint{font-size:12px;line-height:1.4;margin-top:4px}
 
 
 /* === PPF fix: widen Add Trainer modal === */
@@ -742,14 +822,13 @@ require_once __DIR__ . '/ppf_nav.php';
         <input type="hidden" name="csrf_token" value="<?php echo trainers_h($csrf); ?>">
         <input type="hidden" name="action" value="send_invite">
         <div class="field">
-            <label for="invite_email">Trainer Email</label>
-            
-<div class="tagbox" id="invite-tagbox">
-  <div id="invite-tags"></div>
-  <input id="invite-input" type="text" placeholder="Enter emails and press Enter, comma, semicolon, or space">
-</div>
-<div id="invite-hidden"></div>
-
+            <label for="invite-input">Trainer Emails</label>
+            <div class="tagbox" id="invite-tagbox">
+                <div class="tagbox-tags" id="invite-tags"></div>
+                <input id="invite-input" name="invite_email" type="text" placeholder="Type an email and press space, enter, comma, or semicolon">
+            </div>
+            <div id="invite-hidden"></div>
+            <div class="field-hint muted">Type an email and press space, enter, comma, or semicolon to add it.</div>
         </div>
         <div class="actions">
             <button class="btn" type="button" data-modal-close>Cancel</button>
@@ -764,38 +843,45 @@ require_once __DIR__ . '/ppf_nav.php';
         <input type="hidden" name="csrf_token" value="<?php echo trainers_h($csrf); ?>">
         <input type="hidden" name="action" value="add_trainer">
         <div class="add-trainer-grid">
-<div class="add-trainer-grid">
-<div class="field">
-            <label for="add_first_name">First Name</label>
-            <input class="input" id="add_first_name" name="add_first_name" type="text" required>
+            <div class="field">
+                <label for="add_first_name">First Name</label>
+                <input class="input" id="add_first_name" name="add_first_name" type="text" required>
+            </div>
+            <div class="field">
+                <label for="add_last_name">Last Name</label>
+                <input class="input" id="add_last_name" name="add_last_name" type="text" required>
+            </div>
+            <div class="field full">
+                <label for="add_email">Email</label>
+                <input class="input" id="add_email" name="add_email" type="email" placeholder="name@example.com" required>
+            </div>
+            <div class="field full">
+                <label for="add_phone">Phone Number</label>
+                <input class="input" id="add_phone" name="add_phone" type="text" placeholder="(555) 123-4567">
+            </div>
+            <div class="field full">
+                <label for="add_password">Password</label>
+                <input class="input" id="add_password" name="add_password" type="password" required>
+            </div>
+            <div class="field full">
+                <label for="add_password_confirm">Confirm Password</label>
+                <input class="input" id="add_password_confirm" name="add_password_confirm" type="password" required>
+            </div>
+            <div class="field full password-reqs-wrap">
+                <div class="password-reqs" id="add-trainer-password-reqs">
+                    <div><span data-req="len" class="bad">• At least 12 characters</span></div>
+                    <div><span data-req="upper" class="bad">• At least one uppercase letter</span></div>
+                    <div><span data-req="lower" class="bad">• At least one lowercase letter</span></div>
+                    <div><span data-req="digit" class="bad">• At least one number</span></div>
+                    <div><span data-req="special" class="bad">• At least one special character</span></div>
+                </div>
+            </div>
         </div>
-<div class="field">
-            <label for="add_last_name">Last Name</label>
-            <input class="input" id="add_last_name" name="add_last_name" type="text" required>
-        </div>
-<div class="field">
-            <label for="add_email">Email</label>
-            <input class="input" id="add_email" name="add_email" type="email" placeholder="name@example.com" required>
-        </div>
-<div class="field">
-            <label for="add_phone">Phone Number</label>
-            <input class="input" id="add_phone" name="add_phone" type="text" placeholder="(555) 123-4567">
-        </div>
-<div class="field">
-            <label for="add_password">Password</label>
-            <input class="input" id="add_password" name="add_password" type="password" required>
-<div class="password-reqs" id="add-trainer-password-reqs">
-
-  <div><span data-req="len" class="bad">• At least 12 characters</span></div>
-<div class="field">
-            <label for="add_password_confirm">Confirm Password</label>
-            <input class="input" id="add_password_confirm" name="add_password_confirm" type="password" required></div>
-</div>
-<div class="actions">
+        <div class="actions">
             <button class="btn" type="button" data-modal-close>Cancel</button>
             <button class="btn brand" type="submit" data-processing-text="Processing...">Add Trainer</button>
         </div>
-</form>
+    </form>
 </div>
 
 <script>
@@ -884,44 +970,138 @@ require_once __DIR__ . '/ppf_nav.php';
   const tagsEl = document.getElementById('invite-tags');
   const hidden = document.getElementById('invite-hidden');
   if (!tagBox || !input || !hidden || !tagsEl) return;
-  const emails = new Set();
-  function isEmail(s){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
-  function addEmail(raw){
-    const email = (raw || '').trim().replace(/[;,]+$/, '');
-    if (!email || !isEmail(email) || emails.has(email)) return;
-    emails.add(email);
+
+  const emails = new Set(); // stores lowercase emails for uniqueness
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function sanitize(raw){
+    return (raw || '').trim().replace(/[\s,;]+$/g, '');
+  }
+
+  function createTag(email){
     const tag = document.createElement('span');
     tag.className = 'tag';
-    tag.innerHTML = '<span>'+email+'</span><span class="x" title="Remove">&times;</span>';
-    tag.querySelector('.x').addEventListener('click', () => removeEmail(email, tag));
+    tag.dataset.email = email;
+
+    const text = document.createElement('span');
+    text.textContent = email;
+
+    const remove = document.createElement('span');
+    remove.className = 'x';
+    remove.setAttribute('role', 'button');
+    remove.setAttribute('tabindex', '0');
+    remove.setAttribute('aria-label', 'Remove ' + email);
+    remove.textContent = '×';
+    remove.addEventListener('click', () => removeEmail(email, tag));
+    remove.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Enter' || evt.key === ' '){
+        evt.preventDefault();
+        removeEmail(email, tag);
+      }
+    });
+
+    tag.appendChild(text);
+    tag.appendChild(remove);
+    return tag;
+  }
+
+  function addEmail(raw){
+    const email = sanitize(raw);
+    if (!email) return false;
+    if (!emailPattern.test(email)) return false;
+    const key = email.toLowerCase();
+    if (emails.has(key)) return false;
+
+    emails.add(key);
+    const tag = createTag(email);
     tagsEl.appendChild(tag);
+
     const hiddenInput = document.createElement('input');
     hiddenInput.type = 'hidden';
     hiddenInput.name = 'emails[]';
     hiddenInput.value = email;
+    hiddenInput.dataset.email = key;
     hidden.appendChild(hiddenInput);
+    return true;
   }
+
+  function commitBuffer(keepPartial){
+    const value = input.value;
+    if (!value) return '';
+    const segments = value.split(/[\s,;]+/);
+    const endsWithDelimiter = /[\s,;]$/.test(value);
+    let remainderSegment = '';
+    if (keepPartial && !endsWithDelimiter){
+      remainderSegment = segments.pop() || '';
+    }
+    let addedAny = false;
+    segments.filter(Boolean).forEach(part => {
+      if (addEmail(part)){
+        addedAny = true;
+      }
+    });
+    if (addedAny){
+      if (keepPartial && !endsWithDelimiter){
+        return remainderSegment;
+      }
+      return '';
+    }
+    return remainderSegment || sanitize(value);
+  }
+
   function removeEmail(email, tagEl){
-    emails.delete(email);
-    if (tagEl && tagEl.parentNode) tagEl.parentNode.removeChild(tagEl);
-    [...hidden.querySelectorAll('input[name="emails[]"]')].forEach(inp => { if (inp.value === email) inp.remove(); });
+    const key = (email || '').toLowerCase();
+    emails.delete(key);
+    if (tagEl && tagEl.parentNode){
+      tagEl.parentNode.removeChild(tagEl);
+    }
+    hidden.querySelectorAll('input[name="emails[]"]').forEach(inp => {
+      if ((inp.dataset.email && inp.dataset.email === key) || inp.value.toLowerCase() === key){
+        inp.remove();
+      }
+    });
   }
+
+  tagBox.addEventListener('click', () => input.focus());
+
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter'){
-      e.preventDefault(); addEmail(input.value); input.value = '';
-    }
-    if (e.key === 'Backspace' && !input.value){
+    const key = e.key;
+    const isDelimiter = key === ' ' || key === 'Spacebar' || key === ',' || key === 'Comma' || key === ';' || key === 'Semicolon';
+    if (key === 'Enter' || isDelimiter){
+      e.preventDefault();
+      const remainder = commitBuffer(false);
+      if (input.value !== remainder){
+        input.value = remainder;
+      }
+    } else if (key === 'Backspace' && !input.value){
       const last = tagsEl.lastElementChild;
-      if (last){ removeEmail(last.firstChild.textContent, last); }
+      if (last){
+        removeEmail(last.dataset.email || '', last);
+      }
     }
   });
+
   input.addEventListener('input', () => {
-    if (/[,;\s]$/.test(input.value)){ addEmail(input.value); input.value=''; }
+    const remainder = commitBuffer(true);
+    if (input.value !== remainder){
+      input.value = remainder;
+    }
   });
+
+  input.addEventListener('blur', () => {
+    const remainder = commitBuffer(false);
+    if (input.value !== remainder){
+      input.value = remainder;
+    }
+  });
+
   const form = input.closest('form');
   if (form){
     form.addEventListener('submit', (e) => {
-      if (input.value){ addEmail(input.value); input.value=''; }
+      const remainder = commitBuffer(false);
+      if (input.value !== remainder){
+        input.value = remainder;
+      }
       if (emails.size === 0){
         e.preventDefault();
         alert('Please add at least one valid email address.');
