@@ -127,7 +127,7 @@ $trainerId = (int)($session['trainer_id'] ?? 0);
 $allowed = false;
 if (ppf_is_admin_role($role)) {
     $allowed = true;
-} elseif (in_array($role, ['trainer', 'coach'], true) && $trainerId === $actorId) {
+} elseif (in_array($role, ['trainer', 'trainer_admin', 'coach'], true) && $trainerId === $actorId) {
     $allowed = true;
 } elseif (in_array($role, ['client'], true) && $clientId === $actorId) {
     $allowed = true;

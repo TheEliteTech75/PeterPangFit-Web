@@ -37,6 +37,7 @@ function role_default_avatar(?string $role): ?string {
   $map = [
     'super_admin' => '/assets/avatars/default_admin.png',
     'admin'   => '/assets/avatars/default_admin.png',
+    'trainer_admin' => '/assets/avatars/default_trainer.png',
     'trainer' => '/assets/avatars/default_trainer.png',
     'client'  => '/assets/avatars/default_client.png',
   ];
@@ -548,7 +549,7 @@ body.ppf-themed .dash-settings-toggle {
 <?php endif; ?>
 
 <header class="ppf-topbar">
-  <?php if (ppf_is_admin_role($roleKey) || in_array($roleKey, ['trainer','client'], true)): ?>
+  <?php if (ppf_is_admin_role($roleKey) || in_array($roleKey, ['trainer','trainer_admin','client'], true)): ?>
     <button id="ppfHamburger" type="button" aria-label="Open navigation" title="Open navigation"
             style="background:transparent;border:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;color:#e6e8ee">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
