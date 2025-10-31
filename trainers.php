@@ -719,7 +719,7 @@ require_once __DIR__ . '/ppf_subheader.php';
         .wrap{width:100%;max-width:100%;margin:24px auto;padding:0 clamp(14px,3vw,28px);box-sizing:border-box}
         .brand{font-weight:700;font-size:20px;letter-spacing:.2px}
         .muted{color:var(--muted);font-size:13px}
-        .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:rgba(30,41,59,0.65);border:1px solid var(--line);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none;white-space:nowrap;min-height:34px;line-height:1.1}
+        .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:rgba(30,41,59,0.65);border:1px solid var(--line,rgba(148,163,184,0.26));color:var(--text,#f8fafc);padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none;white-space:nowrap;min-height:36px;font-size:14px;line-height:1.2}
         .btn.small{padding:6px 10px;font-size:13px;min-height:30px}
         .btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}
         .btn.warn{background:#2a1617;border-color:rgba(248,113,113,0.45);color:#f87171}
