@@ -458,6 +458,8 @@ body.ppf-themed .status-pill {
   border: 1px solid var(--chip-border);
   color: var(--text);
   box-shadow: 0 12px 20px color-mix(in srgb, var(--chip-border) 35%, transparent 65%);
+  transition: background-color 0.25s ease, border-color 0.25s ease,
+    box-shadow 0.25s ease, color 0.25s ease, transform 0.2s ease;
 }
 body.ppf-themed .btn.primary,
 body.ppf-themed .btn.brand {
@@ -470,6 +472,52 @@ body.ppf-themed .status-pill.warn {
   background: color-mix(in srgb, var(--danger) 22%, transparent 78%);
   border-color: color-mix(in srgb, var(--danger) 55%, transparent 45%);
   color: color-mix(in srgb, var(--danger) 75%, var(--text) 25%);
+}
+body.ppf-themed .btn:hover,
+body.ppf-themed .btn:focus-visible,
+body.ppf-themed button:not(.sort-btn):hover,
+body.ppf-themed button:not(.sort-btn):focus-visible,
+body.ppf-themed input[type="submit"]:hover,
+body.ppf-themed input[type="submit"]:focus-visible {
+  background: color-mix(in srgb, var(--chip-bg) 70%, var(--theme-swatch-2, var(--brand)) 30%);
+  border-color: color-mix(in srgb, var(--chip-border) 45%, var(--theme-swatch-2, var(--brand)) 55%);
+  box-shadow: 0 18px 36px color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 32%, transparent 68%);
+  color: var(--text);
+  filter: none;
+  transform: translateY(-1px);
+}
+body.ppf-themed .btn:focus-visible,
+body.ppf-themed button:not(.sort-btn):focus-visible,
+body.ppf-themed input[type="submit"]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 60%, transparent 40%);
+  outline-offset: 2px;
+}
+body.ppf-themed .btn.primary:hover,
+body.ppf-themed .btn.primary:focus-visible,
+body.ppf-themed .btn.brand:hover,
+body.ppf-themed .btn.brand:focus-visible {
+  background: color-mix(in srgb, var(--brand) 78%, var(--theme-swatch-3, var(--primary, var(--brand))) 22%);
+  border-color: color-mix(in srgb, var(--brand-strong, var(--brand)) 65%, var(--theme-swatch-3, var(--primary, var(--brand))) 35%);
+  box-shadow: 0 20px 40px color-mix(in srgb, var(--brand) 40%, transparent 60%);
+  color: #fff;
+  filter: none;
+}
+body.ppf-themed .btn.primary:focus-visible,
+body.ppf-themed .btn.brand:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand-strong, var(--brand)) 60%, transparent 40%);
+  outline-offset: 2px;
+}
+body.ppf-themed .btn.warn:hover,
+body.ppf-themed .btn.warn:focus-visible {
+  background: color-mix(in srgb, var(--danger) 62%, transparent 38%);
+  border-color: color-mix(in srgb, var(--danger) 68%, transparent 32%);
+  box-shadow: 0 18px 36px color-mix(in srgb, var(--danger) 42%, transparent 58%);
+  color: color-mix(in srgb, #ffffff 75%, var(--danger) 25%);
+  filter: none;
+}
+body.ppf-themed .btn.warn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--danger) 65%, transparent 35%);
+  outline-offset: 2px;
 }
 body.ppf-themed .status-pill.good {
   background: color-mix(in srgb, var(--success) 24%, transparent 76%);
@@ -520,6 +568,45 @@ body.ppf-themed .dash-settings-toggle {
   border: 1px solid var(--card-border);
   color: var(--text);
   box-shadow: var(--card-shadow);
+}
+body.ppf-themed .tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+body.ppf-themed .tabs .tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--chip-border) 65%, transparent 35%);
+  background: color-mix(in srgb, var(--panel-muted) 85%, transparent 15%);
+  color: color-mix(in srgb, var(--muted) 78%, var(--text) 22%);
+  font-weight: 600;
+  letter-spacing: .01em;
+  transition: background-color 0.25s ease, border-color 0.25s ease,
+    box-shadow 0.25s ease, color 0.25s ease, transform 0.2s ease;
+}
+body.ppf-themed .tabs .tab:hover,
+body.ppf-themed .tabs .tab:focus-visible {
+  background: color-mix(in srgb, var(--chip-bg) 65%, var(--theme-swatch-2, var(--brand)) 35%);
+  border-color: color-mix(in srgb, var(--chip-border) 40%, var(--theme-swatch-2, var(--brand)) 60%);
+  color: var(--text);
+  box-shadow: 0 16px 32px color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 32%, transparent 68%);
+  transform: translateY(-1px);
+}
+body.ppf-themed .tabs .tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 60%, transparent 40%);
+  outline-offset: 2px;
+}
+body.ppf-themed .tabs .tab.active {
+  background: color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 78%, var(--theme-swatch-3, var(--primary, var(--brand))) 22%);
+  border-color: color-mix(in srgb, var(--brand-strong, var(--brand)) 60%, var(--theme-swatch-2, var(--brand)) 40%);
+  color: #fff;
+  box-shadow: 0 18px 38px color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 40%, transparent 60%);
 }
 </style>
 
