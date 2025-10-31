@@ -151,8 +151,8 @@ if (!function_exists('ppf_subheader')) {
     background: rgba(30,41,59,0.65);
     border: 1px solid var(--line, rgba(148,163,184,0.26));
     color: var(--text, #f8fafc);
-    padding: 8px 12px;
-    border-radius: 10px;
+    padding: 10px 18px;
+    border-radius: 12px;
     cursor: pointer;
     text-decoration: none;
     white-space: nowrap;
