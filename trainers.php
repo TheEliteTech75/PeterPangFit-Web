@@ -280,6 +280,7 @@ try {
                     throw $e;
                 }
             }
+            $flashType = 'ok';
 
             if (count($sent) === 1) {
                 $flash = 'Invite sent to ' . $sent[0] . '. Expires in 48 hours.';
