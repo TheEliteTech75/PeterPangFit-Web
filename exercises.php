@@ -737,29 +737,29 @@ require_once __DIR__ . '/ppf_subheader.php';
 </head>
 <body>
 
-<?php if ($flash): ?>
-  <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>"><?php echo h($flash); ?></div>
-<?php endif; ?>
-
-<?php
-ppf_subheader([
-  'title' => 'Exercises',
-  'subtitle_html' => '<div class="ppf-subheader__subtitle">Create and manage the exercise library</div><div class="ppf-subheader__meta"><span class="chip">Measurements: ' . h($EXERCISES_MEASUREMENT_LABEL) . '</span></div>',
-  'actions' => function (): void {
-    ?>
-    <div class="btnset">
-      <a class="btn" href="dashboard.php">Back to Dashboard</a>
-      <a class="btn" href="workout_plans.php">Workout Plans</a>
-      <a class="btn" href="invites.php">Manage Invites</a>
-      <a class="btn" href="categories.php">Categories</a>
-      <button class="btn brand" type="button" id="btnCreateExercise">Add Exercise</button>
-    </div>
-    <?php
-  },
-]);
-?>
-
 <main class="wrap">
+
+  <?php
+  ppf_subheader([
+    'title' => 'Exercises',
+    'subtitle_html' => '<div class="ppf-subheader__subtitle">Create and manage the exercise library</div><div class="ppf-subheader__meta"><span class="chip">Measurements: ' . h($EXERCISES_MEASUREMENT_LABEL) . '</span></div>',
+    'actions' => function (): void {
+      ?>
+      <div class="btnset">
+        <a class="btn" href="dashboard.php">Back to Dashboard</a>
+        <a class="btn" href="workout_plans.php">Workout Plans</a>
+        <a class="btn" href="invites.php">Manage Invites</a>
+        <a class="btn" href="categories.php">Categories</a>
+        <button class="btn brand" type="button" id="btnCreateExercise">Add Exercise</button>
+      </div>
+      <?php
+    },
+  ]);
+  ?>
+
+  <?php if ($flash): ?>
+    <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>"><?php echo h($flash); ?></div>
+  <?php endif; ?>
 
   <div class="card">
     <h2 style="margin:6px 0 12px 0">Exercises</h2>

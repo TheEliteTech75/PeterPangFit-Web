@@ -225,9 +225,6 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       width: min(1180px, 100%);
       margin: 0 auto;
     }
-    .notifications-shell .ppf-subheader {
-      margin-bottom: 0;
-    }
     main.wrap {
       max-width: 1180px;
       margin: 0 auto 48px;

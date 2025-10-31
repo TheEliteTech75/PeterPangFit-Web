@@ -885,28 +885,28 @@ require_once __DIR__ . '/ppf_subheader.php';
 </head>
 <body>
 
-<?php if ($flash): ?>
-  <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>"><?php echo h($flash); ?></div>
-<?php endif; ?>
-
-<?php
-ppf_subheader([
-  'title' => 'Workout Plans',
-  'subtitle' => 'Build, assign, and manage plans',
-  'actions' => function (): void {
-    ?>
-    <div class="btnset">
-      <a class="btn" href="dashboard.php">Back to Dashboard</a>
-      <a class="btn" href="exercises.php">Exercises</a>
-      <a class="btn" href="invites.php">Manage Invites</a>
-      <button class="btn brand" type="button" id="btnOpenCreatePlan">Create Plan</button>
-    </div>
-    <?php
-  },
-]);
-?>
-
 <main class="wrap">
+
+  <?php
+  ppf_subheader([
+    'title' => 'Workout Plans',
+    'subtitle' => 'Build, assign, and manage plans',
+    'actions' => function (): void {
+      ?>
+      <div class="btnset">
+        <a class="btn" href="dashboard.php">Back to Dashboard</a>
+        <a class="btn" href="exercises.php">Exercises</a>
+        <a class="btn" href="invites.php">Manage Invites</a>
+        <button class="btn brand" type="button" id="btnOpenCreatePlan">Create Plan</button>
+      </div>
+      <?php
+    },
+  ]);
+  ?>
+
+  <?php if ($flash): ?>
+    <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>"><?php echo h($flash); ?></div>
+  <?php endif; ?>
 
   <div class="card">
     <h2 style="margin:6px 0 12px 0">Workout Plans</h2>

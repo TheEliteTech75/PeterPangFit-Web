@@ -193,22 +193,24 @@ function ts_status_badge(string $status): string {
   </style>
 </head>
 <body class="ppf-themed">
-  <?php
-  ppf_subheader([
-    'title' => 'Trainer Sessions',
-    'subtitle' => 'Packages, schedules, payments, and refunds',
-    'actions' => function (): void {
-      ?>
-      <div class="btnset">
-        <a class="btn" href="clients.php">Clients</a>
-        <button class="btn brand" type="button" id="btnOpenPackageForm">New Package</button>
-      </div>
-      <?php
-    },
-  ]);
-  ?>
 
   <main class="ts-wrap">
+
+    <?php
+    ppf_subheader([
+        'title' => 'Trainer Sessions',
+        'subtitle' => 'Packages, schedules, payments, and refunds',
+        'actions' => function (): void {
+            ?>
+            <div class="btnset">
+                <a class="btn" href="clients.php">Clients</a>
+                <button class="btn brand" type="button" id="btnOpenPackageForm">New Package</button>
+            </div>
+            <?php
+        },
+    ]);
+    ?>
+
     <div class="ts-card" id="tsFilters">
       <h2>Filters &amp; Rate Card</h2>
       <form class="ts-filter-form" method="get">
