@@ -280,6 +280,8 @@ try {
                     throw $e;
                 }
             }
+            $flashType = 'ok';
+            trainers_flash($flashType, $flash);
 
             if (count($sent) === 1) {
                 $flash = 'Invite sent to ' . $sent[0] . '. Expires in 48 hours.';
