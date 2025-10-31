@@ -741,7 +741,6 @@ require_once __DIR__ . '/ppf_subheader.php';
         .badge.warn{background:rgba(248,113,113,0.15);border-color:rgba(248,113,113,0.3);color:#fda4af}
         .table-controls{display:flex;justify-content:flex-start;align-items:flex-end;margin-bottom:12px;gap:12px;flex-wrap:wrap}
         .table-search-wrap{display:flex;flex-direction:column;gap:4px;width:100%;max-width:320px}
-        .table-search-label{font-size:12px;color:var(--muted)}
         .table-search{width:100%}
         .trainers-table th{position:relative;padding-right:32px;cursor:pointer;user-select:none;min-width:60px}
         .trainers-table td{min-width:60px}
@@ -826,8 +825,7 @@ require_once __DIR__ . '/ppf_subheader.php';
     <div class="panel">
         <div class="table-controls">
             <div class="table-search-wrap">
-                <label class="table-search-label" for="trainer-table-search">Search</label>
-                <input class="input table-search" type="search" id="trainer-table-search" placeholder="Search trainers" autocomplete="off" data-table-search>
+                <input class="input table-search" type="search" id="trainer-table-search" placeholder="Search trainers" autocomplete="off" data-table-search aria-label="Search trainers">
             </div>
         </div>
         <div class="table-wrapper">
