@@ -6,6 +6,7 @@ require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/trainer_sessions_helpers.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
+require_once __DIR__ . '/ppf_subheader.php';
 
 $role = ppf_role_key($USER_ROLE ?? ($_SESSION['role'] ?? 'guest'));
 if (!in_array($role, ['trainer', 'trainer_admin', 'coach'], true) && !ppf_is_admin_role($role)) {
@@ -117,10 +118,6 @@ function ts_status_badge(string $status): string {
   <title>Trainer Sessions</title>
   <style>
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Helvetica,Arial,sans-serif;background:var(--page-canvas);color:var(--text);}
-    .ts-subheader{display:flex;align-items:center;justify-content:space-between;padding:18px 24px 12px 24px;border-bottom:1px solid var(--card-border);background:var(--panel-elevated);position:sticky;top:64px;z-index:2500;gap:16px;flex-wrap:wrap;}
-    .ts-subheader .brand{font-size:20px;font-weight:700;color:var(--text);}
-    .ts-subheader .muted{color:var(--muted);font-size:14px;}
-    .ts-subheader .btnset{display:flex;gap:10px;flex-wrap:wrap;}
     .btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 14px;border-radius:12px;border:1px solid var(--chip-border);background:var(--chip-bg);color:var(--text);text-decoration:none;font-size:14px;cursor:pointer;transition:transform .2s ease, box-shadow .2s ease, background .2s ease;box-shadow:0 12px 24px color-mix(in srgb, var(--chip-border) 35%, transparent 65%);}
     .btn:hover{transform:translateY(-1px);box-shadow:0 16px 32px color-mix(in srgb, var(--chip-border) 45%, transparent 55%);}
     .btn.brand{background:color-mix(in srgb, var(--brand) 28%, transparent 72%);border-color:color-mix(in srgb, var(--brand-strong, var(--brand)) 55%, transparent 45%);}
@@ -190,23 +187,26 @@ function ts_status_badge(string $status): string {
     .flash-inline.ok{border-color:color-mix(in srgb, var(--success) 55%, transparent 45%);color:color-mix(in srgb, var(--success) 75%, var(--text) 25%);}
     .flash-inline.err{border-color:color-mix(in srgb, var(--danger) 55%, transparent 45%);color:color-mix(in srgb, var(--danger) 75%, var(--text) 25%);}
     @media (max-width:720px){
-      .ts-subheader{padding:14px 16px;top:56px;}
       .ts-wrap{padding:0 14px 40px;}
       .ts-inline-form label{min-width:140px;}
     }
   </style>
 </head>
 <body class="ppf-themed">
-  <div class="ts-subheader">
-    <div>
-      <div class="brand">Trainer Sessions</div>
-      <div class="muted">Packages, schedules, payments, and refunds</div>
-    </div>
-    <div class="btnset">
-      <a class="btn" href="clients.php">Clients</a>
-      <button class="btn brand" type="button" id="btnOpenPackageForm">New Package</button>
-    </div>
-  </div>
+  <?php
+  ppf_subheader([
+    'title' => 'Trainer Sessions',
+    'subtitle' => 'Packages, schedules, payments, and refunds',
+    'actions' => function (): void {
+      ?>
+      <div class="btnset">
+        <a class="btn" href="clients.php">Clients</a>
+        <button class="btn brand" type="button" id="btnOpenPackageForm">New Package</button>
+      </div>
+      <?php
+    },
+  ]);
+  ?>
 
   <main class="ts-wrap">
     <div class="ts-card" id="tsFilters">
