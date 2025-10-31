@@ -526,7 +526,7 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
 {
     $colspan = 14;
     ?>
-    <table class="trainers-table">
+    <table class="trainers-table" data-enhanced-table>
         <thead>
             <tr>
                 <th>ID</th>
@@ -739,6 +739,18 @@ require_once __DIR__ . '/ppf_subheader.php';
         .inline-form{margin:0}
         .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid transparent;margin-left:6px}
         .badge.warn{background:rgba(248,113,113,0.15);border-color:rgba(248,113,113,0.3);color:#fda4af}
+        .table-controls{display:flex;justify-content:flex-start;align-items:flex-end;margin-bottom:12px;gap:12px;flex-wrap:wrap}
+        .table-search-wrap{display:flex;flex-direction:column;gap:4px;width:100%;max-width:320px}
+        .table-search-label{font-size:12px;color:var(--muted)}
+        .table-search{width:100%}
+        .trainers-table th{position:relative;padding-right:32px;cursor:pointer;user-select:none;min-width:60px}
+        .trainers-table td{min-width:60px}
+        .trainers-table th .col-resizer{position:absolute;top:0;right:0;transform:translateX(50%);width:12px;height:100%;cursor:col-resize;display:flex;align-items:center;justify-content:center}
+        .trainers-table th .col-resizer::after{content:'';width:2px;height:60%;background:rgba(148,163,184,0.35);border-radius:2px;opacity:0;transition:opacity .2s}
+        .trainers-table th:hover .col-resizer::after,.trainers-table th .col-resizer:focus::after{opacity:.85}
+        .trainers-table th.sort-asc::after,.trainers-table th.sort-desc::after{content:'';position:absolute;right:18px;top:50%;margin-top:-4px;border:5px solid transparent}
+        .trainers-table th.sort-asc::after{border-bottom-color:rgba(148,163,184,0.85)}
+        .trainers-table th.sort-desc::after{border-top-color:rgba(148,163,184,0.85)}
         .flash{margin-bottom:16px;padding:10px 12px;border-radius:12px}
         .flash.ok{background:#122016;border:1px solid #1f3b2a;color:#86efac}
         .flash.err{background:#2a1214;border:1px solid #3f1b1e;color:#fca5a5}
@@ -812,6 +824,12 @@ require_once __DIR__ . '/ppf_subheader.php';
     </div>
 
     <div class="panel">
+        <div class="table-controls">
+            <div class="table-search-wrap">
+                <label class="table-search-label" for="trainer-table-search">Search</label>
+                <input class="input table-search" type="search" id="trainer-table-search" placeholder="Search trainers" autocomplete="off" data-table-search>
+            </div>
+        </div>
         <div class="table-wrapper">
             <?php
             if ($tab === 'active') {
@@ -892,6 +910,237 @@ require_once __DIR__ . '/ppf_subheader.php';
         </div>
     </form>
 </div>
+
+<script>
+(function(){
+    const table = document.querySelector('[data-enhanced-table]');
+    if (!table) {
+        return;
+    }
+
+    const headerCells = Array.from(table.querySelectorAll('thead th'));
+    const tbody = table.querySelector('tbody');
+    if (!headerCells.length || !tbody) {
+        return;
+    }
+
+    const dataRows = Array.from(tbody.querySelectorAll('tr.trainer-row'));
+    const rowEntries = dataRows.map((row, index) => {
+        const prev = row.previousElementSibling;
+        const form = prev && prev.tagName === 'FORM' ? prev : null;
+        row.dataset.originalIndex = String(index);
+        return { row, form, originalIndex: index };
+    });
+
+    const searchInput = document.querySelector('[data-table-search]');
+    const noResultsRow = rowEntries.length ? (() => {
+        const tr = document.createElement('tr');
+        tr.dataset.noResults = 'true';
+        tr.style.display = 'none';
+        const td = document.createElement('td');
+        td.colSpan = headerCells.length;
+        td.className = 'muted';
+        td.textContent = 'No matching trainers found.';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return tr;
+    })() : null;
+
+    function getColumnCells(index) {
+        return Array.from(tbody.querySelectorAll(`tr td:nth-child(${index + 1})`));
+    }
+
+    function setColumnWidth(index, width) {
+        const minWidth = 60;
+        const finalWidth = Math.max(minWidth, Math.round(width));
+        const header = headerCells[index];
+        if (!header) return;
+        header.style.width = `${finalWidth}px`;
+        getColumnCells(index).forEach(cell => {
+            cell.style.width = `${finalWidth}px`;
+        });
+    }
+
+    function measureCellWidth(cell) {
+        if (!cell) {
+            return 0;
+        }
+        const scrollWidth = cell.scrollWidth;
+        if (scrollWidth) {
+            const style = window.getComputedStyle(cell);
+            const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) || 0;
+            const border = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth) || 0;
+            return scrollWidth + padding + border;
+        }
+        const clone = document.createElement('div');
+        const style = window.getComputedStyle(cell);
+        clone.style.position = 'absolute';
+        clone.style.visibility = 'hidden';
+        clone.style.whiteSpace = 'nowrap';
+        clone.style.font = style.font;
+        clone.innerHTML = cell.innerHTML;
+        document.body.appendChild(clone);
+        const width = clone.getBoundingClientRect().width;
+        document.body.removeChild(clone);
+        const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) || 0;
+        const border = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth) || 0;
+        return width + padding + border;
+    }
+
+    function autoSizeColumn(index) {
+        const headerWidth = measureCellWidth(headerCells[index]);
+        const widths = getColumnCells(index).map(measureCellWidth);
+        const maxWidth = Math.max(headerWidth, ...widths, 0) + 16;
+        setColumnWidth(index, maxWidth);
+    }
+
+    function initResize(th, index) {
+        const handle = document.createElement('span');
+        handle.className = 'col-resizer';
+        handle.title = 'Drag to resize. Double-click to auto fit.';
+        handle.setAttribute('role', 'separator');
+        handle.setAttribute('aria-orientation', 'vertical');
+        th.appendChild(handle);
+
+        let startX = 0;
+        let startWidth = 0;
+
+        const onMouseMove = (event) => {
+            const delta = event.clientX - startX;
+            setColumnWidth(index, startWidth + delta);
+        };
+
+        const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+
+        handle.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            startX = event.clientX;
+            startWidth = th.getBoundingClientRect().width;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
+        handle.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            autoSizeColumn(index);
+        });
+    }
+
+    function clearSortIndicators(activeIndex) {
+        headerCells.forEach((cell, idx) => {
+            if (idx === activeIndex) {
+                return;
+            }
+            cell.classList.remove('sort-asc', 'sort-desc');
+            cell.dataset.sortState = 'off';
+        });
+    }
+
+    function getCellValue(row, index) {
+        const cell = row.querySelector(`td:nth-child(${index + 1})`);
+        if (!cell) {
+            return '';
+        }
+        const explicit = cell.getAttribute('data-sort-value');
+        return (explicit !== null ? explicit : cell.textContent || '').trim();
+    }
+
+    function compareEntries(a, b, index, direction) {
+        const rawA = getCellValue(a.row, index);
+        const rawB = getCellValue(b.row, index);
+        const numericA = parseFloat(rawA.replace(/[^0-9.-]+/g, ''));
+        const numericB = parseFloat(rawB.replace(/[^0-9.-]+/g, ''));
+        const isNumericA = rawA !== '' && !Number.isNaN(numericA);
+        const isNumericB = rawB !== '' && !Number.isNaN(numericB);
+        let comparison;
+        if (isNumericA && isNumericB) {
+            comparison = numericA - numericB;
+        } else {
+            comparison = rawA.localeCompare(rawB, undefined, { numeric: true, sensitivity: 'base' });
+        }
+        if (comparison === 0) {
+            comparison = a.originalIndex - b.originalIndex;
+        }
+        return direction === 'asc' ? comparison : -comparison;
+    }
+
+    function applySort(index, direction) {
+        if (!rowEntries.length) {
+            return;
+        }
+        const ordered = [...rowEntries];
+        if (direction === 'off') {
+            ordered.sort((a, b) => a.originalIndex - b.originalIndex);
+        } else {
+            ordered.sort((a, b) => compareEntries(a, b, index, direction));
+        }
+        ordered.forEach(entry => {
+            if (entry.form && entry.form.parentNode === tbody) {
+                tbody.appendChild(entry.form);
+            }
+            tbody.appendChild(entry.row);
+        });
+    }
+
+    headerCells.forEach((th, index) => {
+        initResize(th, index);
+        th.dataset.sortState = 'off';
+        th.addEventListener('click', (event) => {
+            if (event.target.closest('.col-resizer')) {
+                return;
+            }
+            const current = th.dataset.sortState || 'off';
+            const next = current === 'off' ? 'asc' : current === 'asc' ? 'desc' : 'off';
+            clearSortIndicators(index);
+            th.dataset.sortState = next;
+            th.classList.toggle('sort-asc', next === 'asc');
+            th.classList.toggle('sort-desc', next === 'desc');
+            if (next === 'off') {
+                th.classList.remove('sort-asc', 'sort-desc');
+            }
+            applySort(index, next);
+        });
+    });
+
+    function handleSearch() {
+        if (!rowEntries.length) {
+            return;
+        }
+        const term = ((searchInput && searchInput.value) ? searchInput.value : '').trim().toLowerCase();
+        let visible = 0;
+        rowEntries.forEach(entry => {
+            const haystack = entry.row.textContent.toLowerCase();
+            const match = term === '' || haystack.includes(term);
+            entry.row.style.display = match ? '' : 'none';
+            if (entry.form) {
+                entry.form.style.display = match ? '' : 'none';
+            }
+            if (match) {
+                visible += 1;
+            }
+        });
+        if (noResultsRow) {
+            noResultsRow.style.display = term && visible === 0 ? '' : 'none';
+        }
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', handleSearch);
+        if (searchInput.value) {
+            handleSearch();
+        }
+    }
+})();
+</script>
 
 <script>
 (function(){
