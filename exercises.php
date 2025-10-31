@@ -758,8 +758,6 @@ require_once __DIR__ . '/ppf_subheader.php';
   ]);
   ?>
 
-  <p class="exercise-measurement-note muted">Measurements: <?php echo h($EXERCISES_MEASUREMENT_LABEL); ?></p>
-
   <?php if ($flash): ?>
     <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>"><?php echo h($flash); ?></div>
   <?php endif; ?>
