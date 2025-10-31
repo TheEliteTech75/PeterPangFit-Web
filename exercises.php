@@ -727,6 +727,7 @@ require_once __DIR__ . '/ppf_subheader.php';
   .sort-btn[data-state="desc"] .sort-indicator{opacity:0.8}
   .col-resize-handle{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize}
   .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:rgba(148,163,184,0.2)}
+  .exercise-measurement-note{margin:-4px 0 18px;font-size:13px}
 
   /* NEW: categories checklist styling */
   .checkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px}
