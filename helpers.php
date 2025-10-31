@@ -612,7 +612,7 @@ if (!function_exists('ppf_time_default_timezone')) {
         return $resolved = $norm;
       }
     }
-    return $resolved = 'UTC';
+    return $resolved = 'America/Los_Angeles';
   }
 }
 
@@ -2723,11 +2723,12 @@ if (!function_exists('ppf_role_display')) {
   function ppf_role_display($role): string {
     $key = ppf_role_key($role);
     $map = [
-      'super_admin' => 'Super Admin',
-      'admin'       => 'Admin',
-      'trainer_admin' => 'Trainer Admin',
-      'trainer'     => 'Trainer',
-      'client'      => 'Client',
+      'super_admin'    => 'Super Admin',
+      'admin'          => 'Admin',
+      'trainer_admin'  => 'Trainer Admin',
+      'admin_trainer'  => 'Admin Trainer',
+      'trainer'        => 'Trainer',
+      'client'         => 'Client',
     ];
     if (isset($map[$key])) {
       return $map[$key];
