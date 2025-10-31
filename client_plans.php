@@ -20,8 +20,7 @@ if (!function_exists('h')) {
 }
 
 function is_trainer_admin($role): bool {
-  $key = ppf_role_key($role);
-  return $key === 'trainer' || ppf_is_admin_role($role);
+  return ppf_role_has_trainer_access($role);
 }
 
 $VIEWER_ID   = (int)($_SESSION['user_id'] ?? $USER_ID ?? 0);

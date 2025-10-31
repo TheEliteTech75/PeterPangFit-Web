@@ -43,8 +43,7 @@ function ppf_changed_fields(array $before, array $after): array {
 
 // Normalize role to avoid case/whitespace issues from DB/session
 function is_trainer_admin($role){
-  $r = ppf_role_key($role);
-  return $r === 'trainer' || ppf_is_admin_role($role);
+  return ppf_role_has_trainer_access($role);
 }
 
 // Ensure column_exists exists (helpers.php already defines it; guard just in case)

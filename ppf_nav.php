@@ -12,7 +12,9 @@ $userId = (int)($USER_ID   ?? ($_SESSION['user_id'] ?? 0));
 
 $roleLower   = ppf_role_key($role);
 $isAdmin     = ppf_is_admin_role($role);
+$hasTrainerAccess = in_array($roleLower, ['trainer', 'trainer_admin'], true);
 $isTrainer   = ($roleLower === 'trainer');
+$isTrainerAdmin = ($roleLower === 'trainer_admin');
 $isClient    = ($roleLower === 'client');
 
 // Figure out current script (case-insensitive)
@@ -100,46 +102,54 @@ $home = [
 
 $sections = [$home];
 
-// Admin + Trainer: People
-if ($isAdmin || $isTrainer) {
+// Admin + Trainer (including Trainer Admin): People
+if ($isAdmin || $hasTrainerAccess) {
+  $peopleItems = [
+    [
+      'href' => 'clients.php',
+      'label' => 'Clients',
+      'submenu' => [
+        ['href' => 'clients.php?tab=active',   'label' => 'Active Clients'],
+        ['href' => 'clients.php?tab=inactive', 'label' => 'Inactive Clients'],
+      ],
+    ],
+  ];
+
+  if ($isAdmin || $isTrainerAdmin) {
+    $peopleItems[] = [
+      'href' => 'trainers.php',
+      'label' => 'Trainers',
+      'submenu' => [
+        ['href' => 'trainers.php?tab=active',   'label' => 'Active Trainers'],
+        ['href' => 'trainers.php?tab=inactive', 'label' => 'Inactive Trainers'],
+      ],
+    ];
+  }
+
+  $peopleItems = array_merge($peopleItems, [
+    [
+      'href' => 'trainer_sessions.php',
+      'label' => 'Sessions',
+    ],
+    [
+      'href' => 'invites.php',
+      'label' => 'Invites',
+      'submenu' => [
+        ['href' => 'invites.php?open=create', 'label' => 'Send Invite'],
+      ],
+    ],
+  ]);
+
   $sections[] = [
     'key'   => 'people',
     'title' => 'People',
     'icon'  => '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M16 11c1.66 0 2.99-1.79 2.99-4S17.66 3 16 3s-3 1.79-3 4 1.34 4 3 4zm-8 0c1.66 0 2.99-1.79 2.99-4S9.66 3 8 3 5 4.79 5 7s1.34 4 3 4zm0 2c-2.33 0-7 1.17-7 3.5V20h10v-3.5C11 14.17 6.33 13 4 13zm12 0c-.29 0-.62.02-.97.05 1.16.84 1.97 2.01 1.97 3.45V20h5v-3.5C22 14.17 17.33 13 16 13z"/></svg>',
-    'items' => [
-      [
-        'href' => 'clients.php',
-        'label' => 'Clients',
-        'submenu' => [
-          ['href' => 'clients.php?tab=active',   'label' => 'Active Clients'],
-          ['href' => 'clients.php?tab=inactive', 'label' => 'Inactive Clients'],
-        ],
-      ],
-      [
-        'href' => 'trainers.php',
-        'label' => 'Trainers',
-        'submenu' => [
-          ['href' => 'trainers.php?tab=active',   'label' => 'Active Trainers'],
-          ['href' => 'trainers.php?tab=inactive', 'label' => 'Inactive Trainers'],
-        ],
-      ],
-      [
-        'href' => 'trainer_sessions.php',
-        'label' => 'Sessions',
-      ],
-      [
-        'href' => 'invites.php',
-        'label' => 'Invites',
-        'submenu' => [
-          ['href' => 'invites.php?open=create', 'label' => 'Send Invite'],
-        ],
-      ],
-    ],
+    'items' => $peopleItems,
   ];
 }
 
-// Admin + Trainer: Management
-if ($isAdmin || $isTrainer) {
+// Admin + Trainer (including Trainer Admin): Management
+if ($isAdmin || $hasTrainerAccess) {
   $sections[] = [
     'key'   => 'management',
     'title' => 'Management',
@@ -332,7 +342,7 @@ if (!empty($systemItems)) {
   </div>
   <div class="ppf-sidenav-body">
     <?php
-      if ($isClient || $isTrainer || $isAdmin) {
+      if ($isClient || $isTrainer || $isTrainerAdmin || $isAdmin) {
         foreach ($sections as $sec) {
           echo render_section($sec, $current);
         }

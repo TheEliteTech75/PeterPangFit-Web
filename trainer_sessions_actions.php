@@ -10,7 +10,7 @@ require_once __DIR__ . '/send_email.php';
 header('Content-Type: application/json');
 
 $role = ppf_role_key($USER_ROLE ?? ($_SESSION['role'] ?? 'guest'));
-if (!in_array($role, ['trainer', 'coach'], true) && !ppf_is_admin_role($role)) {
+if (!in_array($role, ['trainer', 'trainer_admin', 'coach'], true) && !ppf_is_admin_role($role)) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'message' => 'Forbidden']);
     exit;

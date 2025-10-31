@@ -2696,7 +2696,7 @@ JS;
 
 if (!function_exists('ppf_role_values')) {
   function ppf_role_values(): array {
-    return ['super_admin', 'admin', 'trainer', 'client'];
+    return ['super_admin', 'admin', 'trainer_admin', 'trainer', 'client'];
   }
 }
 
@@ -2725,6 +2725,7 @@ if (!function_exists('ppf_role_display')) {
     $map = [
       'super_admin' => 'Super Admin',
       'admin'       => 'Admin',
+      'trainer_admin' => 'Trainer Admin',
       'trainer'     => 'Trainer',
       'client'      => 'Client',
     ];
@@ -2732,6 +2733,16 @@ if (!function_exists('ppf_role_display')) {
       return $map[$key];
     }
     return ucfirst($key);
+  }
+}
+
+if (!function_exists('ppf_role_has_trainer_access')) {
+  function ppf_role_has_trainer_access($role): bool {
+    $key = ppf_role_key($role);
+    if (in_array($key, ['trainer', 'trainer_admin'], true)) {
+      return true;
+    }
+    return ppf_is_admin_role($role);
   }
 }
 

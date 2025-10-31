@@ -453,6 +453,7 @@ if ($stmt = $conn->prepare($sql)) {
               $sortUser = isset($r['user_id']) ? (int)$r['user_id'] : 0;
               $sortEmail = strtolower($r['actor_email'] ?? '');
               $sortRole = strtolower($r['actor_role'] ?? '');
+              $displayRole = ppf_role_display($r['actor_role'] ?? '');
               $sortIp = strtolower($r['ip_address'] ?? '');
               $sortAction = strtolower($r['action'] ?? '');
               $sortTarget = strtolower($r['target_type'] ?? '');
@@ -474,7 +475,7 @@ if ($stmt = $conn->prepare($sql)) {
               <td><?php echo h(fmt_when($r['created_at'])); ?></td>
               <td><?php echo h($r['user_id'] ?? ''); ?></td>
               <td><?php echo h($r['actor_email'] ?? ''); ?></td>
-              <td><?php echo h($r['actor_role'] ?? ''); ?></td>
+              <td><?php echo h($displayRole); ?></td>
               <td class="muted"><?php echo h($r['ip_address'] ?? ''); ?></td>
               <td><?php echo h($r['action']); ?></td>
               <td><?php echo h($r['target_type'] ?? ''); ?></td>
