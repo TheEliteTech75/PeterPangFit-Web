@@ -319,6 +319,7 @@ if ($cats) {
 
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
+require_once __DIR__ . '/ppf_subheader.php';
 ?>
 <!doctype html>
 <html lang="en">
@@ -334,18 +335,6 @@ require_once __DIR__ . '/ppf_nav.php';
   a{color:var(--brand);text-decoration:none}
   a:hover{text-decoration:underline}
 
-  .subheader{
-    position: sticky; top: 0; z-index: 40;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 10px 12px;
-    margin-bottom: 14px;
-    display:flex; align-items:center; justify-content:space-between; gap:12px;
-  }
-  .subheader .left{display:flex;align-items:center;gap:10px}
-  .brand{font-weight:800;font-size:20px;letter-spacing:.2px}
-  .btnset{display:flex;gap:8px;flex-wrap:wrap}
 
   .btn{
     display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);
@@ -409,22 +398,27 @@ require_once __DIR__ . '/ppf_nav.php';
 </head>
 <body>
 
-<?php if ($flash): ?>
-  <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>"><?php echo h($flash); ?></div>
-<?php endif; ?>
-
-<div class="subheader">
-  <div class="left">
-    <div class="brand">Categories</div>
-    <span class="muted">Organize exercises by category</span>
-  </div>
-  <div class="btnset">
-    <a class="btn" href="exercises.php">Exercises</a>
-    <button class="btn brand" type="button" id="btnCreate">Add Category</button>
-  </div>
-</div>
-
 <main class="wrap">
+
+  <?php
+  ppf_subheader([
+    'title' => 'Categories',
+    'subtitle' => 'Organize exercises by category',
+    'actions' => function (): void {
+      ?>
+      <div class="btnset">
+        <a class="btn" href="exercises.php">Exercises</a>
+        <button class="btn brand" type="button" id="btnCreate">Add Category</button>
+      </div>
+      <?php
+    },
+  ]);
+  ?>
+
+  <?php if ($flash): ?>
+    <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>"><?php echo h($flash); ?></div>
+  <?php endif; ?>
+
   <div class="card">
     <h2 style="margin:6px 0 12px 0">Categories</h2>
     <div class="table-tools">

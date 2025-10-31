@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
+require_once __DIR__ . '/ppf_subheader.php';
 
 function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
@@ -213,7 +214,6 @@ if ($csrfJson === false) { $csrfJson = '""'; }
   <style>
     :root {
       color-scheme: dark;
-      --subheader-offset: 76px;
     }
     body {
       margin: 0;
@@ -221,56 +221,20 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       background: var(--surface, #020617);
       color: var(--text, #f8fafc);
     }
-    .subheader-bar {
-      position: sticky;
-      top: var(--subheader-offset);
-      z-index: 3500;
-      background: color-mix(in srgb, var(--panel, rgba(15,23,42,0.82)) 85%, rgba(30,41,59,0.65) 15%);
-      border-bottom: 1px solid var(--line, rgba(148,163,184,0.18));
-      box-shadow: 0 18px 40px rgba(15,23,42,0.35);
-      backdrop-filter: blur(22px);
-      padding: 8px 0;
-      margin-bottom: 24px;
-    }
-    .subheader {
-      width: min(1180px, 100%);
-      margin: 0 auto;
-      padding: 14px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
     main.wrap {
-      max-width: 1180px;
-      margin: 0 auto 48px;
-      padding: 24px 20px 60px;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      margin: 24px auto;
+      padding: 0 clamp(14px, 3vw, 28px) 60px;
       display: flex;
       flex-direction: column;
       gap: 18px;
     }
-    .subheader .title {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      flex: 1 1 320px;
-    }
-    .subheader h1 {
-      margin: 0;
-      font-size: 24px;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-    }
-    .subheader p {
+    .notifications-intro {
       margin: 0;
       color: color-mix(in srgb, var(--muted, #cbd5f5) 85%, var(--text, #f8fafc) 15%);
       font-size: 14px;
-    }
-    .subheader .page-tabs {
-      margin-left: auto;
-      align-self: flex-end;
-      margin-bottom: 0;
     }
     .ppf-btn {
       display: inline-flex;
@@ -704,17 +668,6 @@ if ($csrfJson === false) { $csrfJson = '""'; }
       font-size: 12px;
     }
     @media (max-width: 768px) {
-      .subheader {
-        padding: 16px 20px;
-        flex-direction: column;
-        align-items: flex-start;
-      }
-      .subheader .page-tabs {
-        width: 100%;
-        margin-left: 0;
-        margin-top: 12px;
-        justify-content: flex-start;
-      }
       .toolbar {
         flex-direction: column;
         align-items: stretch;
@@ -793,20 +746,22 @@ if ($csrfJson === false) { $csrfJson = '""'; }
 </style>
 </head>
 <body>
-  <div class="subheader-bar">
-    <div class="subheader">
-      <div class="title">
-        <h1>Notification Center</h1>
-        <p>Stay up to date with workouts, billing, security alerts, and your own reminders.</p>
-      </div>
-      <div class="page-tabs" data-main-tabs role="tablist" aria-label="Notification views">
-        <button type="button" class="page-tab is-active" data-main-view="inbox" role="tab" aria-selected="true" tabindex="0" aria-controls="notifications-inbox-panel" id="notifications-inbox-tab">Inbox</button>
-        <button type="button" class="page-tab" data-main-view="rules" role="tab" aria-selected="false" tabindex="-1" aria-controls="notifications-rules-panel" id="notifications-rules-tab">Rules</button>
-      </div>
-    </div>
-  </div>
-
   <main class="wrap" data-notification-center>
+    <?php
+    ppf_subheader([
+      'title_html' => '<h1 class="ppf-subheader__title">Notification Center</h1>',
+      'subtitle_html' => '<p class="notifications-intro">Stay up to date with workouts, billing, security alerts, and your own reminders.</p>',
+      'actions' => function (): void {
+        ?>
+        <div class="page-tabs" data-main-tabs role="tablist" aria-label="Notification views">
+          <button type="button" class="page-tab is-active" data-main-view="inbox" role="tab" aria-selected="true" tabindex="0" aria-controls="notifications-inbox-panel" id="notifications-inbox-tab">Inbox</button>
+          <button type="button" class="page-tab" data-main-view="rules" role="tab" aria-selected="false" tabindex="-1" aria-controls="notifications-rules-panel" id="notifications-rules-tab">Rules</button>
+        </div>
+        <?php
+      },
+    ]);
+    ?>
+
     <section class="panel" data-feed-section aria-hidden="false" id="notifications-inbox-panel" role="tabpanel" aria-labelledby="notifications-inbox-tab">
       <div class="panel-header">
         <div class="panel-title">
@@ -884,21 +839,6 @@ if ($csrfJson === false) { $csrfJson = '""'; }
     var types = bootstrap.types || {};
     var csrf = bootstrap.csrf || '';
 
-    function updateSubheaderOffset() {
-      var topStack = document.querySelector('.ppf-top-stack');
-      var offset = topStack ? topStack.offsetHeight : 0;
-      if (offset > 0) {
-        document.documentElement.style.setProperty('--subheader-offset', offset + 'px');
-      } else {
-        document.documentElement.style.removeProperty('--subheader-offset');
-      }
-    }
-
-    updateSubheaderOffset();
-    window.addEventListener('load', updateSubheaderOffset);
-    window.addEventListener('resize', function(){
-      window.requestAnimationFrame(updateSubheaderOffset);
-    });
     function cloneRule(rule) {
       return JSON.parse(JSON.stringify(rule || {}));
     }
