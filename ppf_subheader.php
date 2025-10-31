@@ -117,7 +117,7 @@ if (!function_exists('ppf_subheader')) {
     justify-content: flex-end;
     gap: 8px;
     flex-wrap: wrap;
-    --ppf-subheader-action-width: clamp(142px, 19vw, 188px);
+    --ppf-subheader-action-width: clamp(120px, 17vw, 160px);
 }
 .ppf-subheader__actions-inner {
     display: flex;
