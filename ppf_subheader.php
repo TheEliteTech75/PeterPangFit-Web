@@ -56,23 +56,22 @@ if (!function_exists('ppf_subheader')) {
 .ppf-subheader {
     position: sticky;
     top: 0;
-    z-index: 4040;
-    background: var(--panel, rgba(9,14,28,0.9));
+    z-index: 40;
+    background: rgba(9,14,28,0.72);
     border: 1px solid var(--line, rgba(148,163,184,0.26));
-    border-radius: 14px;
-    padding: 12px 16px;
-    margin-bottom: 18px;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: 12px;
     backdrop-filter: blur(8px);
-    box-shadow: 0 14px 34px rgba(2,6,23,0.35);
 }
 .ppf-subheader__summary {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     flex: 1 1 auto;
     min-width: 0;
 }
@@ -84,20 +83,15 @@ if (!function_exists('ppf_subheader')) {
 }
 .ppf-subheader__title {
     font-weight: 700;
-    font-size: clamp(18px, 2.2vw, 22px);
-    letter-spacing: 0.18px;
+    font-size: 20px;
+    letter-spacing: 0.2px;
     color: var(--text, #f8fafc);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.2;
 }
 .ppf-subheader__subtitle {
     color: var(--muted, rgba(148,163,184,0.85));
     font-size: 13px;
     line-height: 1.45;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 .ppf-subheader__summary-toggle {
     display: none;
@@ -118,13 +112,13 @@ if (!function_exists('ppf_subheader')) {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 12px;
+    gap: 8px;
     flex-wrap: wrap;
 }
 .ppf-subheader__actions-inner {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-wrap: wrap;
     justify-content: flex-end;
 }
@@ -171,14 +165,14 @@ if (!function_exists('ppf_subheader')) {
     color: #fff;
 }
 .ppf-subheader .btn.warn {
-    background: rgba(42,22,23,0.88);
+    background: #2a1617;
     border-color: rgba(248,113,113,0.45);
     color: #f87171;
 }
 @media (max-width: 900px) {
     .ppf-subheader {
-        gap: 14px;
-        padding: 10px 14px;
+        gap: 12px;
+        padding: 10px 12px;
     }
     .ppf-subheader__subtitle {
         font-size: 12px;
@@ -212,6 +206,7 @@ if (!function_exists('ppf_subheader')) {
         left: 16px;
         right: 16px;
         top: 18px;
+        z-index: 4040;
         background: var(--panel, rgba(9,14,28,0.96));
         border: 1px solid var(--line, rgba(148,163,184,0.3));
         border-radius: 16px;

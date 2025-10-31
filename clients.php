@@ -1788,7 +1788,7 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
         </thead>
         <tbody>
         <?php if (!$clients): ?>
-          <tr><td colspan="<?php echo $colspan; ?>" class="muted" style="padding:24px">No clients found.</td></tr>
+          <tr data-no-matches="1"><td colspan="<?php echo $colspan; ?>" class="muted" style="padding:24px">No clients found.</td></tr>
         <?php else: $index = 0; foreach ($clients as $c):
           $id   = (int)$c['id'];
           $pw   = (string)($c['password_hash'] ?? '');
@@ -2683,16 +2683,24 @@ const CLIENT_SORT_TYPES = {
 
   rows.forEach(row => refreshSearchCache(row.dataset.uid));
 
-  const noMatchesRow = document.createElement('tr');
-  noMatchesRow.dataset.noMatches = '1';
-  const emptyTd = document.createElement('td');
+  let noMatchesRow = tbody.querySelector('tr[data-no-matches]');
+  let emptyTd = noMatchesRow ? noMatchesRow.querySelector('td') : null;
+  if (!noMatchesRow) {
+    noMatchesRow = document.createElement('tr');
+    noMatchesRow.dataset.noMatches = '1';
+  }
+  if (!emptyTd) {
+    emptyTd = document.createElement('td');
+    noMatchesRow.appendChild(emptyTd);
+  }
   emptyTd.colSpan = table.querySelectorAll('thead th').length;
   emptyTd.className = 'muted';
-  emptyTd.style.padding = '18px';
+  emptyTd.style.padding = '24px';
   emptyTd.textContent = 'No clients found.';
-  noMatchesRow.appendChild(emptyTd);
-  noMatchesRow.style.display = 'none';
-  tbody.appendChild(noMatchesRow);
+  if (!noMatchesRow.parentNode) {
+    tbody.appendChild(noMatchesRow);
+  }
+  noMatchesRow.style.display = rows.length ? 'none' : '';
 
   function updateSelectAll(){
     if (!selectAll) return;
