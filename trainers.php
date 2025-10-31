@@ -138,6 +138,27 @@ $csrf = $_SESSION['csrf_token'];
 
 $flash = null;
 $flashType = 'ok';
+
+function trainers_flash(?string $type = null, ?string $message = null): ?array
+{
+    if ($type !== null || $message !== null) {
+        $_SESSION['trainers_flash'] = ['type' => $type, 'message' => $message];
+        return null;
+    }
+
+    if (!empty($_SESSION['trainers_flash'])) {
+        $flash = $_SESSION['trainers_flash'];
+        unset($_SESSION['trainers_flash']);
+        return is_array($flash) ? $flash : null;
+    }
+
+    return null;
+}
+
+if ($storedFlash = trainers_flash()) {
+    $flashType = ($storedFlash['type'] ?? 'ok') === 'err' ? 'err' : 'ok';
+    $flash = (string)($storedFlash['message'] ?? '');
+}
 $tab = (isset($_GET['tab']) && $_GET['tab'] === 'inactive') ? 'inactive' : 'active';
 $editId = isset($_GET['edit']) ? (int)$_GET['edit'] : 0;
 
@@ -194,7 +215,6 @@ try {
             if (!$emails) {
                 throw new Exception('Please enter at least one valid email address.');
             }
-            $flashType = 'ok';
 
             $sent = [];
 
@@ -260,6 +280,7 @@ try {
                     throw $e;
                 }
             }
+            $flashType = 'ok';
 
             if (count($sent) === 1) {
                 $flash = 'Invite sent to ' . $sent[0] . '. Expires in 48 hours.';
@@ -267,6 +288,7 @@ try {
                 $flash = 'Invites sent to ' . implode(', ', $sent) . '. Expires in 48 hours.';
             }
             $flashType = 'ok';
+            trainers_flash($flashType, $flash);
 
             trainers_redirect_tab($tab);
         }
@@ -337,6 +359,7 @@ try {
 
             $flash = 'Trainer added successfully.';
             $flashType = 'ok';
+            trainers_flash($flashType, $flash);
             trainers_redirect_tab('active');
         }
 
@@ -433,6 +456,7 @@ try {
 
             $flash = 'Trainer updated successfully.';
             $flashType = 'ok';
+            trainers_flash($flashType, $flash);
             trainers_redirect_tab($tab);
 
         }
@@ -459,6 +483,7 @@ try {
 
             $flash = 'Trainer deactivated.';
             $flashType = 'ok';
+            trainers_flash($flashType, $flash);
             trainers_redirect_tab('inactive');
         }
 
@@ -484,6 +509,7 @@ try {
 
             $flash = 'Trainer reactivated.';
             $flashType = 'ok';
+            trainers_flash($flashType, $flash);
             trainers_redirect_tab('active');
         }
 
