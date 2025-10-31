@@ -46,23 +46,30 @@ if (!defined('PPF_DEBUG_BOOTSTRAPPED')) {
 
     if (!function_exists('ppf_debug_label_for_level')) {
         function ppf_debug_label_for_level(int $severity): string {
-            static $labels = [
-                E_ERROR             => 'Fatal Error',
-                E_WARNING           => 'Warning',
-                E_PARSE             => 'Parse Error',
-                E_NOTICE            => 'Notice',
-                E_CORE_ERROR        => 'Core Error',
-                E_CORE_WARNING      => 'Core Warning',
-                E_COMPILE_ERROR     => 'Compile Error',
-                E_COMPILE_WARNING   => 'Compile Warning',
-                E_USER_ERROR        => 'User Error',
-                E_USER_WARNING      => 'User Warning',
-                E_USER_NOTICE       => 'User Notice',
-                E_STRICT            => 'Strict Standards',
-                E_RECOVERABLE_ERROR => 'Recoverable Error',
-                E_DEPRECATED        => 'Deprecated',
-                E_USER_DEPRECATED   => 'User Deprecated',
-            ];
+            static $labels;
+
+            if ($labels === null) {
+                $labels = [
+                    E_ERROR             => 'Fatal Error',
+                    E_WARNING           => 'Warning',
+                    E_PARSE             => 'Parse Error',
+                    E_NOTICE            => 'Notice',
+                    E_CORE_ERROR        => 'Core Error',
+                    E_CORE_WARNING      => 'Core Warning',
+                    E_COMPILE_ERROR     => 'Compile Error',
+                    E_COMPILE_WARNING   => 'Compile Warning',
+                    E_USER_ERROR        => 'User Error',
+                    E_USER_WARNING      => 'User Warning',
+                    E_USER_NOTICE       => 'User Notice',
+                    E_RECOVERABLE_ERROR => 'Recoverable Error',
+                    E_DEPRECATED        => 'Deprecated',
+                    E_USER_DEPRECATED   => 'User Deprecated',
+                ];
+
+                if (defined('E_STRICT')) {
+                    $labels[constant('E_STRICT')] = 'Strict Standards';
+                }
+            }
             return $labels[$severity] ?? 'Error';
         }
     }

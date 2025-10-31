@@ -13,6 +13,7 @@ $userId = (int)($USER_ID   ?? ($_SESSION['user_id'] ?? 0));
 $roleLower   = ppf_role_key($role);
 $isAdmin     = ppf_is_admin_role($role);
 $hasTrainerAccess = in_array($roleLower, ['trainer', 'trainer_admin'], true);
+$isTrainer   = ($roleLower === 'trainer');
 $isTrainerAdmin = ($roleLower === 'trainer_admin');
 $isClient    = ($roleLower === 'client');
 
@@ -341,7 +342,7 @@ if (!empty($systemItems)) {
   </div>
   <div class="ppf-sidenav-body">
     <?php
-      if ($isClient || $isTrainer || $isAdmin) {
+      if ($isClient || $isTrainer || $isTrainerAdmin || $isAdmin) {
         foreach ($sections as $sec) {
           echo render_section($sec, $current);
         }
