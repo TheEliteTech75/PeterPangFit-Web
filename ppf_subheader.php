@@ -117,7 +117,7 @@ if (!function_exists('ppf_subheader')) {
     justify-content: flex-end;
     gap: 8px;
     flex-wrap: wrap;
-    --ppf-subheader-action-width: clamp(190px, 22vw, 244px);
+    --ppf-subheader-action-width: clamp(142px, 19vw, 188px);
 }
 .ppf-subheader__actions-inner {
     display: flex;
@@ -157,7 +157,8 @@ if (!function_exists('ppf_subheader')) {
     text-decoration: none;
     white-space: nowrap;
     min-height: 36px;
-    line-height: 1.1;
+    font-size: 14px;
+    line-height: 1.2;
     flex: 0 0 var(--ppf-subheader-action-width);
     width: var(--ppf-subheader-action-width);
 }
