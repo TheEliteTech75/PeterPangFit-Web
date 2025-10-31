@@ -15,6 +15,7 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/send_email.php';
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
+require_once __DIR__ . '/ppf_subheader.php';
 
 ensure_invite_columns($conn);
 
@@ -374,25 +375,6 @@ if ($res = $conn->query($sql)) {
       font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
     a{color:var(--brand);text-decoration:none}
     a:hover{text-decoration:underline}
-    /* Sticky subheader like clients/exercises */
-.subheader{
-  position: sticky;
-  top: 0;               /* if your main header is sticky with height, bump this (e.g., 64px) */
-  z-index: 40;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 10px 12px;
-  margin-bottom: 14px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-}
-.subheader .left{display:flex;align-items:center;gap:10px}
-.brand{font-weight:800;font-size:20px;letter-spacing:.2px}
-.btnset{display:flex;gap:8px;flex-wrap:wrap}
-
 /* Button look to match other pages */
 .btn{
   display:inline-flex;align-items:center;gap:8px;
@@ -464,17 +446,20 @@ if ($res = $conn->query($sql)) {
 <body>
 
 <main class="wrap">
-	<!-- Persistent subheader -->
-<div class="subheader">
-  <div class="left">
-    <div class="brand">Invites</div>
-    <span class="muted">Create and manage invitations</span>
-  </div>
-  <div class="btnset">
-    <a class="btn" href="dashboard.php">Back to Dashboard</a>
-    <a class="btn" href="clients.php?tab=active">View Clients</a>
-  </div>
-</div>
+  <?php
+  ppf_subheader([
+    'title' => 'Invites',
+    'subtitle' => 'Create and manage invitations',
+    'actions' => function (): void {
+      ?>
+      <div class="btnset">
+        <a class="btn" href="dashboard.php">Back to Dashboard</a>
+        <a class="btn" href="clients.php?tab=active">View Clients</a>
+      </div>
+      <?php
+    },
+  ]);
+  ?>
   <h1 style="margin:0 0 14px 0;">Invites</h1>
   <p class="muted" style="margin:0 0 18px 0;">Review and manage invitations.</p>
 

@@ -698,6 +698,7 @@ function user_display_name(mysqli $conn, ?int $uid): string {
 
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
+require_once __DIR__ . '/ppf_subheader.php';
 ?>
 <!doctype html>
 <html lang="en">
@@ -719,21 +720,6 @@ require_once __DIR__ . '/ppf_nav.php';
   a{color:var(--brand);text-decoration:none}
   a:hover{text-decoration:underline}
 
-  .subheader{
-    position:sticky;
-    top:0;
-    z-index:40;
-    background:var(--panel-elevated);
-    border:1px solid var(--card-border);
-    box-shadow:var(--card-shadow);
-    border-radius:16px;
-    padding:12px 16px;
-    margin-bottom:16px;
-    display:flex;align-items:center;justify-content:space-between;gap:12px;
-    backdrop-filter:blur(18px);
-  }
-  .subheader .left{display:flex;align-items:center;gap:12px}
-  .brand{font-weight:800;font-size:20px;letter-spacing:.2px;color:var(--text)}
   .btnset{display:flex;gap:10px;flex-wrap:wrap}
 
   .btn{
@@ -903,19 +889,22 @@ require_once __DIR__ . '/ppf_nav.php';
   <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>"><?php echo h($flash); ?></div>
 <?php endif; ?>
 
-<!-- Sticky subheader (matches clients.php) -->
-<div class="subheader">
-  <div class="left">
-    <div class="brand">Workout Plans</div>
-    <span class="muted">Build, assign, and manage plans</span>
-  </div>
-  <div class="btnset">
-    <a class="btn" href="dashboard.php">Back to Dashboard</a>
-    <a class="btn" href="exercises.php">Exercises</a>
-    <a class="btn" href="invites.php">Manage Invites</a>
-    <button class="btn brand" type="button" id="btnOpenCreatePlan">Create Plan</button>
-  </div>
-</div>
+<?php
+ppf_subheader([
+  'title' => 'Workout Plans',
+  'subtitle' => 'Build, assign, and manage plans',
+  'actions' => function (): void {
+    ?>
+    <div class="btnset">
+      <a class="btn" href="dashboard.php">Back to Dashboard</a>
+      <a class="btn" href="exercises.php">Exercises</a>
+      <a class="btn" href="invites.php">Manage Invites</a>
+      <button class="btn brand" type="button" id="btnOpenCreatePlan">Create Plan</button>
+    </div>
+    <?php
+  },
+]);
+?>
 
 <main class="wrap">
 
