@@ -143,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'last_name'   => $last_name,
         ];
 
-        $allowed_roles = ['admin','trainer','client'];
+        $allowed_roles = ['admin','trainer_admin','trainer','client'];
         if ($currentUserIsSuper) {
           array_unshift($allowed_roles, 'super_admin');
         }
@@ -261,7 +261,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Change role
       if ($action === 'change_role') {
         $new_role = trim($_POST['new_role'] ?? '');
-        $allowed  = ['admin','trainer','client'];
+        $allowed  = ['admin','trainer_admin','trainer','client'];
         if ($currentUserIsSuper) {
           array_unshift($allowed, 'super_admin');
         }
@@ -624,6 +624,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
                 $roleOptions = [
                   'super_admin' => 'Super Admin',
                   'admin'       => 'Admin',
+                  'trainer_admin' => 'Trainer Admin',
                   'trainer'     => 'Trainer',
                   'client'      => 'Client',
                 ];
@@ -773,6 +774,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
           <?php
             $createRoleOptions = [
               'trainer' => 'Trainer',
+              'trainer_admin' => 'Trainer Admin',
               'client'  => 'Client',
               'admin'   => 'Admin',
             ];

@@ -8,8 +8,7 @@ require_once __DIR__ . '/logs.php';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function is_trainer_admin($role){
-  $key = ppf_role_key($role);
-  return $key === 'trainer' || ppf_is_admin_role($role);
+  return ppf_role_has_trainer_access($role);
 }
 
 if (!function_exists('ppf_workout_log_encode')) {

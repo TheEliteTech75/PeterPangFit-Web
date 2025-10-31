@@ -6,7 +6,8 @@ require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/ppf_lockout.php';
 require_once __DIR__ . '/send_email.php';
 
-if (!ppf_is_admin_role($USER_ROLE ?? null)) {
+$roleKey = ppf_role_key($USER_ROLE ?? null);
+if (!ppf_is_admin_role($roleKey) && $roleKey !== 'trainer_admin') {
     require_once __DIR__ . '/access_denied.php';
     exit;
 }

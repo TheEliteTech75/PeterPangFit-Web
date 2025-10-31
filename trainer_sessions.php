@@ -8,7 +8,7 @@ require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
 
 $role = ppf_role_key($USER_ROLE ?? ($_SESSION['role'] ?? 'guest'));
-if (!in_array($role, ['trainer', 'coach'], true) && !ppf_is_admin_role($role)) {
+if (!in_array($role, ['trainer', 'trainer_admin', 'coach'], true) && !ppf_is_admin_role($role)) {
     require_once __DIR__ . '/access_denied.php';
     exit;
 }

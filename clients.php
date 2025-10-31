@@ -10,8 +10,7 @@ require_once __DIR__ . '/send_email.php';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function is_trainer_admin($role){
-  $key = ppf_role_key($role);
-  return $key === 'trainer' || ppf_is_admin_role($role);
+  return ppf_role_has_trainer_access($role);
 }
 if (!is_trainer_admin($USER_ROLE ?? null)) {
   require_once __DIR__ . '/access_denied.php';
