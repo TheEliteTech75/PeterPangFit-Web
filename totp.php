@@ -66,7 +66,7 @@ if (!function_exists('ppf_hotp')) {
 }
 
 if (!function_exists('ppf_totp')) {
-  function ppf_totp(string $secret_b32, int $time = null, int $period=30, int $digits=6): string {
+  function ppf_totp(string $secret_b32, ?int $time = null, int $period=30, int $digits=6): string {
     if ($time === null) $time = time();
     $counter = (int) floor($time / $period);
     return ppf_hotp($secret_b32, $counter, $digits);
