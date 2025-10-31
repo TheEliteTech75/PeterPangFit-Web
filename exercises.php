@@ -644,6 +644,7 @@ if ($exercises) {
 
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
+require_once __DIR__ . '/ppf_subheader.php';
 ?>
 <!doctype html>
 <html lang="en">
@@ -659,18 +660,6 @@ require_once __DIR__ . '/ppf_nav.php';
   a{color:var(--brand);text-decoration:none}
   a:hover{text-decoration:underline}
 
-  .subheader{
-    position: sticky; top: 0; z-index: 40;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 10px 12px;
-    margin-bottom: 14px;
-    display:flex; align-items:center; justify-content:space-between; gap:12px;
-  }
-  .subheader .left{display:flex;align-items:center;gap:10px}
-  .brand{font-weight:800;font-size:20px;letter-spacing:.2px}
-  .btnset{display:flex;gap:8px;flex-wrap:wrap}
 
   .btn{
     display:inline-flex;align-items:center;gap:8px;background:#2a3446;border:1px solid var(--line);
@@ -685,6 +674,8 @@ require_once __DIR__ . '/ppf_nav.php';
   .card{background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:14px}
   .muted{color:var(--muted)}
   .chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);border:1px solid var(--line);padding:3px 7px;border-radius:999px;font-size:12px;color:#c3c9d4}
+  .ppf-subheader__meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .ppf-subheader__meta .chip{font-size:11px;letter-spacing:.2px}
 
   .flash{margin:16px auto 0 auto;max-width:none;width:calc(100% - 32px);padding:12px;border-radius:10px;border:1px solid;background:rgba(8,13,23,0.85)}
   .flash.ok{border-color:rgba(34,197,94,0.45);color:#a7f3d0}
@@ -750,20 +741,23 @@ require_once __DIR__ . '/ppf_nav.php';
   <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>"><?php echo h($flash); ?></div>
 <?php endif; ?>
 
-<div class="subheader">
-  <div class="left">
-    <div class="brand">Exercises</div>
-    <span class="muted">Create and manage the exercise library</span>
-    <span class="chip" style="font-size:11px;letter-spacing:.2px">Measurements: <?php echo h($EXERCISES_MEASUREMENT_LABEL); ?></span>
-  </div>
-  <div class="btnset">
-    <a class="btn" href="dashboard.php">Back to Dashboard</a>
-    <a class="btn" href="workout_plans.php">Workout Plans</a>
-    <a class="btn" href="invites.php">Manage Invites</a>
-    <a class="btn" href="categories.php">Categories</a>
-    <button class="btn brand" type="button" id="btnCreateExercise">Add Exercise</button>
-  </div>
-</div>
+<?php
+ppf_subheader([
+  'title' => 'Exercises',
+  'subtitle_html' => '<div class="ppf-subheader__subtitle">Create and manage the exercise library</div><div class="ppf-subheader__meta"><span class="chip">Measurements: ' . h($EXERCISES_MEASUREMENT_LABEL) . '</span></div>',
+  'actions' => function (): void {
+    ?>
+    <div class="btnset">
+      <a class="btn" href="dashboard.php">Back to Dashboard</a>
+      <a class="btn" href="workout_plans.php">Workout Plans</a>
+      <a class="btn" href="invites.php">Manage Invites</a>
+      <a class="btn" href="categories.php">Categories</a>
+      <button class="btn brand" type="button" id="btnCreateExercise">Add Exercise</button>
+    </div>
+    <?php
+  },
+]);
+?>
 
 <main class="wrap">
 
@@ -1235,13 +1229,12 @@ window.ppfMeasurement = measurementConfig;
     noMatchesText: 'No matching exercises.'
   });
 
-  // Remove any lingering measurement chips from the subheader.
-  document.querySelectorAll('.subheader .chip').forEach(chip => {
+  // Remove duplicate measurement chips from the unified subheader, keeping the first one.
+  const measurementChips = Array.from(document.querySelectorAll('.ppf-subheader .chip')).filter(chip => {
     const text = (chip.textContent || '').toLowerCase();
-    if (text.includes('measure') || text.includes('imperial') || text.includes('metric')) {
-      chip.remove();
-    }
+    return text.includes('measure') || text.includes('imperial') || text.includes('metric');
   });
+  measurementChips.slice(1).forEach(chip => chip.remove());
 
   // -------------------- Row expand/collapse --------------------
   document.querySelectorAll('.exercise-row').forEach(tr=>{

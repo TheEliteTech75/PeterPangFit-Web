@@ -19,6 +19,7 @@ if (!is_admin($USER_ROLE ?? null)) {
 
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
+require_once __DIR__ . '/ppf_subheader.php';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function generate_temp_password($length = 12){
@@ -410,19 +411,7 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
       box-sizing:border-box;
     }
 
-    .subheader{
-      position:sticky;top:0;z-index:40;background:rgba(9,14,28,0.72);
-      border:1px solid var(--line);border-radius:12px;padding:10px 12px;
-      margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;
-      backdrop-filter:blur(8px);
-    }
-    .subheader .left{display:flex;align-items:center;gap:10px}
-    .brand{font-weight:700;font-size:20px;letter-spacing:.2px}
     .btnset{display:flex;gap:8px;flex-wrap:wrap}
-    @media (max-width:700px){
-      .subheader{flex-direction:column;align-items:flex-start;}
-      .btnset{width:100%;justify-content:flex-start;}
-    }
 
     table{
       width:100%;
@@ -508,19 +497,23 @@ $who = $USER_NAME ?? trim(($USER_FIRST_NAME ?? '') . ' ' . ($USER_LAST_NAME ?? '
 <body>
 
 <main class="wrap">
-  <div class="subheader">
-    <div class="left">
-      <div class="brand">All Users</div>
-      <span class="muted">Admins can add, edit, change roles, toggle “also acts as client,” delete users, or change passwords.</span>
-    </div>
-    <div class="btnset">
-      <button type="button" class="btn brand" onclick="openCreateModal(true)">Create User</button>
-      <a class="btn" href="dashboard.php">Back to Dashboard</a>
-      <a class="btn" href="clients.php">View Clients</a>
-      <a class="btn" href="invites.php">Manage Invites</a>
-      <a class="btn" href="workout_plans.php">Workout Plans</a>
-    </div>
-  </div>
+  <?php
+  ppf_subheader([
+    'title' => 'All Users',
+    'subtitle' => 'Admins can add, edit, change roles, toggle “also acts as client,” delete users, or change passwords.',
+    'actions' => function (): void {
+      ?>
+      <div class="btnset">
+        <button type="button" class="btn brand" onclick="openCreateModal(true)">Create User</button>
+        <a class="btn" href="dashboard.php">Back to Dashboard</a>
+        <a class="btn" href="clients.php">View Clients</a>
+        <a class="btn" href="invites.php">Manage Invites</a>
+        <a class="btn" href="workout_plans.php">Workout Plans</a>
+      </div>
+      <?php
+    },
+  ]);
+  ?>
 
   <?php if ($flash): ?>
     <div class="flash <?php echo $flash_type === 'ok' ? 'ok' : 'err'; ?>">

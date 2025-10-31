@@ -524,7 +524,7 @@ catch (Throwable $e) {
 
 function trainers_render_table(array $rows, string $csrf, string $tab, int $editId, bool $isMetric, string $heightColumnLabel, string $weightColumnLabel, string $weightPlaceholder): void
 {
-    $colspan = 13;
+    $colspan = 14;
     ?>
     <table class="trainers-table">
         <thead>
@@ -533,6 +533,7 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                 <th>First</th>
                 <th>Middle</th>
                 <th>Last</th>
+                <th>Role</th>
                 <th>Email</th>
                 <th>Phone</th>
                 <th>Birthdate</th>
@@ -554,6 +555,8 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                 $id = (int)($row['id'] ?? 0);
                 $editing = ($editId === $id && $tab === ((int)($row['is_active'] ?? 1) === 1 ? 'active' : 'inactive'));
                 $age = trainers_calc_age($row['birthdate'] ?? null);
+                $roleKey = $row['role'] ?? '';
+                $roleDisplay = ppf_role_display($roleKey);
                 $heightDisplay = ppf_measurement_format_height($row['height_ft'] ?? null, $row['height_in'] ?? null);
                 $weightDisplay = ppf_measurement_format_weight($row['weight_lbs'] ?? null);
                 $heightInputMetric = ppf_measurement_height_metric_value($row['height_ft'] ?? null, $row['height_in'] ?? null);
@@ -591,6 +594,7 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                             <?php echo trainers_h($row['last_name'] ?? ''); ?>
                         <?php endif; ?>
                     </td>
+                    <td data-label="Role"><?php echo trainers_h($roleDisplay); ?></td>
                     <td data-label="Email">
                         <?php if ($editing): ?>
                             <input class="input" type="email" name="email" form="<?php echo trainers_h($formId); ?>" value="<?php echo trainers_h($row['email'] ?? ''); ?>" required>
@@ -686,7 +690,7 @@ $weightPlaceholder = ppf_measurement_weight_placeholder();
 
 $activeTrainers = [];
 $inactiveTrainers = [];
-$sql = "SELECT id, first_name, middle_name, last_name, email, phone, birthdate, gender, height_ft, height_in, weight_lbs, is_active, locked_until FROM users WHERE role = 'trainer' ORDER BY last_name, first_name, id";
+$sql = "SELECT id, role, first_name, middle_name, last_name, email, phone, birthdate, gender, height_ft, height_in, weight_lbs, is_active, locked_until FROM users WHERE role IN ('trainer','trainer_admin','admin_trainer') ORDER BY last_name, first_name, id";
 if ($res = $conn->query($sql)) {
     while ($row = $res->fetch_assoc()) {
         if ((int)($row['is_active'] ?? 1) === 1) {
@@ -700,6 +704,7 @@ if ($res = $conn->query($sql)) {
 
 require_once __DIR__ . '/ppf_header.php';
 require_once __DIR__ . '/ppf_nav.php';
+require_once __DIR__ . '/ppf_subheader.php';
 
 ?>
 <!doctype html>
@@ -712,11 +717,8 @@ require_once __DIR__ . '/ppf_nav.php';
         html,body{margin:0;padding:0;background:var(--page-canvas);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif;}
         a{color:var(--text);text-decoration:none}
         .wrap{width:100%;max-width:100%;margin:24px auto;padding:0 clamp(14px,3vw,28px);box-sizing:border-box}
-        .subheader{position:sticky;top:0;z-index:40;background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;backdrop-filter:blur(8px)}
-        .subheader .left{display:flex;align-items:center;gap:10px}
         .brand{font-weight:700;font-size:20px;letter-spacing:.2px}
         .muted{color:var(--muted);font-size:13px}
-        .btnset{display:flex;gap:8px;flex-wrap:wrap}
         .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:rgba(30,41,59,0.65);border:1px solid var(--line);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;text-decoration:none;white-space:nowrap;min-height:34px;line-height:1.1}
         .btn.small{padding:6px 10px;font-size:13px;min-height:30px}
         .btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}
@@ -785,16 +787,20 @@ require_once __DIR__ . '/ppf_nav.php';
 </head>
 <body>
 <main class="wrap">
-    <div class="subheader">
-        <div class="left">
-            <div class="brand">Trainers</div>
-            <span class="muted">Manage trainer invites and accounts</span>
-        </div>
-        <div class="btnset">
-            <button class="btn brand" type="button" data-modal-open="inviteModal">Send Invite</button>
-            <button class="btn" type="button" data-modal-open="addModal">Add Trainer</button>
-        </div>
-    </div>
+    <?php
+    ppf_subheader([
+        'title' => 'Trainers',
+        'subtitle' => 'Manage trainer invites and accounts',
+        'actions' => function (): void {
+            ?>
+            <div class="btnset">
+                <button class="btn brand" type="button" data-modal-open="inviteModal">Send Invite</button>
+                <button class="btn" type="button" data-modal-open="addModal">Add Trainer</button>
+            </div>
+            <?php
+        },
+    ]);
+    ?>
 
     <?php if ($flash): ?>
         <div class="flash <?php echo $flashType === 'ok' ? 'ok' : 'err'; ?>"><?php echo trainers_h($flash); ?></div>
