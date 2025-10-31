@@ -739,7 +739,7 @@ require_once __DIR__ . '/ppf_subheader.php';
         .inline-form{margin:0}
         .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid transparent;margin-left:6px}
         .badge.warn{background:rgba(248,113,113,0.15);border-color:rgba(248,113,113,0.3);color:#fda4af}
-        .table-controls{display:flex;justify-content:flex-end;align-items:flex-end;margin-bottom:12px;gap:12px;flex-wrap:wrap}
+        .table-controls{display:flex;justify-content:flex-start;align-items:flex-end;margin-bottom:12px;gap:12px;flex-wrap:wrap}
         .table-search-wrap{display:flex;flex-direction:column;gap:4px;width:100%;max-width:320px}
         .table-search-label{font-size:12px;color:var(--muted)}
         .table-search{width:100%}
