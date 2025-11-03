@@ -131,6 +131,7 @@ function trainers_format_gender(?string $gender): string
 
 trainers_ensure_is_active($conn);
 ensure_invite_columns($conn);
+ppf_assignments_ensure_columns($conn);
 
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -515,6 +516,159 @@ try {
             trainers_redirect_tab('active');
         }
 
+        if ($action === 'assign_clients') {
+            $trainerId = (int)($_POST['trainer_id'] ?? 0);
+            if ($trainerId <= 0) {
+                throw new Exception('Select a trainer to assign clients to.');
+            }
+
+            $actorRoleKey = ppf_role_key($USER_ROLE ?? '');
+            if (!ppf_is_admin_role($actorRoleKey) && $actorRoleKey !== 'trainer_admin' && $actorRoleKey !== 'admin_trainer') {
+                throw new Exception('You do not have permission to assign clients.');
+            }
+
+            $trainerCheck = $conn->prepare("SELECT id, first_name, last_name FROM users WHERE id = ? AND role IN ('trainer','trainer_admin','admin_trainer') LIMIT 1");
+            if (!$trainerCheck) {
+                throw new Exception('Unable to verify trainer.');
+            }
+            $trainerCheck->bind_param('i', $trainerId);
+            $trainerCheck->execute();
+            $trainerRes = $trainerCheck->get_result();
+            $trainerRow = $trainerRes ? $trainerRes->fetch_assoc() : null;
+            $trainerCheck->close();
+
+            if (!$trainerRow) {
+                throw new Exception('Trainer not found.');
+            }
+
+            $rawClientIds = $_POST['client_ids'] ?? [];
+            if (!is_array($rawClientIds)) {
+                $rawClientIds = [$rawClientIds];
+            }
+
+            $clientIds = [];
+            foreach ($rawClientIds as $value) {
+                $cid = (int)$value;
+                if ($cid > 0) {
+                    $clientIds[$cid] = $cid;
+                }
+            }
+
+            if (!$clientIds) {
+                throw new Exception('Select at least one client to assign.');
+            }
+
+            $idList = implode(',', array_map('intval', array_values($clientIds)));
+            $validClients = [];
+            $sqlVerify = "SELECT id FROM users WHERE id IN ($idList) AND (role='client' OR is_client=1)";
+            if ($resVerify = $conn->query($sqlVerify)) {
+                while ($row = $resVerify->fetch_assoc()) {
+                    $validClients[] = (int)$row['id'];
+                }
+                $resVerify->free();
+            }
+
+            if (!$validClients) {
+                throw new Exception('Selected clients could not be found.');
+            }
+
+            $validList = implode(',', array_map('intval', $validClients));
+            $assignSql = "UPDATE users SET assigned_trainer_id = " . (int)$trainerId . " WHERE id IN ($validList)";
+            if (!$conn->query($assignSql)) {
+                throw new Exception('Failed to assign clients to trainer.');
+            }
+
+            if (function_exists('ppf_log')) {
+                $details = json_encode([
+                    'trainer_id' => $trainerId,
+                    'client_ids' => $validClients,
+                ], JSON_UNESCAPED_SLASHES);
+                ppf_log(
+                    $conn,
+                    $USER_ID ?? null,
+                    $USER_EMAIL ?? null,
+                    $USER_ROLE ?? null,
+                    'trainer_clients_assigned',
+                    'user',
+                    (string)$trainerId,
+                    $details
+                );
+            }
+
+            $count = count($validClients);
+            $flash = $count === 1
+                ? 'Assigned 1 client to this trainer.'
+                : ('Assigned ' . $count . ' clients to this trainer.');
+            $flashType = 'ok';
+            trainers_flash($flashType, $flash);
+            trainers_redirect_tab($tab);
+        }
+
+        if ($action === 'unassign_trainer_client') {
+            $actorRoleKey = ppf_role_key($USER_ROLE ?? '');
+            if (!ppf_is_admin_role($actorRoleKey) && !in_array($actorRoleKey, ['trainer_admin', 'admin_trainer'], true)) {
+                throw new Exception('You do not have permission to unassign clients.');
+            }
+
+            $trainerId = (int)($_POST['trainer_id'] ?? 0);
+            $clientId = (int)($_POST['client_id'] ?? 0);
+            if ($trainerId <= 0 || $clientId <= 0) {
+                throw new Exception('Select a valid client to unassign.');
+            }
+
+            $check = $conn->prepare("SELECT assigned_trainer_id FROM users WHERE id = ? AND (role='client' OR is_client=1) LIMIT 1");
+            if (!$check) {
+                throw new Exception('Unable to verify client assignment.');
+            }
+            $check->bind_param('i', $clientId);
+            $check->execute();
+            $res = $check->get_result();
+            $row = $res ? $res->fetch_assoc() : null;
+            $check->close();
+
+            if (!$row) {
+                throw new Exception('Client not found.');
+            }
+
+            $currentTrainerId = (int)($row['assigned_trainer_id'] ?? 0);
+            if ($currentTrainerId !== $trainerId) {
+                throw new Exception('This client is not assigned to that trainer.');
+            }
+
+            $update = $conn->prepare('UPDATE users SET assigned_trainer_id = NULL WHERE id = ? AND assigned_trainer_id = ?');
+            if (!$update) {
+                throw new Exception('Failed to prepare unassign request.');
+            }
+            $update->bind_param('ii', $clientId, $trainerId);
+            if (!$update->execute() || $update->affected_rows < 1) {
+                $update->close();
+                throw new Exception('Failed to unassign client from trainer.');
+            }
+            $update->close();
+
+            if (function_exists('ppf_log')) {
+                $details = json_encode([
+                    'trainer_id' => $trainerId,
+                    'client_id' => $clientId,
+                ], JSON_UNESCAPED_SLASHES);
+                ppf_log(
+                    $conn,
+                    $USER_ID ?? null,
+                    $USER_EMAIL ?? null,
+                    $USER_ROLE ?? null,
+                    'trainer_client_unassigned',
+                    'user',
+                    (string)$clientId,
+                    $details
+                );
+            }
+
+            $flash = 'Client unassigned from this trainer.';
+            $flashType = 'ok';
+            trainers_flash($flashType, $flash);
+            trainers_redirect_tab($tab);
+        }
+
     }
 }
 catch (Throwable $e) {
@@ -524,6 +678,7 @@ catch (Throwable $e) {
 
 function trainers_render_table(array $rows, string $csrf, string $tab, int $editId, bool $isMetric, string $heightColumnLabel, string $weightColumnLabel, string $weightPlaceholder): void
 {
+    global $clientsByTrainer, $trainerNamesById;
     $colspan = 14;
     ?>
     <table class="trainers-table" data-enhanced-table>
@@ -564,6 +719,11 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                 $lockedUntil = $row['locked_until'] ?? null;
                 $isLocked = $lockedUntil && strtotime($lockedUntil) > time();
                 $formId = 'edit-trainer-' . $id;
+                $trainerDisplay = $trainerNamesById[$id] ?? trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+                if ($trainerDisplay === '') {
+                    $trainerDisplay = (string)($row['email'] ?? ('Trainer #' . $id));
+                }
+                $assignedClients = $clientsByTrainer[$id] ?? [];
                 if ($editing): ?>
                     <form method="post" id="<?php echo trainers_h($formId); ?>">
                         <input type="hidden" name="csrf_token" value="<?php echo trainers_h($csrf); ?>">
@@ -571,7 +731,7 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                         <input type="hidden" name="trainer_id" value="<?php echo $id; ?>">
                     </form>
                 <?php endif; ?>
-                <tr class="trainer-row<?php echo $editing ? ' editing' : ''; ?>">
+                <tr class="trainer-row<?php echo $editing ? ' editing' : ''; ?>" data-trainer-id="<?php echo $id; ?>" data-trainer-name="<?php echo trainers_h($trainerDisplay); ?>">
                     <td data-label="ID"><?php echo $id; ?></td>
                     <td data-label="First">
                         <?php if ($editing): ?>
@@ -675,6 +835,88 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                         </div>
                     </td>
                 </tr>
+                <?php if (!$editing): ?>
+                    <tr class="trainer-expand" data-trainer-id="<?php echo $id; ?>" style="display:none">
+                        <td colspan="<?php echo $colspan; ?>" class="trainer-expand__cell">
+                            <div class="trainer-expand__wrap">
+                                <div class="trainer-expand__header">Clients assigned to <?php echo trainers_h($trainerDisplay); ?></div>
+                                <div class="trainer-expand__body">
+                                    <table class="trainer-client-table">
+                                        <thead>
+                                            <tr>
+                                                <th>First Name</th>
+                                                <th>Middle Name</th>
+                                                <th>Last Name</th>
+                                                <th>Email</th>
+                                                <th>Phone</th>
+                                                <th>Birthdate</th>
+                                                <th>Age</th>
+                                                <th>Gender</th>
+                                                <th>Height</th>
+                                                <th>Weight</th>
+                                                <th>Status</th>
+                                                <th>Plans</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        <?php if ($assignedClients): ?>
+                                            <?php foreach ($assignedClients as $client):
+                                                $clientId = (int)($client['id'] ?? 0);
+                                                $firstName = (string)($client['first_name'] ?? '');
+                                                $middleName = (string)($client['middle_name'] ?? '');
+                                                $lastName = (string)($client['last_name'] ?? '');
+                                                $email = (string)($client['email'] ?? '');
+                                                $phoneDisplay = trainers_format_phone($client['phone'] ?? '');
+                                                $birthDisplay = trainers_format_date($client['birthdate'] ?? '');
+                                                $age = trainers_calc_age($client['birthdate'] ?? null);
+                                                $genderDisplay = trainers_format_gender($client['gender'] ?? '');
+                                                $heightDisplay = ppf_measurement_format_height($client['height_ft'] ?? null, $client['height_in'] ?? null);
+                                                $weightDisplay = ppf_measurement_format_weight($client['weight_lbs'] ?? null);
+                                                $isActive = (int)($client['is_active'] ?? 1) === 1;
+                                                $statusText = $isActive ? 'Active' : 'Inactive';
+                                                ?>
+                                                <tr>
+                                                    <td><?php echo $firstName !== '' ? trainers_h($firstName) : '—'; ?></td>
+                                                    <td><?php echo $middleName !== '' ? trainers_h($middleName) : '—'; ?></td>
+                                                    <td><?php echo $lastName !== '' ? trainers_h($lastName) : '—'; ?></td>
+                                                    <td><?php echo $email !== '' ? trainers_h($email) : '—'; ?></td>
+                                                    <td><?php echo $phoneDisplay !== '' ? trainers_h($phoneDisplay) : '—'; ?></td>
+                                                    <td><?php echo $birthDisplay !== '' ? trainers_h($birthDisplay) : '—'; ?></td>
+                                                    <td><?php echo $age === null ? '—' : $age; ?></td>
+                                                    <td><?php echo $genderDisplay !== '' ? trainers_h($genderDisplay) : '—'; ?></td>
+                                                    <td><?php echo $heightDisplay ? trainers_h($heightDisplay) : '—'; ?></td>
+                                                    <td><?php echo $weightDisplay ? trainers_h($weightDisplay) : '—'; ?></td>
+                                                    <td><?php echo trainers_h($statusText); ?></td>
+                                                    <td><?php echo (int)($client['plans_count'] ?? 0); ?></td>
+                                                    <td>
+                                                        <?php if ($clientId > 0): ?>
+                                                            <form method="post" onsubmit="return confirm('Unassign this client from <?php echo trainers_h($trainerDisplay); ?>?');">
+                                                                <input type="hidden" name="csrf_token" value="<?php echo trainers_h($csrf); ?>">
+                                                                <input type="hidden" name="action" value="unassign_trainer_client">
+                                                                <input type="hidden" name="trainer_id" value="<?php echo $id; ?>">
+                                                                <input type="hidden" name="client_id" value="<?php echo $clientId; ?>">
+                                                                <button class="btn small warn" type="submit">Unassign</button>
+                                                            </form>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        <?php else: ?>
+                                            <tr>
+                                                <td colspan="13" class="muted">No clients assigned yet.</td>
+                                            </tr>
+                                        <?php endif; ?>
+                                            <tr class="trainer-assign-row" data-assign-open="<?php echo $id; ?>" data-trainer-name="<?php echo trainers_h($trainerDisplay); ?>" data-modal-open="assignModal">
+                                                <td colspan="13">+ Assign Client</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endif; ?>
             <?php endforeach; ?>
         <?php endif; ?>
         </tbody>
@@ -700,6 +942,68 @@ if ($res = $conn->query($sql)) {
         }
     }
     $res->free();
+}
+
+$trainerNamesById = [];
+foreach ([$activeTrainers, $inactiveTrainers] as $list) {
+    foreach ($list as $trainerRow) {
+        $tid = (int)($trainerRow['id'] ?? 0);
+        if ($tid <= 0) {
+            continue;
+        }
+        $name = trim((string)($trainerRow['first_name'] ?? '') . ' ' . (string)($trainerRow['last_name'] ?? ''));
+        if ($name === '') {
+            $name = (string)($trainerRow['email'] ?? ('Trainer #' . $tid));
+        }
+        $trainerNamesById[$tid] = $name;
+    }
+}
+
+$clientsByTrainer = [];
+$allClientsForAssign = [];
+$clientSql = "SELECT u.id, u.first_name, u.middle_name, u.last_name, u.email, u.phone, u.birthdate, u.gender, u.height_ft, u.height_in, u.weight_lbs, u.is_active, u.assigned_trainer_id, COALESCE((SELECT COUNT(*) FROM user_plans up WHERE up.user_id = u.id), 0) AS plans_count FROM users u WHERE u.role='client' OR u.is_client=1 ORDER BY u.last_name, u.first_name, u.id";
+if ($clientRes = $conn->query($clientSql)) {
+    while ($clientRow = $clientRes->fetch_assoc()) {
+        $cid = (int)($clientRow['id'] ?? 0);
+        if ($cid <= 0) {
+            continue;
+        }
+        $assignedId = (int)($clientRow['assigned_trainer_id'] ?? 0);
+        $clientName = trim((string)($clientRow['first_name'] ?? '') . ' ' . (string)($clientRow['last_name'] ?? ''));
+        $email = (string)($clientRow['email'] ?? '');
+        $allClientsForAssign[] = [
+            'id' => $cid,
+            'first_name' => $clientRow['first_name'] ?? '',
+            'last_name' => $clientRow['last_name'] ?? '',
+            'email' => $email,
+            'is_active' => (int)($clientRow['is_active'] ?? 1),
+            'assigned_trainer_id' => $assignedId,
+            'plans_count' => (int)($clientRow['plans_count'] ?? 0),
+            'display_name' => $clientName !== '' ? $clientName : $email,
+        ];
+
+        if ($assignedId > 0) {
+            if (!isset($clientsByTrainer[$assignedId])) {
+                $clientsByTrainer[$assignedId] = [];
+            }
+            $clientsByTrainer[$assignedId][] = [
+                'id' => $cid,
+                'first_name' => $clientRow['first_name'] ?? '',
+                'middle_name' => $clientRow['middle_name'] ?? '',
+                'last_name' => $clientRow['last_name'] ?? '',
+                'email' => $email,
+                'phone' => $clientRow['phone'] ?? '',
+                'birthdate' => $clientRow['birthdate'] ?? null,
+                'gender' => $clientRow['gender'] ?? '',
+                'height_ft' => $clientRow['height_ft'] ?? null,
+                'height_in' => $clientRow['height_in'] ?? null,
+                'weight_lbs' => $clientRow['weight_lbs'] ?? null,
+                'is_active' => (int)($clientRow['is_active'] ?? 1),
+                'plans_count' => (int)($clientRow['plans_count'] ?? 0),
+            ];
+        }
+    }
+    $clientRes->free();
 }
 
 require_once __DIR__ . '/ppf_header.php';
@@ -760,7 +1064,32 @@ require_once __DIR__ . '/ppf_subheader.php';
         .modal .actions{justify-content:flex-end}
         .modal.open{display:block}
         .modal-backdrop.open{display:block}
-        .trainer-row.editing{background:rgba(56,189,248,0.08)}
+        .trainer-row.editing{background:rgba(56,189,248,0.08);cursor:default}
+        .trainer-row{cursor:pointer;transition:background .2s ease,outline-color .2s ease}
+        .trainer-row:hover{background:#141a25}
+        .trainer-row.expanded{background:#141a25;outline:2px solid var(--brand);outline-offset:-2px}
+        .trainer-expand__cell{padding:0;background:rgba(8,13,23,0.95)}
+        .trainer-expand__wrap{padding:16px;display:flex;flex-direction:column;gap:12px}
+        .trainer-expand__header{font-weight:600;font-size:15px}
+        .trainer-client-table{width:100%;border-collapse:collapse;border-radius:12px;overflow:hidden;background:rgba(9,14,24,0.88)}
+        .trainer-client-table th,.trainer-client-table td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+        .trainer-client-table thead th{background:rgba(6,9,18,0.85);color:#c3c9d4;font-size:12px;letter-spacing:.2px}
+        .trainer-client-table tbody tr:last-child td{border-bottom:none}
+        .trainer-assign-row td{cursor:pointer;color:#d4af37;font-weight:600}
+        .trainer-assign-row td:hover{background:#141a25;color:#ffd84d}
+        .assign-list{max-height:360px;overflow:auto;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:14px;padding:12px;background:rgba(8,13,23,0.92)}
+        .assign-item{display:flex;align-items:flex-start;gap:12px;padding:10px;border-radius:12px;background:rgba(15,23,42,0.65);border:1px solid transparent;color:inherit}
+        .assign-item:hover{border-color:var(--brand)}
+        .assign-item input{margin-top:4px}
+        .assign-item__main{display:flex;flex-direction:column;gap:4px;flex:1}
+        .assign-item__name{font-weight:600}
+        .assign-item__email{font-size:12px;color:var(--muted)}
+        .assign-item__meta{display:flex;flex-direction:column;gap:4px;text-align:right;font-size:12px}
+        .assign-item__status{display:inline-block;padding:2px 8px;border-radius:999px;font-weight:600;font-size:11px}
+        .assign-item__status.ok{background:rgba(34,197,94,0.18);color:#bbf7d0}
+        .assign-item__status.warn{background:rgba(248,113,113,0.15);color:#fda4af}
+        .assign-item__assigned{color:var(--muted)}
+        .assign-item.is-selected{border-color:var(--brand);background:rgba(56,189,248,0.18)}
         @media (max-width:900px){th,td{padding:8px;font-size:13px}.btn.small{font-size:12px}}
         @media (max-width:720px){th,td{padding:6px;font-size:12px}.brand{font-size:18px}}
     
@@ -802,7 +1131,10 @@ require_once __DIR__ . '/ppf_subheader.php';
     ppf_subheader([
         'title' => 'Trainers',
         'subtitle' => 'Manage trainer invites and accounts',
-        'actions' => function (): void {
+        'actions' => function () use ($roleKey): void {
+            if ($roleKey !== 'trainer_admin' && !ppf_is_admin_role($roleKey)) {
+                return;
+            }
             ?>
             <div class="btnset">
                 <button class="btn brand" type="button" data-modal-open="inviteModal">Send Invite</button>
@@ -909,6 +1241,48 @@ require_once __DIR__ . '/ppf_subheader.php';
     </form>
 </div>
 
+<div class="modal" id="assignModal" role="dialog" aria-modal="true" aria-labelledby="assignTitle">
+    <h3 id="assignTitle">Assign Clients to <span data-assign-trainer-name>Trainer</span></h3>
+    <form method="post" data-modal-form>
+        <input type="hidden" name="csrf_token" value="<?php echo trainers_h($csrf); ?>">
+        <input type="hidden" name="action" value="assign_clients">
+        <input type="hidden" name="trainer_id" value="">
+        <div class="field">
+            <label for="assign-search">Search Clients</label>
+            <input class="input" type="search" id="assign-search" placeholder="Search clients" autocomplete="off" data-assign-search>
+        </div>
+        <div class="assign-list" data-assign-list>
+            <?php foreach ($allClientsForAssign as $client):
+                $clientId = (int)($client['id'] ?? 0);
+                $assignedId = (int)($client['assigned_trainer_id'] ?? 0);
+                $clientName = trim((string)($client['first_name'] ?? '') . ' ' . (string)($client['last_name'] ?? ''));
+                if ($clientName === '') {
+                    $clientName = (string)($client['email'] ?? ('Client #' . $clientId));
+                }
+                $assignedName = $assignedId > 0 ? ($trainerNamesById[$assignedId] ?? ('Trainer #' . $assignedId)) : 'Unassigned';
+                $statusLabel = ((int)($client['is_active'] ?? 1) === 1) ? 'Active' : 'Inactive';
+                $searchBlob = strtolower(trim($clientName . ' ' . ($client['email'] ?? '') . ' ' . $assignedName));
+            ?>
+            <label class="assign-item" data-client-item data-client-id="<?php echo $clientId; ?>" data-assigned-trainer="<?php echo $assignedId; ?>" data-search="<?php echo trainers_h($searchBlob); ?>">
+                <input type="checkbox" name="client_ids[]" value="<?php echo $clientId; ?>">
+                <span class="assign-item__main">
+                    <span class="assign-item__name"><?php echo trainers_h($clientName); ?></span>
+                    <span class="assign-item__email"><?php echo trainers_h($client['email'] ?? ''); ?></span>
+                </span>
+                <span class="assign-item__meta">
+                    <span class="assign-item__status<?php echo $statusLabel === 'Active' ? ' ok' : ' warn'; ?>"><?php echo trainers_h($statusLabel); ?></span>
+                    <span class="assign-item__assigned">Currently: <?php echo trainers_h($assignedName); ?></span>
+                </span>
+            </label>
+            <?php endforeach; ?>
+        </div>
+        <div class="actions">
+            <button class="btn" type="button" data-modal-close>Cancel</button>
+            <button class="btn brand" type="submit" data-processing-text="Assigning…">Assign Selected</button>
+        </div>
+    </form>
+</div>
+
 <script>
 (function(){
     const table = document.querySelector('[data-enhanced-table]');
@@ -926,8 +1300,23 @@ require_once __DIR__ . '/ppf_subheader.php';
     const rowEntries = dataRows.map((row, index) => {
         const prev = row.previousElementSibling;
         const form = prev && prev.tagName === 'FORM' ? prev : null;
+        let expansion = row.nextElementSibling;
+        if (expansion && expansion.tagName === 'FORM') {
+            expansion = expansion.nextElementSibling;
+        }
+        if (!(expansion && expansion.classList && expansion.classList.contains('trainer-expand'))) {
+            expansion = null;
+        }
         row.dataset.originalIndex = String(index);
-        return { row, form, originalIndex: index };
+        return { row, form, expansion, originalIndex: index };
+    });
+
+    const expansionMap = new Map();
+    rowEntries.forEach(entry => {
+        if (entry.expansion) {
+            expansionMap.set(entry.row, entry.expansion);
+            entry.expansion.style.display = 'none';
+        }
     });
 
     const searchInput = document.querySelector('[data-table-search]');
@@ -1086,6 +1475,9 @@ require_once __DIR__ . '/ppf_subheader.php';
                 tbody.appendChild(entry.form);
             }
             tbody.appendChild(entry.row);
+            if (entry.expansion && entry.expansion.parentNode === tbody) {
+                tbody.appendChild(entry.expansion);
+            }
         });
     }
 
@@ -1122,6 +1514,13 @@ require_once __DIR__ . '/ppf_subheader.php';
             if (entry.form) {
                 entry.form.style.display = match ? '' : 'none';
             }
+            const expansion = entry.expansion;
+            if (expansion) {
+                if (!match || !entry.row.classList.contains('expanded')) {
+                    expansion.style.display = 'none';
+                    entry.row.classList.remove('expanded');
+                }
+            }
             if (match) {
                 visible += 1;
             }
@@ -1137,6 +1536,45 @@ require_once __DIR__ . '/ppf_subheader.php';
             handleSearch();
         }
     }
+
+    function closeAllExpansions(exceptRow) {
+        expansionMap.forEach((expansion, row) => {
+            if (!expansion) {
+                return;
+            }
+            if (row === exceptRow) {
+                return;
+            }
+            expansion.style.display = 'none';
+            row.classList.remove('expanded');
+        });
+    }
+
+    table.addEventListener('click', (event) => {
+        const row = event.target.closest('tr.trainer-row');
+        if (!row) {
+            return;
+        }
+        if (row.classList.contains('editing')) {
+            return;
+        }
+        if (event.target.closest('a,button,input,select,textarea,label,form')) {
+            return;
+        }
+        const expansion = expansionMap.get(row);
+        if (!expansion) {
+            return;
+        }
+        const isOpen = expansion.style.display === 'table-row';
+        closeAllExpansions(row);
+        if (isOpen) {
+            expansion.style.display = 'none';
+            row.classList.remove('expanded');
+        } else {
+            expansion.style.display = 'table-row';
+            row.classList.add('expanded');
+        }
+    });
 })();
 </script>
 
@@ -1147,15 +1585,22 @@ require_once __DIR__ . '/ppf_subheader.php';
         document.querySelectorAll('.modal.open').forEach(modal => modal.classList.remove('open'));
         if (backdrop) backdrop.classList.remove('open');
     }
+    function openModal(modal) {
+        if (!modal) return;
+        modal.classList.add('open');
+        if (backdrop) backdrop.classList.add('open');
+        const firstInput = modal.querySelector('input, select, textarea');
+        if (firstInput) firstInput.focus();
+    }
     document.querySelectorAll('[data-modal-open]').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.getAttribute('data-modal-open');
             const modal = document.getElementById(id);
             if (!modal) return;
-            modal.classList.add('open');
-            if (backdrop) backdrop.classList.add('open');
-            const firstInput = modal.querySelector('input, select, textarea');
-            if (firstInput) firstInput.focus();
+            if (btn.hasAttribute('data-assign-open')) {
+                prepareAssignModal(btn.getAttribute('data-assign-open') || '', btn.getAttribute('data-trainer-name') || '');
+            }
+            openModal(modal);
         });
     });
     document.querySelectorAll('[data-modal-close]').forEach(btn => {
@@ -1181,6 +1626,62 @@ require_once __DIR__ . '/ppf_subheader.php';
             submitBtn.disabled = true;
         });
     });
+
+    const assignModal = document.getElementById('assignModal');
+    const assignTrainerInput = assignModal ? assignModal.querySelector('input[name="trainer_id"]') : null;
+    const assignTrainerName = assignModal ? assignModal.querySelector('[data-assign-trainer-name]') : null;
+    const assignSearch = assignModal ? assignModal.querySelector('[data-assign-search]') : null;
+    const assignList = assignModal ? assignModal.querySelector('[data-assign-list]') : null;
+    const assignItems = assignList ? Array.from(assignList.querySelectorAll('[data-client-item]')) : [];
+
+    function syncAssignItemState(item) {
+        const checkbox = item.querySelector('input[type="checkbox"]');
+        if (!checkbox) return;
+        item.classList.toggle('is-selected', checkbox.checked);
+    }
+
+    function filterAssignList() {
+        if (!assignItems.length) return;
+        const term = (assignSearch && assignSearch.value ? assignSearch.value : '').trim().toLowerCase();
+        assignItems.forEach(item => {
+            const haystack = (item.getAttribute('data-search') || '').toLowerCase();
+            const match = term === '' || haystack.includes(term);
+            item.style.display = match ? '' : 'none';
+        });
+    }
+
+    function prepareAssignModal(trainerId, trainerName) {
+        if (!assignModal) return;
+        if (assignTrainerInput) {
+            assignTrainerInput.value = trainerId || '';
+        }
+        if (assignTrainerName) {
+            assignTrainerName.textContent = trainerName || 'Trainer';
+        }
+        assignItems.forEach(item => {
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (!checkbox) return;
+            const current = item.getAttribute('data-assigned-trainer') || '';
+            checkbox.checked = current !== '' && current === trainerId;
+            syncAssignItemState(item);
+        });
+        if (assignSearch) {
+            assignSearch.value = '';
+        }
+        filterAssignList();
+    }
+
+    if (assignSearch) {
+        assignSearch.addEventListener('input', filterAssignList);
+    }
+    if (assignItems.length) {
+        assignItems.forEach(item => {
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (!checkbox) return;
+            checkbox.addEventListener('change', () => syncAssignItemState(item));
+            syncAssignItemState(item);
+        });
+    }
 })();
 </script>
 
