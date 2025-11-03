@@ -779,8 +779,16 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                                     <table class="trainer-client-table">
                                         <thead>
                                             <tr>
-                                                <th>Name</th>
+                                                <th>First Name</th>
+                                                <th>Middle Name</th>
+                                                <th>Last Name</th>
                                                 <th>Email</th>
+                                                <th>Phone</th>
+                                                <th>Birthdate</th>
+                                                <th>Age</th>
+                                                <th>Gender</th>
+                                                <th>Height</th>
+                                                <th>Weight</th>
                                                 <th>Status</th>
                                                 <th>Plans</th>
                                             </tr>
@@ -788,27 +796,41 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                                         <tbody>
                                         <?php if ($assignedClients): ?>
                                             <?php foreach ($assignedClients as $client):
-                                                $clientName = trim((string)($client['first_name'] ?? '') . ' ' . (string)($client['last_name'] ?? ''));
-                                                if ($clientName === '') {
-                                                    $clientName = (string)($client['email'] ?? ('Client #' . ($client['id'] ?? '')));
-                                                }
+                                                $firstName = (string)($client['first_name'] ?? '');
+                                                $middleName = (string)($client['middle_name'] ?? '');
+                                                $lastName = (string)($client['last_name'] ?? '');
+                                                $email = (string)($client['email'] ?? '');
+                                                $phoneDisplay = trainers_format_phone($client['phone'] ?? '');
+                                                $birthDisplay = trainers_format_date($client['birthdate'] ?? '');
+                                                $age = trainers_calc_age($client['birthdate'] ?? null);
+                                                $genderDisplay = trainers_format_gender($client['gender'] ?? '');
+                                                $heightDisplay = ppf_measurement_format_height($client['height_ft'] ?? null, $client['height_in'] ?? null);
+                                                $weightDisplay = ppf_measurement_format_weight($client['weight_lbs'] ?? null);
                                                 $isActive = (int)($client['is_active'] ?? 1) === 1;
                                                 $statusText = $isActive ? 'Active' : 'Inactive';
                                                 ?>
                                                 <tr>
-                                                    <td><?php echo trainers_h($clientName); ?></td>
-                                                    <td><?php echo trainers_h($client['email'] ?? ''); ?></td>
+                                                    <td><?php echo $firstName !== '' ? trainers_h($firstName) : '—'; ?></td>
+                                                    <td><?php echo $middleName !== '' ? trainers_h($middleName) : '—'; ?></td>
+                                                    <td><?php echo $lastName !== '' ? trainers_h($lastName) : '—'; ?></td>
+                                                    <td><?php echo $email !== '' ? trainers_h($email) : '—'; ?></td>
+                                                    <td><?php echo $phoneDisplay !== '' ? trainers_h($phoneDisplay) : '—'; ?></td>
+                                                    <td><?php echo $birthDisplay !== '' ? trainers_h($birthDisplay) : '—'; ?></td>
+                                                    <td><?php echo $age === null ? '—' : $age; ?></td>
+                                                    <td><?php echo $genderDisplay !== '' ? trainers_h($genderDisplay) : '—'; ?></td>
+                                                    <td><?php echo $heightDisplay ? trainers_h($heightDisplay) : '—'; ?></td>
+                                                    <td><?php echo $weightDisplay ? trainers_h($weightDisplay) : '—'; ?></td>
                                                     <td><?php echo trainers_h($statusText); ?></td>
                                                     <td><?php echo (int)($client['plans_count'] ?? 0); ?></td>
                                                 </tr>
                                             <?php endforeach; ?>
                                         <?php else: ?>
                                             <tr>
-                                                <td colspan="4" class="muted">No clients assigned yet.</td>
+                                                <td colspan="12" class="muted">No clients assigned yet.</td>
                                             </tr>
                                         <?php endif; ?>
                                             <tr class="trainer-assign-row" data-assign-open="<?php echo $id; ?>" data-trainer-name="<?php echo trainers_h($trainerDisplay); ?>" data-modal-open="assignModal">
-                                                <td colspan="4">+ Assign Client</td>
+                                                <td colspan="12">+ Assign Client</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -861,7 +883,7 @@ foreach ([$activeTrainers, $inactiveTrainers] as $list) {
 
 $clientsByTrainer = [];
 $allClientsForAssign = [];
-$clientSql = "SELECT u.id, u.first_name, u.last_name, u.email, u.is_active, u.assigned_trainer_id, COALESCE((SELECT COUNT(*) FROM user_plans up WHERE up.user_id = u.id), 0) AS plans_count FROM users u WHERE u.role='client' OR u.is_client=1 ORDER BY u.last_name, u.first_name, u.id";
+$clientSql = "SELECT u.id, u.first_name, u.middle_name, u.last_name, u.email, u.phone, u.birthdate, u.gender, u.height_ft, u.height_in, u.weight_lbs, u.is_active, u.assigned_trainer_id, COALESCE((SELECT COUNT(*) FROM user_plans up WHERE up.user_id = u.id), 0) AS plans_count FROM users u WHERE u.role='client' OR u.is_client=1 ORDER BY u.last_name, u.first_name, u.id";
 if ($clientRes = $conn->query($clientSql)) {
     while ($clientRow = $clientRes->fetch_assoc()) {
         $cid = (int)($clientRow['id'] ?? 0);
@@ -889,8 +911,15 @@ if ($clientRes = $conn->query($clientSql)) {
             $clientsByTrainer[$assignedId][] = [
                 'id' => $cid,
                 'first_name' => $clientRow['first_name'] ?? '',
+                'middle_name' => $clientRow['middle_name'] ?? '',
                 'last_name' => $clientRow['last_name'] ?? '',
                 'email' => $email,
+                'phone' => $clientRow['phone'] ?? '',
+                'birthdate' => $clientRow['birthdate'] ?? null,
+                'gender' => $clientRow['gender'] ?? '',
+                'height_ft' => $clientRow['height_ft'] ?? null,
+                'height_in' => $clientRow['height_in'] ?? null,
+                'weight_lbs' => $clientRow['weight_lbs'] ?? null,
                 'is_active' => (int)($clientRow['is_active'] ?? 1),
                 'plans_count' => (int)($clientRow['plans_count'] ?? 0),
             ];

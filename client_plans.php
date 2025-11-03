@@ -498,12 +498,7 @@ $heroLine = $latestPlanAssignedStr
   ? 'Your workouts, videos, and coaching cues are queued up below. Open a plan to see exactly what to focus on today.'
   : 'As soon as your coach publishes a plan it’ll land here with videos, descriptions, and notes ready to go.';
 
-$trainerLineText = null;
-if ($assignedTrainerDisplay !== null) {
-  $trainerLineText = ($isSelfView ? 'Your Trainer: ' : 'Assigned Trainer: ') . $assignedTrainerDisplay;
-} else {
-  $trainerLineText = $isSelfView ? 'Your Trainer: Not assigned yet' : 'Assigned Trainer: Not assigned yet';
-}
+$trainerLineText = 'Your Trainer: ' . ($assignedTrainerDisplay !== null ? $assignedTrainerDisplay : 'Not assigned yet');
 
 $currentUserNow = ppf_time_user_now();
 $heroCurrentDate = ppf_format_user_datetime($currentUserNow, ['type' => 'date_long']);
@@ -718,9 +713,23 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
 
     .hero__trainer {
       margin: clamp(6px, 1vw, 10px) 0 clamp(18px, 3vw, 24px);
+      display: flex;
+      align-items: center;
+    }
+
+    .hero__trainer-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.16);
+      border: 1px solid rgba(148, 163, 184, 0.38);
+      color: rgba(226, 232, 240, 0.94);
       font-size: 15px;
       font-weight: 600;
-      color: rgba(226, 232, 240, 0.92);
+      letter-spacing: 0.01em;
+      text-transform: none;
     }
 
     .hero__status {
@@ -2162,7 +2171,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       <span class="hero__eyebrow">Your training home</span>
       <h1 class="hero__headline"><?php echo h($heroHeadline); ?></h1>
       <p class="hero__subtitle"><?php echo h($heroLine); ?></p>
-      <p class="hero__trainer"><?php echo h($trainerLineText); ?></p>
+      <div class="hero__trainer"><span class="hero__trainer-pill"><?php echo h($trainerLineText); ?></span></div>
     </div>
     <div class="hero__status">
       <div class="hero-highlight hero-highlight--date">
