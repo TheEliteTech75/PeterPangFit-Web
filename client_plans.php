@@ -39,8 +39,10 @@ if (!is_trainer_admin($VIEWER_ROLE) && $client_id !== $VIEWER_ID) {
   exit;
 }
 
+ppf_assignments_ensure_columns($conn);
+
 // Fetch client details
-$stmt = $conn->prepare('SELECT id, first_name, last_name, email FROM users WHERE id = ? LIMIT 1');
+$stmt = $conn->prepare('SELECT id, first_name, last_name, email, assigned_trainer_id FROM users WHERE id = ? LIMIT 1');
 $stmt->bind_param('i', $client_id);
 $stmt->execute();
 $client = $stmt->get_result()->fetch_assoc();
@@ -50,6 +52,23 @@ if (!$client) {
   http_response_code(404);
   echo 'Client not found';
   exit;
+}
+
+$assignedTrainerId = (int)($client['assigned_trainer_id'] ?? 0);
+$assignedTrainerDisplay = null;
+if ($assignedTrainerId > 0) {
+  if ($trainerStmt = $conn->prepare('SELECT first_name, last_name FROM users WHERE id = ? LIMIT 1')) {
+    $trainerStmt->bind_param('i', $assignedTrainerId);
+    $trainerStmt->execute();
+    $trainerRes = $trainerStmt->get_result();
+    if ($trainerRes && ($trainerRow = $trainerRes->fetch_assoc())) {
+      $trainerName = trim(($trainerRow['first_name'] ?? '') . ' ' . ($trainerRow['last_name'] ?? ''));
+      if ($trainerName !== '') {
+        $assignedTrainerDisplay = $trainerName;
+      }
+    }
+    $trainerStmt->close();
+  }
 }
 
 // Plans assigned to this client
@@ -479,6 +498,8 @@ $heroLine = $latestPlanAssignedStr
   ? 'Your workouts, videos, and coaching cues are queued up below. Open a plan to see exactly what to focus on today.'
   : 'As soon as your coach publishes a plan it’ll land here with videos, descriptions, and notes ready to go.';
 
+$trainerLineText = 'Your Trainer: ' . ($assignedTrainerDisplay !== null ? $assignedTrainerDisplay : 'Not assigned yet');
+
 $currentUserNow = ppf_time_user_now();
 $heroCurrentDate = ppf_format_user_datetime($currentUserNow, ['type' => 'date_long']);
 $heroCurrentTime = ppf_format_user_datetime($currentUserNow, ['type' => 'time']);
@@ -688,6 +709,27 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       font-size: clamp(16px, 3.3vw, 20px);
       color: rgba(255, 255, 255, 0.72);
       max-width: 640px;
+    }
+
+    .hero__trainer {
+      margin: clamp(6px, 1vw, 10px) 0 clamp(18px, 3vw, 24px);
+      display: flex;
+      align-items: center;
+    }
+
+    .hero__trainer-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.16);
+      border: 1px solid rgba(148, 163, 184, 0.38);
+      color: rgba(226, 232, 240, 0.94);
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      text-transform: none;
     }
 
     .hero__status {
@@ -2129,6 +2171,7 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       <span class="hero__eyebrow">Your training home</span>
       <h1 class="hero__headline"><?php echo h($heroHeadline); ?></h1>
       <p class="hero__subtitle"><?php echo h($heroLine); ?></p>
+      <div class="hero__trainer"><span class="hero__trainer-pill"><?php echo h($trainerLineText); ?></span></div>
     </div>
     <div class="hero__status">
       <div class="hero-highlight hero-highlight--date">

@@ -383,6 +383,7 @@ $tab = ($_GET['tab'] ?? 'active') === 'inactive' ? 'inactive' : 'active';
 ensure_is_active_column($conn);
 ensure_user_plan_exercise_tracking_columns($conn);
 ensure_invite_columns($conn);
+ppf_assignments_ensure_columns($conn);
 
 $HAS_UPE_UPDATED_AT = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_at');
 $HAS_UPE_UPDATED_BY = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_by');
@@ -458,6 +459,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $sent = [];
         $failed = [];
+        $assignTrainerId = null;
+        $inviterRoleKey = ppf_role_key($USER_ROLE ?? '');
+        if (in_array($inviterRoleKey, ['trainer', 'trainer_admin', 'admin_trainer'], true)) {
+          $assignTrainerId = (int)($USER_ID ?? 0);
+          if ($assignTrainerId <= 0) {
+            $assignTrainerId = null;
+          }
+        }
 
         foreach ($emails as $email) {
           $conn->begin_transaction();
@@ -530,6 +539,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               throw new Exception('Failed to create invite for ' . $email . '.');
             }
             $invite->close();
+
+            if ($assignTrainerId) {
+              $assignStmt = $conn->prepare('UPDATE users SET assigned_trainer_id = ? WHERE id = ?');
+              if ($assignStmt) {
+                $assignStmt->bind_param('ii', $assignTrainerId, $userId);
+                if (!$assignStmt->execute()) {
+                  $assignStmt->close();
+                  throw new Exception('Failed to assign client to trainer.');
+                }
+                $assignStmt->close();
+              }
+            }
 
             $conn->commit();
 
@@ -1435,22 +1456,57 @@ require_once __DIR__ . '/ppf_subheader.php';
 
 // ---------- Load clients (split active / inactive) ----------
 $active = []; $inactive = [];
-$q = "
+$viewerRoleKey = ppf_role_key($USER_ROLE ?? '');
+$viewerTrainerId = null;
+if ($viewerRoleKey === 'trainer') {
+  $viewerTrainerId = (int)($USER_ID ?? 0);
+  if ($viewerTrainerId <= 0) {
+    $viewerTrainerId = null;
+  }
+}
+
+$showTrainerColumn = ppf_is_admin_role($USER_ROLE ?? '') || in_array($viewerRoleKey, ['trainer_admin', 'admin_trainer'], true);
+
+$clientSql = "
   SELECT
     u.id, u.role, u.is_client, u.is_active, u.email, u.phone, u.birthdate, u.gender,
     u.first_name, u.middle_name, u.last_name,
     u.height_ft, u.height_in, u.weight_lbs,
     u.password_hash,
     u.locked_until,
+    u.assigned_trainer_id,
+    t.first_name AS trainer_first_name,
+    t.last_name AS trainer_last_name,
+    t.email AS trainer_email,
     COALESCE((SELECT COUNT(*) FROM user_plans up WHERE up.user_id = u.id), 0) AS plans_count
   FROM users u
-  WHERE u.role='client' OR u.is_client=1
-  ORDER BY u.last_name, u.first_name, u.id
-";
-$res = $conn->query($q);
+  LEFT JOIN users t ON t.id = u.assigned_trainer_id
+  WHERE u.role='client' OR u.is_client=1";
+
+if ($viewerTrainerId) {
+  $clientSql .= " AND (u.assigned_trainer_id = ? OR u.assigned_trainer_id IS NULL)";
+}
+
+$clientSql .= " ORDER BY u.last_name, u.first_name, u.id";
+
+if ($viewerTrainerId) {
+  if ($stmt = $conn->prepare($clientSql)) {
+    $stmt->bind_param('i', $viewerTrainerId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+  } else {
+    $res = false;
+  }
+} else {
+  $res = $conn->query($clientSql);
+}
+
 if ($res) {
   while ($r = $res->fetch_assoc()) {
     if ((int)($r['is_active'] ?? 1) === 1) $active[] = $r; else $inactive[] = $r;
+  }
+  if (isset($stmt) && $stmt instanceof mysqli_stmt) {
+    $stmt->close();
   }
 }
 
@@ -1727,14 +1783,14 @@ if ($rs = $conn->query($sqlPlans)) {
 
 // --- Rendering helpers ---
 function render_clients_table(array $clients, string $csrf, string $whichTab): void {
-  global $USER_ROLE, $CLIENT_HEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_PLACEHOLDER, $CLIENT_MEASUREMENT_IS_METRIC;
+  global $USER_ROLE, $CLIENT_HEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_PLACEHOLDER, $CLIENT_MEASUREMENT_IS_METRIC, $showTrainerColumn;
   $tableId = 'clientsTable-' . $whichTab;
   $searchId = 'clientSearch-' . $whichTab;
   $bulkSelectId = 'clientBulkSelect-' . $whichTab;
   $bulkButtonId = 'clientBulkApply-' . $whichTab;
   $bulkFormId = 'clientBulkForm-' . $whichTab;
   $selectAllId = 'clientSelectAll-' . $whichTab;
-  $colspan = 14;
+  $colspan = $showTrainerColumn ? 15 : 14;
   ?>
   <div class="clients-table-container" data-clients-tab="<?php echo h($whichTab); ?>" data-bulk-form-id="<?php echo h($bulkFormId); ?>">
     <div class="table-tools">
@@ -1766,6 +1822,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
           <col style="width:120px">
           <col style="width:120px">
           <col style="width:90px">
+          <?php if ($showTrainerColumn): ?>
+          <col style="min-width:200px">
+          <?php endif; ?>
           <col style="min-width:240px">
         </colgroup>
         <thead>
@@ -1783,6 +1842,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
             <th data-sort-key="height"><button type="button" class="sort-btn" data-sort-key="height" data-state="off"><?php echo h($CLIENT_HEIGHT_COLUMN_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="weight"><button type="button" class="sort-btn" data-sort-key="weight" data-state="off"><?php echo h($CLIENT_WEIGHT_COLUMN_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="plans"><button type="button" class="sort-btn" data-sort-key="plans" data-state="off">Plans<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <?php if ($showTrainerColumn): ?>
+            <th data-sort-key="trainer"><button type="button" class="sort-btn" data-sort-key="trainer" data-state="off">Trainer<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <?php endif; ?>
             <th>Actions</th>
           </tr>
         </thead>
@@ -1817,11 +1879,19 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
           $emailSort = strtolower(trim((string)($c['email'] ?? '')));
           $genderSort = strtolower(trim((string)($c['gender'] ?? '')));
           $plansCount = (int)($c['plans_count'] ?? 0);
+          $trainerFirst = trim((string)($c['trainer_first_name'] ?? ''));
+          $trainerLast = trim((string)($c['trainer_last_name'] ?? ''));
+          $trainerDisplay = trim($trainerFirst . ' ' . $trainerLast);
+          if ($trainerDisplay === '') {
+            $trainerEmail = trim((string)($c['trainer_email'] ?? ''));
+            $trainerDisplay = $trainerEmail !== '' ? $trainerEmail : 'Unassigned';
+          }
+          $trainerSort = strtolower(trim($trainerDisplay));
           $orderIndex = $index++;
           $heightSortAttr = ($heightSort === '') ? '' : (string)$heightSort;
           $labelName = trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? ''));
         ?>
-          <tr class="client-row" data-uid="<?php echo $id; ?>" data-order="<?php echo $orderIndex; ?>" data-sort-id="<?php echo $id; ?>" data-sort-first="<?php echo h($firstSort); ?>" data-sort-middle="<?php echo h($middleSort); ?>" data-sort-last="<?php echo h($lastSort); ?>" data-sort-email="<?php echo h($emailSort); ?>" data-sort-phone="<?php echo h($phoneDigits); ?>" data-sort-birthdate="<?php echo h($birthAttr); ?>" data-sort-age="<?php echo $ageYears === null ? '' : (int)$ageYears; ?>" data-sort-gender="<?php echo h($genderSort); ?>" data-sort-height="<?php echo h($heightSortAttr); ?>" data-sort-weight="<?php echo h($weightSortAttr); ?>" data-sort-plans="<?php echo $plansCount; ?>">
+          <tr class="client-row" data-uid="<?php echo $id; ?>" data-order="<?php echo $orderIndex; ?>" data-sort-id="<?php echo $id; ?>" data-sort-first="<?php echo h($firstSort); ?>" data-sort-middle="<?php echo h($middleSort); ?>" data-sort-last="<?php echo h($lastSort); ?>" data-sort-email="<?php echo h($emailSort); ?>" data-sort-phone="<?php echo h($phoneDigits); ?>" data-sort-birthdate="<?php echo h($birthAttr); ?>" data-sort-age="<?php echo $ageYears === null ? '' : (int)$ageYears; ?>" data-sort-gender="<?php echo h($genderSort); ?>" data-sort-height="<?php echo h($heightSortAttr); ?>" data-sort-weight="<?php echo h($weightSortAttr); ?>" data-sort-plans="<?php echo $plansCount; ?>"<?php if ($showTrainerColumn): ?> data-sort-trainer="<?php echo h($trainerSort); ?>"<?php endif; ?>>
             <td>
               <input type="checkbox" class="client-select" value="<?php echo $id; ?>" data-client-checkbox aria-label="Select <?php echo h($labelName !== '' ? $labelName : ('Client #' . $id)); ?>"<?php echo $targetIsSuper ? ' disabled aria-disabled="true" title="Super Admin accounts cannot be selected"' : ''; ?>>
             </td>
@@ -1923,6 +1993,10 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
             </td>
 
             <td><?php echo $plansCount; ?></td>
+
+            <?php if ($showTrainerColumn): ?>
+            <td data-label="Trainer"><?php echo h($trainerDisplay); ?></td>
+            <?php endif; ?>
 
             <td>
               <div class="actions">
@@ -2574,7 +2648,8 @@ const CLIENT_SORT_TYPES = {
   gender: 'string',
   height: 'number',
   weight: 'number',
-  plans: 'number'
+  plans: 'number',
+  trainer: 'string'
 };
 
 (function(){
