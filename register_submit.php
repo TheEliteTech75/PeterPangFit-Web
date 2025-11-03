@@ -2,6 +2,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/logs.php';        // for ppf_log() and ppf_client_ip()
 require_once __DIR__ . '/send_email.php';  // <-- added: for send_plain_email()
+require_once __DIR__ . '/invite_helpers.php';
 
 function bad($msg, $code = 400) {
     http_response_code($code);
@@ -75,12 +76,18 @@ if (!$inv) {
 
 // If expired, log and block
 if (!empty($inv['expires_at']) && strtotime($inv['expires_at']) <= time()) {
+    $cleanupInvite = $inv;
+    $cleanupInvite['status'] = 'Expired';
+    ppf_cleanup_invite_user_record($conn, $cleanupInvite);
     $details = "token={$inv['token']}; original_expires_at={$inv['expires_at']}";
     ppf_log($conn, null, (string)$inv['email'], null, 'invite_link_expired', 'invite', null, $details);
     bad('This invite has expired.', 410);
 }
 
 if (!empty($inv['cancelled_at'])) {
+    $cleanupInvite = $inv;
+    $cleanupInvite['status'] = 'Cancelled';
+    ppf_cleanup_invite_user_record($conn, $cleanupInvite);
     bad('This invite has been cancelled.', 410);
 }
 if ((int)$inv['used'] === 1) {
@@ -114,6 +121,9 @@ if ($honeypot !== '') {
         $upd->execute();
         $upd->close();
     }
+    $honeypotCleanup = $inv;
+    $honeypotCleanup['status'] = 'Cancelled';
+    ppf_cleanup_invite_user_record($conn, $honeypotCleanup);
     // Log with IP and UA and submitted identity fields
     $ip = function_exists('ppf_client_ip') ? ppf_client_ip() : ($_SERVER['REMOTE_ADDR'] ?? '');
     $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
