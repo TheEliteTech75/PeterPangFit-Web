@@ -1131,7 +1131,10 @@ require_once __DIR__ . '/ppf_subheader.php';
     ppf_subheader([
         'title' => 'Trainers',
         'subtitle' => 'Manage trainer invites and accounts',
-        'actions' => function (): void {
+        'actions' => function () use ($roleKey): void {
+            if ($roleKey !== 'trainer_admin' && !ppf_is_admin_role($roleKey)) {
+                return;
+            }
             ?>
             <div class="btnset">
                 <button class="btn brand" type="button" data-modal-open="inviteModal">Send Invite</button>
