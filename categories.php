@@ -19,6 +19,12 @@ if (!is_trainer_admin($USER_ROLE ?? null)) {
   exit;
 }
 
+$roleKey = ppf_role_key($USER_ROLE ?? 'guest');
+$actorId = (int)($USER_ID ?? 0);
+$isTrainer = ($roleKey === 'trainer');
+$isTrainerAdmin = ($roleKey === 'trainer_admin');
+$isTrainerAdminOrHigher = $isTrainerAdmin || ppf_is_admin_role($USER_ROLE ?? null);
+
 // -----------------------------------------------------------------------------
 // CSRF
 // -----------------------------------------------------------------------------
@@ -205,6 +211,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($name === '') throw new Exception('Category name is required.');
         $by = (int)($USER_ID ?? 0);
 
+        $categoryOwnerId = null;
+        if ($stmtOwner = $conn->prepare('SELECT created_by FROM categories WHERE id = ? LIMIT 1')) {
+          $stmtOwner->bind_param('i', $id);
+          if ($stmtOwner->execute() && ($resOwner = $stmtOwner->get_result())) {
+            $rowOwner = $resOwner->fetch_assoc();
+            if ($rowOwner) {
+              $categoryOwnerId = isset($rowOwner['created_by']) ? (int)$rowOwner['created_by'] : null;
+            }
+          }
+          $stmtOwner->close();
+        }
+        if ($isTrainer && $categoryOwnerId !== $actorId) {
+          throw new Exception('You do not have permission to edit this category.');
+        }
+
         $stmt = $conn->prepare("UPDATE categories SET name=?, description=?, updated_at=NOW(), updated_by=? WHERE id=?");
         if (!$stmt) throw new Exception('Failed to prepare edit.');
         $stmt->bind_param("ssii", $name, $desc, $by, $id);
@@ -225,6 +246,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($action === 'delete_category') {
         $id = (int)($_POST['cat_id'] ?? 0);
         if ($id <= 0) throw new Exception('Invalid category.');
+        $categoryOwnerId = null;
+        if ($stmtOwner = $conn->prepare('SELECT created_by FROM categories WHERE id = ? LIMIT 1')) {
+          $stmtOwner->bind_param('i', $id);
+          if ($stmtOwner->execute() && ($resOwner = $stmtOwner->get_result())) {
+            $rowOwner = $resOwner->fetch_assoc();
+            if ($rowOwner) {
+              $categoryOwnerId = isset($rowOwner['created_by']) ? (int)$rowOwner['created_by'] : null;
+            }
+          }
+          $stmtOwner->close();
+        }
+        if ($isTrainer && $categoryOwnerId !== $actorId) {
+          throw new Exception('You do not have permission to delete this category.');
+        }
         $conn->begin_transaction();
         // Remove mappings (FK cascade would handle on category delete, but explicit is fine)
         $stmt = $conn->prepare("DELETE FROM exercise_categories WHERE category_id = ?");
@@ -468,6 +503,8 @@ require_once __DIR__ . '/ppf_subheader.php';
         $sortCreator = strtolower($creator ?? '');
         $sortEditor = strtolower($editor ?? '');
         $sortExercises = (int)($c['ex_count'] ?? 0);
+        $categoryOwnerId = isset($c['created_by']) ? (int)$c['created_by'] : null;
+        $canModifyCategory = $isTrainerAdminOrHigher || ($isTrainer && $categoryOwnerId === $actorId);
       ?>
         <tr
           class="cat-row"
@@ -491,6 +528,7 @@ require_once __DIR__ . '/ppf_subheader.php';
           <td class="muted"><?php echo h($editor); ?></td>
           <td><?php echo (int)$c['ex_count']; ?></td>
           <td class="row-actions" data-actions>
+            <?php if ($canModifyCategory): ?>
             <button class="btn small" type="button"
               data-edit
               data-cat-id="<?php echo $cid; ?>"
@@ -503,6 +541,9 @@ require_once __DIR__ . '/ppf_subheader.php';
               data-cat-id="<?php echo $cid; ?>"
               data-cat-name="<?php echo h($c['name']); ?>"
             >Delete</button>
+            <?php else: ?>
+            <span class="muted" style="align-self:center;">View only</span>
+            <?php endif; ?>
           </td>
         </tr>
         <tr class="expand" id="exp-<?php echo $cid; ?>">

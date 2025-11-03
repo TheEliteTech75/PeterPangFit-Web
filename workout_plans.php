@@ -182,6 +182,12 @@ if (!is_trainer_admin($USER_ROLE ?? null)) {
   exit;
 }
 
+$roleKey = ppf_role_key($USER_ROLE ?? 'guest');
+$actorId = (int)($USER_ID ?? 0);
+$isTrainer = ($roleKey === 'trainer');
+$isTrainerAdmin = ($roleKey === 'trainer_admin');
+$isTrainerAdminOrHigher = $isTrainerAdmin || ppf_is_admin_role($USER_ROLE ?? null);
+
 if (empty($_SESSION['csrf_token'])) { $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); }
 $csrf = $_SESSION['csrf_token'];
 
@@ -295,7 +301,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $existingName = null;
         $existingExercises = [];
-        if ($stmtInfo = $conn->prepare("SELECT name FROM workout_plans WHERE id = ? LIMIT 1")) {
+        $planOwnerId = null;
+        $planInfoCols = 'name';
+        if ($HAS_CREATED_BY) {
+          $planInfoCols .= ', created_by';
+        }
+        if ($stmtInfo = $conn->prepare("SELECT {$planInfoCols} FROM workout_plans WHERE id = ? LIMIT 1")) {
           $stmtInfo->bind_param("i", $plan_id);
           $stmtInfo->execute();
           $resInfo = $stmtInfo->get_result();
@@ -303,8 +314,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $stmtInfo->close();
           if (!$rowInfo) throw new Exception('Plan not found.');
           $existingName = (string)($rowInfo['name'] ?? '');
+          if ($HAS_CREATED_BY) {
+            $planOwnerId = isset($rowInfo['created_by']) ? (int)$rowInfo['created_by'] : null;
+          }
         } else {
           throw new Exception('Failed to load plan.');
+        }
+        if ($isTrainer && $HAS_CREATED_BY && $planOwnerId !== $actorId) {
+          throw new Exception('You do not have permission to edit this workout plan.');
         }
         if ($stmtOld = $conn->prepare("SELECT exercise_id FROM plan_exercises WHERE plan_id = ? ORDER BY position ASC, exercise_id ASC")) {
           $stmtOld->bind_param("i", $plan_id);
@@ -365,7 +382,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $existingName = null;
         $existingExercises = [];
         $assignedCount = 0;
-        if ($stmtInfo = $conn->prepare("SELECT name FROM workout_plans WHERE id = ? LIMIT 1")) {
+        $planOwnerId = null;
+        $planInfoCols = 'name';
+        if ($HAS_CREATED_BY) {
+          $planInfoCols .= ', created_by';
+        }
+        if ($stmtInfo = $conn->prepare("SELECT {$planInfoCols} FROM workout_plans WHERE id = ? LIMIT 1")) {
           $stmtInfo->bind_param("i", $plan_id);
           $stmtInfo->execute();
           $resInfo = $stmtInfo->get_result();
@@ -373,8 +395,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $stmtInfo->close();
           if (!$rowInfo) throw new Exception('Plan not found.');
           $existingName = (string)($rowInfo['name'] ?? '');
+          if ($HAS_CREATED_BY) {
+            $planOwnerId = isset($rowInfo['created_by']) ? (int)$rowInfo['created_by'] : null;
+          }
         } else {
           throw new Exception('Failed to load plan.');
+        }
+        if ($isTrainer && $HAS_CREATED_BY && $planOwnerId !== $actorId) {
+          throw new Exception('You do not have permission to delete this workout plan.');
         }
         if ($stmtOld = $conn->prepare("SELECT exercise_id FROM plan_exercises WHERE plan_id = ? ORDER BY position ASC, exercise_id ASC")) {
           $stmtOld->bind_param("i", $plan_id);
@@ -974,6 +1002,8 @@ require_once __DIR__ . '/ppf_subheader.php';
           }
           $q->close();
         }
+        $planOwnerId = $HAS_CREATED_BY ? (isset($p['created_by']) ? (int)$p['created_by'] : null) : $actorId;
+        $canModifyPlan = !$HAS_CREATED_BY || $isTrainerAdminOrHigher || ($isTrainer && $planOwnerId === $actorId);
       ?>
         <?php
           $sortName = strtolower($p['name'] ?? '');
@@ -1005,8 +1035,12 @@ require_once __DIR__ . '/ppf_subheader.php';
           <td><?php echo (int)$p['assigned_count']; ?></td>
           <td class="row-actions" data-actions>
             <button class="btn small" type="button" data-assign data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($p['name']); ?>">Assign</button>
+            <?php if ($canModifyPlan): ?>
             <button class="btn small" type="button" data-edit data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($p['name']); ?>">Edit</button>
             <button class="btn small warn" type="button" data-delete data-plan-id="<?php echo $pid; ?>" data-plan-name="<?php echo h($p['name']); ?>">Delete</button>
+            <?php else: ?>
+            <span class="muted" style="align-self:center;">No edit access</span>
+            <?php endif; ?>
           </td>
         </tr>
         <tr class="expand" id="exp-<?php echo $pid; ?>">
