@@ -383,6 +383,7 @@ $tab = ($_GET['tab'] ?? 'active') === 'inactive' ? 'inactive' : 'active';
 ensure_is_active_column($conn);
 ensure_user_plan_exercise_tracking_columns($conn);
 ensure_invite_columns($conn);
+ppf_assignments_ensure_columns($conn);
 
 $HAS_UPE_UPDATED_AT = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_at');
 $HAS_UPE_UPDATED_BY = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_by');
@@ -418,6 +419,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $uid    = (int)($_POST['user_id'] ?? 0);
 
     try {
+      if ($action === 'assign_trainer') {
+        $roleKey = ppf_role_key($USER_ROLE ?? '');
+        if (!ppf_is_admin_role($USER_ROLE ?? '') && !in_array($roleKey, ['trainer_admin', 'admin_trainer'], true)) {
+          throw new Exception('You do not have permission to assign trainers.');
+        }
+        if ($uid <= 0) throw new Exception('Invalid client.');
+
+        $trainerId = (int)($_POST['trainer_id'] ?? 0);
+        if ($trainerId <= 0) {
+          throw new Exception('Select a trainer to assign.');
+        }
+
+        $clientCheck = $conn->prepare("SELECT assigned_trainer_id FROM users WHERE id=? AND (role='client' OR is_client=1) LIMIT 1");
+        if (!$clientCheck) throw new Exception('Failed to verify client.');
+        $clientCheck->bind_param('i', $uid);
+        $clientCheck->execute();
+        $clientRes = $clientCheck->get_result();
+        $clientRow = $clientRes ? $clientRes->fetch_assoc() : null;
+        $clientCheck->close();
+        if (!$clientRow) throw new Exception('Client not found.');
+
+        $currentTrainer = (int)($clientRow['assigned_trainer_id'] ?? 0);
+        if ($currentTrainer === $trainerId) {
+          throw new Exception('This client is already assigned to that trainer.');
+        }
+
+        $trainerCheck = $conn->prepare("SELECT id FROM users WHERE id=? AND role IN ('trainer','trainer_admin','admin_trainer') LIMIT 1");
+        if (!$trainerCheck) throw new Exception('Failed to verify trainer.');
+        $trainerCheck->bind_param('i', $trainerId);
+        $trainerCheck->execute();
+        $trainerRes = $trainerCheck->get_result();
+        $trainerExists = $trainerRes ? $trainerRes->fetch_assoc() : null;
+        $trainerCheck->close();
+        if (!$trainerExists) throw new Exception('Trainer not found.');
+
+        $assignStmt = $conn->prepare('UPDATE users SET assigned_trainer_id = ? WHERE id = ?');
+        if (!$assignStmt) throw new Exception('Failed to prepare assignment.');
+        $assignStmt->bind_param('ii', $trainerId, $uid);
+        if (!$assignStmt->execute()) { $assignStmt->close(); throw new Exception('Failed to assign trainer.'); }
+        $assignStmt->close();
+
+        ppf_log_user_admin_action($conn, 'client_trainer_assigned', $uid, [
+          'assigned_trainer_id' => $trainerId,
+          'previous_trainer_id' => $currentTrainer,
+        ]);
+
+        $flash = 'Trainer assigned to client.'; $flash_type = 'ok';
+      }
+
+      if ($action === 'unassign_trainer') {
+        $roleKey = ppf_role_key($USER_ROLE ?? '');
+        if (!ppf_is_admin_role($USER_ROLE ?? '') && !in_array($roleKey, ['trainer_admin', 'admin_trainer'], true)) {
+          throw new Exception('You do not have permission to unassign trainers.');
+        }
+        if ($uid <= 0) throw new Exception('Invalid client.');
+
+        $clientCheck = $conn->prepare("SELECT assigned_trainer_id FROM users WHERE id=? AND (role='client' OR is_client=1) LIMIT 1");
+        if (!$clientCheck) throw new Exception('Failed to verify client.');
+        $clientCheck->bind_param('i', $uid);
+        $clientCheck->execute();
+        $clientRes = $clientCheck->get_result();
+        $clientRow = $clientRes ? $clientRes->fetch_assoc() : null;
+        $clientCheck->close();
+        if (!$clientRow) throw new Exception('Client not found.');
+
+        $currentTrainer = (int)($clientRow['assigned_trainer_id'] ?? 0);
+        if ($currentTrainer <= 0) {
+          throw new Exception('This client does not have a trainer assigned.');
+        }
+
+        $unassignStmt = $conn->prepare('UPDATE users SET assigned_trainer_id = NULL WHERE id = ? AND assigned_trainer_id = ?');
+        if (!$unassignStmt) throw new Exception('Failed to prepare unassignment.');
+        $unassignStmt->bind_param('ii', $uid, $currentTrainer);
+        if (!$unassignStmt->execute() || $unassignStmt->affected_rows < 1) { $unassignStmt->close(); throw new Exception('Failed to unassign trainer.'); }
+        $unassignStmt->close();
+
+        ppf_log_user_admin_action($conn, 'client_trainer_unassigned', $uid, [
+          'previous_trainer_id' => $currentTrainer,
+        ]);
+
+        $flash = 'Trainer unassigned from client.'; $flash_type = 'ok';
+      }
+
       if ($action === 'send_invite') {
         $rawEmails = $_POST['emails'] ?? [];
         if (!is_array($rawEmails)) {
@@ -458,6 +542,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $sent = [];
         $failed = [];
+        $assignTrainerId = null;
+        $inviterRoleKey = ppf_role_key($USER_ROLE ?? '');
+        if (in_array($inviterRoleKey, ['trainer', 'trainer_admin', 'admin_trainer'], true)) {
+          $assignTrainerId = (int)($USER_ID ?? 0);
+          if ($assignTrainerId <= 0) {
+            $assignTrainerId = null;
+          }
+        }
 
         foreach ($emails as $email) {
           $conn->begin_transaction();
@@ -530,6 +622,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               throw new Exception('Failed to create invite for ' . $email . '.');
             }
             $invite->close();
+
+            if ($assignTrainerId) {
+              $assignStmt = $conn->prepare('UPDATE users SET assigned_trainer_id = ? WHERE id = ?');
+              if ($assignStmt) {
+                $assignStmt->bind_param('ii', $assignTrainerId, $userId);
+                if (!$assignStmt->execute()) {
+                  $assignStmt->close();
+                  throw new Exception('Failed to assign client to trainer.');
+                }
+                $assignStmt->close();
+              }
+            }
 
             $conn->commit();
 
@@ -1414,7 +1518,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
       }
 
-      if (in_array($action, ['send_invite','update_client','invite_client','resend_invite','deactivate_client','reactivate_client','unlock_user','unassign_plan','bulk_action'], true)) {
+      if (in_array($action, ['send_invite','update_client','invite_client','resend_invite','deactivate_client','reactivate_client','unlock_user','unassign_plan','bulk_action','assign_trainer','unassign_trainer'], true)) {
         if ($flash !== null && $flash !== '') {
           clients_flash($flash_type, $flash);
         }
@@ -1435,22 +1539,80 @@ require_once __DIR__ . '/ppf_subheader.php';
 
 // ---------- Load clients (split active / inactive) ----------
 $active = []; $inactive = [];
-$q = "
+$viewerRoleKey = ppf_role_key($USER_ROLE ?? '');
+$viewerTrainerId = null;
+if ($viewerRoleKey === 'trainer') {
+  $viewerTrainerId = (int)($USER_ID ?? 0);
+  if ($viewerTrainerId <= 0) {
+    $viewerTrainerId = null;
+  }
+}
+
+$showTrainerColumn = ppf_is_admin_role($USER_ROLE ?? '') || in_array($viewerRoleKey, ['trainer_admin', 'admin_trainer'], true);
+$canManageTrainerAssignments = ppf_is_admin_role($USER_ROLE ?? '') || in_array($viewerRoleKey, ['trainer_admin', 'admin_trainer'], true);
+$assignableTrainers = [];
+if ($canManageTrainerAssignments) {
+  $trainerSql = "SELECT id, first_name, last_name, email FROM users WHERE role IN ('trainer','trainer_admin','admin_trainer') AND is_active = 1 ORDER BY last_name, first_name, id";
+  if ($resTrainers = $conn->query($trainerSql)) {
+    while ($tRow = $resTrainers->fetch_assoc()) {
+      $tid = (int)($tRow['id'] ?? 0);
+      if ($tid <= 0) continue;
+      $first = trim((string)($tRow['first_name'] ?? ''));
+      $last = trim((string)($tRow['last_name'] ?? ''));
+      $name = trim($first . ' ' . $last);
+      if ($name === '') {
+        $email = trim((string)($tRow['email'] ?? ''));
+        $name = $email !== '' ? $email : ('Trainer #' . $tid);
+      }
+      $assignableTrainers[] = [
+        'id' => $tid,
+        'name' => $name,
+      ];
+    }
+    $resTrainers->free();
+  }
+}
+
+$clientSql = "
   SELECT
     u.id, u.role, u.is_client, u.is_active, u.email, u.phone, u.birthdate, u.gender,
     u.first_name, u.middle_name, u.last_name,
     u.height_ft, u.height_in, u.weight_lbs,
     u.password_hash,
     u.locked_until,
+    u.assigned_trainer_id,
+    t.first_name AS trainer_first_name,
+    t.last_name AS trainer_last_name,
+    t.email AS trainer_email,
     COALESCE((SELECT COUNT(*) FROM user_plans up WHERE up.user_id = u.id), 0) AS plans_count
   FROM users u
-  WHERE u.role='client' OR u.is_client=1
-  ORDER BY u.last_name, u.first_name, u.id
-";
-$res = $conn->query($q);
+  LEFT JOIN users t ON t.id = u.assigned_trainer_id
+  WHERE u.role='client' OR u.is_client=1";
+
+if ($viewerTrainerId) {
+  $clientSql .= " AND (u.assigned_trainer_id = ? OR u.assigned_trainer_id IS NULL)";
+}
+
+$clientSql .= " ORDER BY u.last_name, u.first_name, u.id";
+
+if ($viewerTrainerId) {
+  if ($stmt = $conn->prepare($clientSql)) {
+    $stmt->bind_param('i', $viewerTrainerId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+  } else {
+    $res = false;
+  }
+} else {
+  $res = $conn->query($clientSql);
+}
+
 if ($res) {
   while ($r = $res->fetch_assoc()) {
     if ((int)($r['is_active'] ?? 1) === 1) $active[] = $r; else $inactive[] = $r;
+  }
+  if (isset($stmt) && $stmt instanceof mysqli_stmt) {
+    $stmt->close();
   }
 }
 
@@ -1727,14 +1889,14 @@ if ($rs = $conn->query($sqlPlans)) {
 
 // --- Rendering helpers ---
 function render_clients_table(array $clients, string $csrf, string $whichTab): void {
-  global $USER_ROLE, $CLIENT_HEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_PLACEHOLDER, $CLIENT_MEASUREMENT_IS_METRIC;
+  global $USER_ROLE, $CLIENT_HEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_COLUMN_LABEL, $CLIENT_WEIGHT_PLACEHOLDER, $CLIENT_MEASUREMENT_IS_METRIC, $showTrainerColumn, $assignableTrainers, $canManageTrainerAssignments;
   $tableId = 'clientsTable-' . $whichTab;
   $searchId = 'clientSearch-' . $whichTab;
   $bulkSelectId = 'clientBulkSelect-' . $whichTab;
   $bulkButtonId = 'clientBulkApply-' . $whichTab;
   $bulkFormId = 'clientBulkForm-' . $whichTab;
   $selectAllId = 'clientSelectAll-' . $whichTab;
-  $colspan = 14;
+  $colspan = $showTrainerColumn ? 15 : 14;
   ?>
   <div class="clients-table-container" data-clients-tab="<?php echo h($whichTab); ?>" data-bulk-form-id="<?php echo h($bulkFormId); ?>">
     <div class="table-tools">
@@ -1766,6 +1928,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
           <col style="width:120px">
           <col style="width:120px">
           <col style="width:90px">
+          <?php if ($showTrainerColumn): ?>
+          <col style="min-width:200px">
+          <?php endif; ?>
           <col style="min-width:240px">
         </colgroup>
         <thead>
@@ -1783,6 +1948,9 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
             <th data-sort-key="height"><button type="button" class="sort-btn" data-sort-key="height" data-state="off"><?php echo h($CLIENT_HEIGHT_COLUMN_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="weight"><button type="button" class="sort-btn" data-sort-key="weight" data-state="off"><?php echo h($CLIENT_WEIGHT_COLUMN_LABEL); ?><span class="sort-indicator" aria-hidden="true"></span></button></th>
             <th data-sort-key="plans"><button type="button" class="sort-btn" data-sort-key="plans" data-state="off">Plans<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <?php if ($showTrainerColumn): ?>
+            <th data-sort-key="trainer"><button type="button" class="sort-btn" data-sort-key="trainer" data-state="off">Trainer<span class="sort-indicator" aria-hidden="true"></span></button></th>
+            <?php endif; ?>
             <th>Actions</th>
           </tr>
         </thead>
@@ -1817,11 +1985,30 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
           $emailSort = strtolower(trim((string)($c['email'] ?? '')));
           $genderSort = strtolower(trim((string)($c['gender'] ?? '')));
           $plansCount = (int)($c['plans_count'] ?? 0);
+          $trainerFirst = trim((string)($c['trainer_first_name'] ?? ''));
+          $trainerLast = trim((string)($c['trainer_last_name'] ?? ''));
+          $trainerDisplay = trim($trainerFirst . ' ' . $trainerLast);
+          if ($trainerDisplay === '') {
+            $trainerEmail = trim((string)($c['trainer_email'] ?? ''));
+            $trainerDisplay = $trainerEmail !== '' ? $trainerEmail : 'Unassigned';
+          }
+          $trainerSort = strtolower(trim($trainerDisplay));
+          $assignedTrainerId = (int)($c['assigned_trainer_id'] ?? 0);
+          $clientFirst = trim((string)($c['first_name'] ?? ''));
+          $clientLast = trim((string)($c['last_name'] ?? ''));
+          $clientDisplayName = trim($clientFirst . ' ' . $clientLast);
+          if ($clientDisplayName === '') {
+            $clientEmail = trim((string)($c['email'] ?? ''));
+            $clientDisplayName = $clientEmail !== '' ? $clientEmail : '';
+          }
+          if ($clientDisplayName === '') {
+            $clientDisplayName = 'Client #' . $id;
+          }
           $orderIndex = $index++;
           $heightSortAttr = ($heightSort === '') ? '' : (string)$heightSort;
           $labelName = trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? ''));
         ?>
-          <tr class="client-row" data-uid="<?php echo $id; ?>" data-order="<?php echo $orderIndex; ?>" data-sort-id="<?php echo $id; ?>" data-sort-first="<?php echo h($firstSort); ?>" data-sort-middle="<?php echo h($middleSort); ?>" data-sort-last="<?php echo h($lastSort); ?>" data-sort-email="<?php echo h($emailSort); ?>" data-sort-phone="<?php echo h($phoneDigits); ?>" data-sort-birthdate="<?php echo h($birthAttr); ?>" data-sort-age="<?php echo $ageYears === null ? '' : (int)$ageYears; ?>" data-sort-gender="<?php echo h($genderSort); ?>" data-sort-height="<?php echo h($heightSortAttr); ?>" data-sort-weight="<?php echo h($weightSortAttr); ?>" data-sort-plans="<?php echo $plansCount; ?>">
+          <tr class="client-row" data-uid="<?php echo $id; ?>" data-order="<?php echo $orderIndex; ?>" data-sort-id="<?php echo $id; ?>" data-sort-first="<?php echo h($firstSort); ?>" data-sort-middle="<?php echo h($middleSort); ?>" data-sort-last="<?php echo h($lastSort); ?>" data-sort-email="<?php echo h($emailSort); ?>" data-sort-phone="<?php echo h($phoneDigits); ?>" data-sort-birthdate="<?php echo h($birthAttr); ?>" data-sort-age="<?php echo $ageYears === null ? '' : (int)$ageYears; ?>" data-sort-gender="<?php echo h($genderSort); ?>" data-sort-height="<?php echo h($heightSortAttr); ?>" data-sort-weight="<?php echo h($weightSortAttr); ?>" data-sort-plans="<?php echo $plansCount; ?>"<?php if ($showTrainerColumn): ?> data-sort-trainer="<?php echo h($trainerSort); ?>"<?php endif; ?>>
             <td>
               <input type="checkbox" class="client-select" value="<?php echo $id; ?>" data-client-checkbox aria-label="Select <?php echo h($labelName !== '' ? $labelName : ('Client #' . $id)); ?>"<?php echo $targetIsSuper ? ' disabled aria-disabled="true" title="Super Admin accounts cannot be selected"' : ''; ?>>
             </td>
@@ -1924,6 +2111,10 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 
             <td><?php echo $plansCount; ?></td>
 
+            <?php if ($showTrainerColumn): ?>
+            <td data-label="Trainer"><?php echo h($trainerDisplay); ?></td>
+            <?php endif; ?>
+
             <td>
               <div class="actions">
                 <?php if (is_trainer_admin($USER_ROLE ?? null) && $isLocked): ?>
@@ -1941,6 +2132,25 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
                   <a class="btn small" href="clients.php?tab=<?php echo urlencode($whichTab); ?>">Cancel</a>
                 <?php else: ?>
                   <a class="btn small" href="clients.php?tab=<?php echo urlencode($whichTab); ?>&edit=<?php echo $id; ?>">Edit</a>
+                <?php endif; ?>
+
+                <?php if (!$editing && $canManageTrainerAssignments): ?>
+                  <?php if ($assignedTrainerId > 0): ?>
+                    <?php
+                      $confirmTrainer = ($trainerDisplay !== '' && $trainerDisplay !== 'Unassigned') ? $trainerDisplay : 'this trainer';
+                      $confirmMessage = 'Unassign ' . $clientDisplayName . ' from ' . $confirmTrainer . '?';
+                    ?>
+                    <form method="post" onsubmit="return confirm('<?php echo h($confirmMessage); ?>');">
+                      <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+                      <input type="hidden" name="action" value="unassign_trainer">
+                      <input type="hidden" name="user_id" value="<?php echo $id; ?>">
+                      <input type="hidden" name="trainer_id" value="<?php echo $assignedTrainerId; ?>">
+                      <button class="btn small warn" type="submit">Unassign Trainer</button>
+                    </form>
+                  <?php else: ?>
+                    <?php $assignBtnDisabled = empty($assignableTrainers); ?>
+                    <button class="btn small brand" type="button" data-open-assign-trainer data-client-id="<?php echo $id; ?>" data-client-name="<?php echo h($clientDisplayName); ?>"<?php echo $assignBtnDisabled ? ' disabled title="No trainers available"' : ''; ?>>Assign Trainer</button>
+                  <?php endif; ?>
                 <?php endif; ?>
 
                 <?php if (!$has_password): ?>
@@ -2432,6 +2642,36 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 })();
 </script>
 
+<?php if ($canManageTrainerAssignments): ?>
+<div class="backdrop" id="bdAssignTrainer" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000"></div>
+<div class="modal" id="mdAssignTrainer" role="dialog" aria-modal="true" aria-labelledby="assignTrainerTitle"
+     style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,92vw);
+            background:rgba(9,14,28,0.72);border:1px solid var(--line);border-radius:14px;padding:18px;display:none;z-index:3001">
+  <h3 id="assignTrainerTitle" style="margin:0 0 12px 0;font-size:16px">Assign Trainer</h3>
+  <form method="post" id="assignTrainerForm">
+    <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+    <input type="hidden" name="action" value="assign_trainer">
+    <input type="hidden" name="user_id" value="">
+    <p style="margin-top:0;margin-bottom:12px;color:#cbd5f5">Assign <strong data-assign-trainer-client>this client</strong> to a trainer.</p>
+    <?php if ($assignableTrainers): ?>
+    <label class="fine" for="assignTrainerSelect" style="display:block;margin-bottom:6px;color:#cbd5f5">Select Trainer</label>
+    <select class="input" id="assignTrainerSelect" name="trainer_id" required style="width:100%">
+      <option value="" disabled selected>Choose a trainer…</option>
+      <?php foreach ($assignableTrainers as $trainer): ?>
+        <option value="<?php echo (int)$trainer['id']; ?>"><?php echo h($trainer['name']); ?></option>
+      <?php endforeach; ?>
+    </select>
+    <?php else: ?>
+    <p class="muted" style="margin:0 0 16px 0">No trainers are currently available to assign.</p>
+    <?php endif; ?>
+    <div class="actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap">
+      <button class="btn" type="button" data-assign-trainer-cancel>Cancel</button>
+      <button class="btn brand" type="submit"<?php echo empty($assignableTrainers) ? ' disabled' : ''; ?>>Assign</button>
+    </div>
+  </form>
+</div>
+<?php endif; ?>
+
 <!-- Pick Plan modal -->
 <div class="backdrop" id="bdPickPlan" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:3000"></div>
 <div class="modal" id="mdPickPlan" role="dialog" aria-modal="true" aria-labelledby="ppTitle"
@@ -2515,6 +2755,51 @@ function render_clients_table(array $clients, string $csrf, string $whichTab): v
 const measurementConfig = <?php echo json_encode($CLIENT_MEASUREMENT_JS, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 window.ppfMeasurement = measurementConfig;
 const measurementWeightPlaceholder = <?php echo json_encode($CLIENT_WEIGHT_PLACEHOLDER, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+<?php if ($canManageTrainerAssignments): ?>
+(function(){
+  const backdrop = document.getElementById('bdAssignTrainer');
+  const modal = document.getElementById('mdAssignTrainer');
+  if (!backdrop || !modal) return;
+  const form = modal.querySelector('#assignTrainerForm');
+  const userInput = form ? form.querySelector('input[name="user_id"]') : null;
+  const trainerSelect = modal.querySelector('#assignTrainerSelect');
+  const clientNameEl = modal.querySelector('[data-assign-trainer-client]');
+  const cancelBtn = modal.querySelector('[data-assign-trainer-cancel]');
+  const openButtons = document.querySelectorAll('[data-open-assign-trainer]');
+
+  function openModal(clientId, clientName) {
+    if (userInput) userInput.value = clientId || '';
+    if (clientNameEl) clientNameEl.textContent = clientName || 'this client';
+    if (trainerSelect) {
+      trainerSelect.selectedIndex = 0;
+      setTimeout(() => trainerSelect.focus(), 0);
+    }
+    modal.style.display = 'block';
+    backdrop.style.display = 'block';
+  }
+
+  function closeModal() {
+    modal.style.display = 'none';
+    backdrop.style.display = 'none';
+  }
+
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+  backdrop.addEventListener('click', closeModal);
+  document.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Escape' && modal.style.display === 'block') {
+      closeModal();
+    }
+  });
+
+  openButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const clientId = btn.getAttribute('data-client-id') || '';
+      const clientName = btn.getAttribute('data-client-name') || '';
+      openModal(clientId, clientName);
+    });
+  });
+})();
+<?php endif; ?>
 // phone input formatting (existing)
 document.addEventListener('input', function(e){
   if (e.target && e.target.name === 'phone') {
@@ -2574,7 +2859,8 @@ const CLIENT_SORT_TYPES = {
   gender: 'string',
   height: 'number',
   weight: 'number',
-  plans: 'number'
+  plans: 'number',
+  trainer: 'string'
 };
 
 (function(){
