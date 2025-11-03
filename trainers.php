@@ -604,6 +604,71 @@ try {
             trainers_redirect_tab($tab);
         }
 
+        if ($action === 'unassign_trainer_client') {
+            $actorRoleKey = ppf_role_key($USER_ROLE ?? '');
+            if (!ppf_is_admin_role($actorRoleKey) && !in_array($actorRoleKey, ['trainer_admin', 'admin_trainer'], true)) {
+                throw new Exception('You do not have permission to unassign clients.');
+            }
+
+            $trainerId = (int)($_POST['trainer_id'] ?? 0);
+            $clientId = (int)($_POST['client_id'] ?? 0);
+            if ($trainerId <= 0 || $clientId <= 0) {
+                throw new Exception('Select a valid client to unassign.');
+            }
+
+            $check = $conn->prepare("SELECT assigned_trainer_id FROM users WHERE id = ? AND (role='client' OR is_client=1) LIMIT 1");
+            if (!$check) {
+                throw new Exception('Unable to verify client assignment.');
+            }
+            $check->bind_param('i', $clientId);
+            $check->execute();
+            $res = $check->get_result();
+            $row = $res ? $res->fetch_assoc() : null;
+            $check->close();
+
+            if (!$row) {
+                throw new Exception('Client not found.');
+            }
+
+            $currentTrainerId = (int)($row['assigned_trainer_id'] ?? 0);
+            if ($currentTrainerId !== $trainerId) {
+                throw new Exception('This client is not assigned to that trainer.');
+            }
+
+            $update = $conn->prepare('UPDATE users SET assigned_trainer_id = NULL WHERE id = ? AND assigned_trainer_id = ?');
+            if (!$update) {
+                throw new Exception('Failed to prepare unassign request.');
+            }
+            $update->bind_param('ii', $clientId, $trainerId);
+            if (!$update->execute() || $update->affected_rows < 1) {
+                $update->close();
+                throw new Exception('Failed to unassign client from trainer.');
+            }
+            $update->close();
+
+            if (function_exists('ppf_log')) {
+                $details = json_encode([
+                    'trainer_id' => $trainerId,
+                    'client_id' => $clientId,
+                ], JSON_UNESCAPED_SLASHES);
+                ppf_log(
+                    $conn,
+                    $USER_ID ?? null,
+                    $USER_EMAIL ?? null,
+                    $USER_ROLE ?? null,
+                    'trainer_client_unassigned',
+                    'user',
+                    (string)$clientId,
+                    $details
+                );
+            }
+
+            $flash = 'Client unassigned from this trainer.';
+            $flashType = 'ok';
+            trainers_flash($flashType, $flash);
+            trainers_redirect_tab($tab);
+        }
+
     }
 }
 catch (Throwable $e) {
@@ -791,11 +856,13 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                                                 <th>Weight</th>
                                                 <th>Status</th>
                                                 <th>Plans</th>
+                                                <th>Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                         <?php if ($assignedClients): ?>
                                             <?php foreach ($assignedClients as $client):
+                                                $clientId = (int)($client['id'] ?? 0);
                                                 $firstName = (string)($client['first_name'] ?? '');
                                                 $middleName = (string)($client['middle_name'] ?? '');
                                                 $lastName = (string)($client['last_name'] ?? '');
@@ -822,15 +889,26 @@ function trainers_render_table(array $rows, string $csrf, string $tab, int $edit
                                                     <td><?php echo $weightDisplay ? trainers_h($weightDisplay) : '—'; ?></td>
                                                     <td><?php echo trainers_h($statusText); ?></td>
                                                     <td><?php echo (int)($client['plans_count'] ?? 0); ?></td>
+                                                    <td>
+                                                        <?php if ($clientId > 0): ?>
+                                                            <form method="post" onsubmit="return confirm('Unassign this client from <?php echo trainers_h($trainerDisplay); ?>?');">
+                                                                <input type="hidden" name="csrf_token" value="<?php echo trainers_h($csrf); ?>">
+                                                                <input type="hidden" name="action" value="unassign_trainer_client">
+                                                                <input type="hidden" name="trainer_id" value="<?php echo $id; ?>">
+                                                                <input type="hidden" name="client_id" value="<?php echo $clientId; ?>">
+                                                                <button class="btn small warn" type="submit">Unassign</button>
+                                                            </form>
+                                                        <?php endif; ?>
+                                                    </td>
                                                 </tr>
                                             <?php endforeach; ?>
                                         <?php else: ?>
                                             <tr>
-                                                <td colspan="12" class="muted">No clients assigned yet.</td>
+                                                <td colspan="13" class="muted">No clients assigned yet.</td>
                                             </tr>
                                         <?php endif; ?>
                                             <tr class="trainer-assign-row" data-assign-open="<?php echo $id; ?>" data-trainer-name="<?php echo trainers_h($trainerDisplay); ?>" data-modal-open="assignModal">
-                                                <td colspan="12">+ Assign Client</td>
+                                                <td colspan="13">+ Assign Client</td>
                                             </tr>
                                         </tbody>
                                     </table>
