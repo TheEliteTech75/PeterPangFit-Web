@@ -675,6 +675,24 @@ if (!function_exists('ppf_measurement_ensure_columns')) {
   }
 }
 
+if (!function_exists('ppf_assignments_ensure_columns')) {
+  function ppf_assignments_ensure_columns(mysqli $conn): void {
+    static $checked = false;
+    if ($checked) {
+      return;
+    }
+    $checked = true;
+    try {
+      if (!column_exists($conn, 'users', 'assigned_trainer_id')) {
+        @$conn->query("ALTER TABLE users ADD COLUMN assigned_trainer_id INT NULL DEFAULT NULL AFTER is_active");
+      }
+      @$conn->query("ALTER TABLE users ADD INDEX idx_assigned_trainer (assigned_trainer_id)");
+    } catch (Throwable $e) {
+      // Non-fatal; schema may be managed externally.
+    }
+  }
+}
+
 if (!function_exists('ppf_measurement_set_session')) {
   function ppf_measurement_set_session(string $system): void {
     if (session_status() !== PHP_SESSION_ACTIVE) {
