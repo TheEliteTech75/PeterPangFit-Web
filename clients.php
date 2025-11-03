@@ -383,6 +383,7 @@ $tab = ($_GET['tab'] ?? 'active') === 'inactive' ? 'inactive' : 'active';
 ensure_is_active_column($conn);
 ensure_user_plan_exercise_tracking_columns($conn);
 ensure_invite_columns($conn);
+ppf_assignments_ensure_columns($conn);
 
 $HAS_UPE_UPDATED_AT = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_at');
 $HAS_UPE_UPDATED_BY = ppf_column_exists_uncached($conn, 'user_plan_exercises', 'updated_by');
@@ -458,6 +459,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $sent = [];
         $failed = [];
+        $assignTrainerId = null;
+        $inviterRoleKey = ppf_role_key($USER_ROLE ?? '');
+        if (in_array($inviterRoleKey, ['trainer', 'trainer_admin', 'admin_trainer'], true)) {
+          $assignTrainerId = (int)($USER_ID ?? 0);
+          if ($assignTrainerId <= 0) {
+            $assignTrainerId = null;
+          }
+        }
 
         foreach ($emails as $email) {
           $conn->begin_transaction();
@@ -530,6 +539,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               throw new Exception('Failed to create invite for ' . $email . '.');
             }
             $invite->close();
+
+            if ($assignTrainerId) {
+              $assignStmt = $conn->prepare('UPDATE users SET assigned_trainer_id = ? WHERE id = ?');
+              if ($assignStmt) {
+                $assignStmt->bind_param('ii', $assignTrainerId, $userId);
+                if (!$assignStmt->execute()) {
+                  $assignStmt->close();
+                  throw new Exception('Failed to assign client to trainer.');
+                }
+                $assignStmt->close();
+              }
+            }
 
             $conn->commit();
 
@@ -1435,22 +1456,55 @@ require_once __DIR__ . '/ppf_subheader.php';
 
 // ---------- Load clients (split active / inactive) ----------
 $active = []; $inactive = [];
-$q = "
+$viewerRoleKey = ppf_role_key($USER_ROLE ?? '');
+$viewerTrainerId = null;
+if ($viewerRoleKey === 'trainer') {
+  $viewerTrainerId = (int)($USER_ID ?? 0);
+  if ($viewerTrainerId <= 0) {
+    $viewerTrainerId = null;
+  }
+}
+
+$clientSql = "
   SELECT
     u.id, u.role, u.is_client, u.is_active, u.email, u.phone, u.birthdate, u.gender,
     u.first_name, u.middle_name, u.last_name,
     u.height_ft, u.height_in, u.weight_lbs,
     u.password_hash,
     u.locked_until,
+    u.assigned_trainer_id,
+    t.first_name AS trainer_first_name,
+    t.last_name AS trainer_last_name,
+    t.email AS trainer_email,
     COALESCE((SELECT COUNT(*) FROM user_plans up WHERE up.user_id = u.id), 0) AS plans_count
   FROM users u
-  WHERE u.role='client' OR u.is_client=1
-  ORDER BY u.last_name, u.first_name, u.id
-";
-$res = $conn->query($q);
+  LEFT JOIN users t ON t.id = u.assigned_trainer_id
+  WHERE u.role='client' OR u.is_client=1";
+
+if ($viewerTrainerId) {
+  $clientSql .= " AND (u.assigned_trainer_id = ? OR u.assigned_trainer_id IS NULL)";
+}
+
+$clientSql .= " ORDER BY u.last_name, u.first_name, u.id";
+
+if ($viewerTrainerId) {
+  if ($stmt = $conn->prepare($clientSql)) {
+    $stmt->bind_param('i', $viewerTrainerId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+  } else {
+    $res = false;
+  }
+} else {
+  $res = $conn->query($clientSql);
+}
+
 if ($res) {
   while ($r = $res->fetch_assoc()) {
     if ((int)($r['is_active'] ?? 1) === 1) $active[] = $r; else $inactive[] = $r;
+  }
+  if (isset($stmt) && $stmt instanceof mysqli_stmt) {
+    $stmt->close();
   }
 }
 
