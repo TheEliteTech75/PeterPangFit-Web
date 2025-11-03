@@ -96,7 +96,7 @@ $home = [
   'icon'  => '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 3l9 8h-3v9H6v-9H3l9-8z"/></svg>',
   'items' => [
     ['href' => 'dashboard.php', 'label' => 'Dashboard'],
-    ['href' => 'client_plans.php' . ($userId > 0 ? ('?user_id=' . urlencode((string)$userId)) : ''), 'label' => 'My Workout Plans'],
+    ['href' => 'client_plans.php' . ($userId > 0 ? ('?user_id=' . urlencode((string)$userId)) : ''), 'label' => 'Training Center'],
   ],
 ];
 

@@ -68,6 +68,12 @@ if (!is_trainer_admin($USER_ROLE ?? null)) {
   exit;
 }
 
+$roleKey = ppf_role_key($USER_ROLE ?? 'guest');
+$actorId = (int)($USER_ID ?? 0);
+$isTrainer = ($roleKey === 'trainer');
+$isTrainerAdmin = ($roleKey === 'trainer_admin');
+$isTrainerAdminOrHigher = $isTrainerAdmin || ppf_is_admin_role($USER_ROLE ?? null);
+
 $EXERCISES_MEASUREMENT_SYSTEM = ppf_measurement_user_system();
 $EXERCISES_MEASUREMENT_LABEL = $EXERCISES_MEASUREMENT_SYSTEM === 'metric' ? 'Metric (kg)' : 'Imperial (lbs)';
 $EXERCISES_MEASUREMENT_JS = ppf_measurement_js_config();
@@ -319,16 +325,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($name === '') throw new Exception('Exercise name is required.');
 
         $before = ['name' => null, 'notes' => null];
-        if ($stmt = $conn->prepare("SELECT name, notes FROM exercises WHERE id = ?")) {
+        $exerciseOwnerId = null;
+        $exerciseInfoCols = 'name, notes';
+        if ($HAS_CREATED_BY) {
+          $exerciseInfoCols .= ', created_by';
+        }
+        if ($stmt = $conn->prepare("SELECT {$exerciseInfoCols} FROM exercises WHERE id = ?")) {
           $stmt->bind_param("i", $id);
           $stmt->execute();
           if ($res = $stmt->get_result()) {
             if ($row = $res->fetch_assoc()) {
               $before['name'] = $row['name'] ?? null;
               $before['notes'] = $row['notes'] ?? null;
+              if ($HAS_CREATED_BY) {
+                $exerciseOwnerId = isset($row['created_by']) ? (int)$row['created_by'] : null;
+              }
             }
           }
           $stmt->close();
+        }
+        if ($isTrainer && $HAS_CREATED_BY && $exerciseOwnerId !== $actorId) {
+          throw new Exception('You do not have permission to edit this exercise.');
         }
         $beforeCats = [];
         if ($stmt = $conn->prepare("SELECT category_id FROM exercise_categories WHERE exercise_id = ?")) {
@@ -395,16 +412,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int)$_POST['exercise_id'];
         if ($id <= 0) throw new Exception('Invalid exercise.');
         $exercise_info = ['name' => null, 'notes' => null, 'category_ids' => [], 'plan_usage' => 0];
-        if ($stmt = $conn->prepare("SELECT name, notes FROM exercises WHERE id = ?")) {
+        $exerciseOwnerId = null;
+        $exerciseInfoCols = 'name, notes';
+        if ($HAS_CREATED_BY) {
+          $exerciseInfoCols .= ', created_by';
+        }
+        if ($stmt = $conn->prepare("SELECT {$exerciseInfoCols} FROM exercises WHERE id = ?")) {
           $stmt->bind_param("i", $id);
           $stmt->execute();
           if ($res = $stmt->get_result()) {
             if ($row = $res->fetch_assoc()) {
               $exercise_info['name'] = $row['name'] ?? null;
               $exercise_info['notes'] = $row['notes'] ?? null;
+              if ($HAS_CREATED_BY) {
+                $exerciseOwnerId = isset($row['created_by']) ? (int)$row['created_by'] : null;
+              }
             }
           }
           $stmt->close();
+        }
+        if ($isTrainer && $HAS_CREATED_BY && $exerciseOwnerId !== $actorId) {
+          throw new Exception('You do not have permission to delete this exercise.');
         }
         if ($stmt = $conn->prepare("SELECT category_id FROM exercise_categories WHERE exercise_id = ?")) {
           $stmt->bind_param("i", $id);
@@ -474,6 +502,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $autoplay = isset($_POST['video_autoplay']) ? 1 : 0;
         $loop     = isset($_POST['video_loop']) ? 1 : 0;
         $muted    = isset($_POST['video_muted']) ? 1 : 0;
+
+        $exerciseOwnerId = null;
+        if ($HAS_CREATED_BY) {
+          if ($stmtOwner = $conn->prepare('SELECT created_by FROM exercises WHERE id = ? LIMIT 1')) {
+            $stmtOwner->bind_param('i', $id);
+            if ($stmtOwner->execute() && ($resOwner = $stmtOwner->get_result())) {
+              $rowOwner = $resOwner->fetch_assoc();
+              if ($rowOwner) {
+                $exerciseOwnerId = isset($rowOwner['created_by']) ? (int)$rowOwner['created_by'] : null;
+              }
+            }
+            $stmtOwner->close();
+          }
+          if ($isTrainer && $exerciseOwnerId !== $actorId) {
+            throw new Exception('You do not have permission to update this exercise.');
+          }
+        }
 
         if ($HAS_UPDATED_AT || $HAS_UPDATED_BY) {
           $by = (int)($USER_ID ?? 0);
@@ -839,6 +884,8 @@ require_once __DIR__ . '/ppf_subheader.php';
         $hasCaptions = !empty($ex['captions_vtt_url']);
         $poster = $ex['video_poster_url'] ?? '';
         $thumbHtml = $poster ? '<div class="thumb-mini"><img src="'.h($poster).'" alt="thumb"></div>' : '';
+        $exerciseOwnerIdForDisplay = $HAS_CREATED_BY ? ($createdBy ? (int)$createdBy : null) : $actorId;
+        $canModifyExercise = !$HAS_CREATED_BY || $isTrainerAdminOrHigher || ($isTrainer && $exerciseOwnerIdForDisplay === $actorId);
       ?>
         <?php
           $sortName = strtolower($ex['name'] ?? '');
@@ -912,6 +959,7 @@ require_once __DIR__ . '/ppf_subheader.php';
               // Prepare data attribute with comma-separated cat IDs for this exercise
               $dataCatIds = implode(',', array_map(fn($x)=> (string)(int)$x['id'], $catsForEx));
             ?>
+            <?php if ($canModifyExercise): ?>
             <button class="btn small" type="button"
               data-edit
               data-ex-id="<?php echo $eid; ?>"
@@ -924,6 +972,9 @@ require_once __DIR__ . '/ppf_subheader.php';
               data-ex-id="<?php echo $eid; ?>"
               data-ex-name="<?php echo h($ex['name']); ?>"
             >Delete</button>
+            <?php else: ?>
+            <span class="muted" style="align-self:center;">View only</span>
+            <?php endif; ?>
           </td>
         </tr>
 

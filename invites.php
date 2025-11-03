@@ -32,10 +32,27 @@ function fmt_dt($s) {
 }
 // Gate: trainers & admins only
 $roleKey = ppf_role_key($USER_ROLE ?? 'guest');
-if (!in_array($roleKey, ['trainer', 'trainer_admin'], true) && !ppf_is_admin_role($USER_ROLE ?? null)) {
+$isAdminRole = ppf_is_admin_role($USER_ROLE ?? null);
+if (!in_array($roleKey, ['trainer', 'trainer_admin'], true) && !$isAdminRole) {
     require_once __DIR__ . '/access_denied.php';
     exit;
 }
+
+$actorId = (int)($USER_ID ?? 0);
+$isTrainer = ($roleKey === 'trainer');
+$isTrainerAdmin = ($roleKey === 'trainer_admin');
+$isTrainerAdminOrHigher = $isTrainerAdmin || $isAdminRole;
+$showSentByColumn = $isTrainerAdminOrHigher;
+$inviteSortTypes = [
+    'created' => 'number',
+    'accepted' => 'number',
+    'registered' => 'number',
+    'expires' => 'number',
+];
+if ($showSentByColumn) {
+    $inviteSortTypes = ['sent-by' => 'string'] + $inviteSortTypes;
+}
+$inviteColumnsCount = $showSentByColumn ? 8 : 7;
 
 $flash = null;
 
@@ -67,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $invite_id = (int)($_POST['invite_id'] ?? 0);
         if ($invite_id > 0) {
             $inviteRow = null;
-            if ($fetch = $conn->prepare('SELECT id, user_id, email, expires_at, cancelled_at, created_at, COALESCE(used,0) AS used FROM invites WHERE id = ? LIMIT 1')) {
+            if ($fetch = $conn->prepare('SELECT id, user_id, email, expires_at, cancelled_at, created_at, COALESCE(used,0) AS used, created_by FROM invites WHERE id = ? LIMIT 1')) {
                 $fetch->bind_param('i', $invite_id);
                 if ($fetch->execute()) {
                     $res = $fetch->get_result();
@@ -78,22 +95,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $fetch->close();
             }
 
-            if ($stmt = $conn->prepare("UPDATE invites SET cancelled_at = NOW() WHERE id = ? AND cancelled_at IS NULL")) {
-                $stmt->bind_param("i", $invite_id);
-                if ($stmt->execute()) {
-                    $flash = $stmt->affected_rows > 0
-                        ? "Invite was cancelled."
-                        : "No change — invite may already be cancelled.";
-                    if ($stmt->affected_rows > 0 && $inviteRow) {
-                        $inviteRow['status'] = 'Cancelled';
-                        ppf_cleanup_invite_user_record($conn, $inviteRow);
-                    }
-                } else {
-                    $flash = "Database error while cancelling invite.";
-                }
-                $stmt->close();
+            $ownsInvite = !$isTrainer || (int)($inviteRow['created_by'] ?? 0) === $actorId;
+
+            if (!$ownsInvite) {
+                $flash = 'You do not have permission to cancel this invite.';
             } else {
-                $flash = "Database error preparing cancel statement.";
+                $sql = $isTrainer
+                    ? "UPDATE invites SET cancelled_at = NOW() WHERE id = ? AND cancelled_at IS NULL AND created_by = ?"
+                    : "UPDATE invites SET cancelled_at = NOW() WHERE id = ? AND cancelled_at IS NULL";
+                if ($stmt = $conn->prepare($sql)) {
+                    if ($isTrainer) {
+                        $stmt->bind_param('ii', $invite_id, $actorId);
+                    } else {
+                        $stmt->bind_param('i', $invite_id);
+                    }
+                    if ($stmt->execute()) {
+                        $flash = $stmt->affected_rows > 0
+                            ? 'Invite was cancelled.'
+                            : 'No change — invite may already be cancelled.';
+                        if ($stmt->affected_rows > 0 && $inviteRow) {
+                            $inviteRow['status'] = 'Cancelled';
+                            ppf_cleanup_invite_user_record($conn, $inviteRow);
+                        }
+                    } else {
+                        $flash = 'Database error while cancelling invite.';
+                    }
+                    $stmt->close();
+                } else {
+                    $flash = 'Database error preparing cancel statement.';
+                }
             }
         } else {
             $flash = "Invalid invite reference.";
@@ -104,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = 'Invalid invite reference.';
         } else {
             $row = null;
-            $sql = "SELECT i.id, i.email, i.created_at, i.expires_at, i.cancelled_at, COALESCE(i.used,0) AS used, i.user_id, u.role AS user_role"
+            $sql = "SELECT i.id, i.email, i.created_at, i.expires_at, i.cancelled_at, COALESCE(i.used,0) AS used, i.user_id, u.role AS user_role, i.created_by"
                  . " FROM invites i"
                  . " LEFT JOIN users u ON u.id = i.user_id"
                  . " WHERE i.id = ?"
@@ -122,6 +152,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!$row) {
                 $flash = 'Invite not found.';
+            } elseif ($isTrainer && (int)($row['created_by'] ?? 0) !== $actorId) {
+                $flash = 'You do not have permission to resend this invite.';
             } else {
                 $cancelled = !empty($row['cancelled_at']);
                 $expired = false;
@@ -247,41 +279,68 @@ $sql = "
   SELECT i.id, i.email, i.token, i.created_at, i.accepted_at, i.completed_at,
          i.expires_at, i.cancelled_at, i.created_by, COALESCE(i.used,0) AS used,
          i.user_id, u.first_name AS user_first_name, u.last_name AS user_last_name,
-         u.role AS user_role
+         u.role AS user_role,
+         sender.first_name AS creator_first_name,
+         sender.last_name AS creator_last_name,
+         sender.email AS creator_email
   FROM invites i
   LEFT JOIN users u ON u.id = i.user_id
-  ORDER BY i.created_at DESC
+  LEFT JOIN users sender ON sender.id = i.created_by
 ";
-if ($res = $conn->query($sql)) {
-    $now = new DateTimeImmutable('now');
+$types = '';
+$params = [];
+if ($isTrainer) {
+    $sql .= " WHERE i.created_by = ?";
+    $types = 'i';
+    $params[] = $actorId;
+}
+$sql .= " ORDER BY i.created_at DESC";
 
-    while ($row = $res->fetch_assoc()) {
-        $cancelled = !empty($row['cancelled_at']);
-        $expiresAt = !empty($row['expires_at']) ? new DateTimeImmutable($row['expires_at']) : null;
-        $accepted  = !empty($row['accepted_at']);
-        $registered= ((int)($row['used'] ?? 0) === 1) || !empty($row['completed_at']);
-
-        if ($cancelled) {
-            $row['status'] = 'Cancelled';
-        } elseif ($expiresAt && $expiresAt < $now && !$registered) {
-            $row['status'] = 'Expired';
-        } elseif ($registered) {
-            $row['status'] = 'Registered';
-        } elseif ($accepted) {
-            $row['status'] = 'Accepted';
-        } else {
-            $row['status'] = 'Pending';
-        }
-
-        $row['_invite_type'] = ppf_determine_invite_type($row);
-
-        if (in_array($row['status'], ['Cancelled', 'Canceled', 'Expired'], true)) {
-            ppf_cleanup_invite_user_record($conn, $row);
-        }
-
-        $invites[] = $row;
+if ($stmtInvites = $conn->prepare($sql)) {
+    if ($types !== '') {
+        $stmtInvites->bind_param($types, ...$params);
     }
-    $res->free();
+    if ($stmtInvites->execute()) {
+        $res = $stmtInvites->get_result();
+        if ($res) {
+            $now = new DateTimeImmutable('now');
+            while ($row = $res->fetch_assoc()) {
+                $cancelled = !empty($row['cancelled_at']);
+                $expiresAt = !empty($row['expires_at']) ? new DateTimeImmutable($row['expires_at']) : null;
+                $accepted  = !empty($row['accepted_at']);
+                $registered= ((int)($row['used'] ?? 0) === 1) || !empty($row['completed_at']);
+
+                if ($cancelled) {
+                    $row['status'] = 'Cancelled';
+                } elseif ($expiresAt && $expiresAt < $now && !$registered) {
+                    $row['status'] = 'Expired';
+                } elseif ($registered) {
+                    $row['status'] = 'Registered';
+                } elseif ($accepted) {
+                    $row['status'] = 'Accepted';
+                } else {
+                    $row['status'] = 'Pending';
+                }
+
+                $row['_invite_type'] = ppf_determine_invite_type($row);
+
+                $creatorRaw = trim((string)($row['creator_first_name'] ?? '') . ' ' . (string)($row['creator_last_name'] ?? ''));
+                if ($creatorRaw === '') {
+                    $creatorRaw = trim((string)($row['creator_email'] ?? ''));
+                }
+                $row['_creator_display'] = $creatorRaw !== '' ? $creatorRaw : '—';
+                $row['_creator_sort'] = strtolower($creatorRaw);
+
+                if (in_array($row['status'], ['Cancelled', 'Canceled', 'Expired'], true)) {
+                    ppf_cleanup_invite_user_record($conn, $row);
+                }
+
+                $invites[] = $row;
+            }
+            $res->free();
+        }
+    }
+    $stmtInvites->close();
 } else {
     // (optional) see why query failed:
     // error_log('Invites query failed: '.$conn->error);
@@ -402,6 +461,9 @@ if ($res = $conn->query($sql)) {
     <table id="invitesTable">
       <colgroup>
         <col style="min-width:220px">
+        <?php if ($showSentByColumn): ?>
+        <col style="min-width:200px">
+        <?php endif; ?>
         <col style="min-width:180px">
         <col style="min-width:180px">
         <col style="min-width:180px">
@@ -412,6 +474,9 @@ if ($res = $conn->query($sql)) {
       <thead>
         <tr>
           <th data-sort-key="email"><button type="button" class="sort-btn" data-sort-key="email" data-state="off">Email<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <?php if ($showSentByColumn): ?>
+          <th data-sort-key="sent-by"><button type="button" class="sort-btn" data-sort-key="sent-by" data-state="off">Sent by<span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <?php endif; ?>
           <th data-sort-key="created"><button type="button" class="sort-btn" data-sort-key="created" data-state="off">Created<span class="sort-indicator" aria-hidden="true"></span></button></th>
           <th data-sort-key="accepted"><button type="button" class="sort-btn" data-sort-key="accepted" data-state="off">Accepted<span class="sort-indicator" aria-hidden="true"></span></button></th>
           <th data-sort-key="registered"><button type="button" class="sort-btn" data-sort-key="registered" data-state="off">Registered<span class="sort-indicator" aria-hidden="true"></span></button></th>
@@ -422,7 +487,7 @@ if ($res = $conn->query($sql)) {
       </thead>
       <tbody>
       <?php if (!$invites): ?>
-        <tr><td colspan="7" class="muted">No invites found.</td></tr>
+        <tr><td colspan="<?php echo (int)$inviteColumnsCount; ?>" class="muted">No invites found.</td></tr>
       <?php else: foreach ($invites as $row):
         $registeredFlag = ((int)($row['used'] ?? 0) === 1) || !empty($row['completed_at']);
         $sortEmail = strtolower($row['email'] ?? '');
@@ -449,9 +514,14 @@ if ($res = $conn->query($sql)) {
             $sortExpires = $tmp === false ? 0 : $tmp;
         }
         $sortStatus = strtolower($row['status'] ?? '');
+        $creatorDisplay = $row['_creator_display'] ?? '—';
+        $creatorSort = $row['_creator_sort'] ?? '';
       ?>
         <tr
           data-sort-email="<?php echo h($sortEmail); ?>"
+          <?php if ($showSentByColumn): ?>
+          data-sort-sent-by="<?php echo h($creatorSort); ?>"
+          <?php endif; ?>
           data-sort-created="<?php echo h((string)$sortCreated); ?>"
           data-sort-accepted="<?php echo h((string)$sortAccepted); ?>"
           data-sort-registered="<?php echo h((string)$sortRegistered); ?>"
@@ -459,6 +529,9 @@ if ($res = $conn->query($sql)) {
           data-sort-status="<?php echo h($sortStatus); ?>"
         >
           <td><?php echo h($row['email'] ?? '—'); ?></td>
+          <?php if ($showSentByColumn): ?>
+          <td><?php echo h($creatorDisplay); ?></td>
+          <?php endif; ?>
           <td class="nowrap"><?php echo h(fmt_dt($row['created_at'])); ?></td>
           <td class="nowrap"><?php echo h(fmt_dt($row['accepted_at'] ?? null)); ?></td>
           <td class="nowrap"><?php echo h(fmt_dt($row['completed_at'] ?? null)); ?></td>
@@ -510,12 +583,7 @@ $_ppf_style = isset($_ppf_colors[$_ppf_status]) ? ' style="color: ' . $_ppf_colo
     const searchInput = document.getElementById('inviteSearch');
     ppfEnhanceTable(table, {
       searchInput: searchInput,
-      sortTypes: {
-        created: 'number',
-        accepted: 'number',
-        registered: 'number',
-        expires: 'number'
-      },
+      sortTypes: <?php echo json_encode($inviteSortTypes, JSON_FORCE_OBJECT); ?>,
       noMatchesText: 'No invites match your search.'
     });
   })();

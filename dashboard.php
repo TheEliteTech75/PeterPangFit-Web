@@ -470,19 +470,32 @@ try {
 } catch (Throwable $e) { /* non-fatal */ }
 
 $role_key  = ppf_role_key($role);
+$actorId = isset($USER_ID) ? (int)$USER_ID : 0;
 $can_admin = in_array($role_key, ['trainer', 'trainer_admin'], true) || ppf_is_admin_role($role);
 $is_admin  = ppf_is_admin_role($role);
+$isTrainer = ($role_key === 'trainer');
+$isTrainerAdmin = ($role_key === 'trainer_admin');
+$isTrainerAdminOrHigher = $isTrainerAdmin || $is_admin;
 
 /* ---------- Topline metrics (admin/trainer) ---------- */
-$total_clients   = safe_count_sql($conn, "SELECT COUNT(*) FROM users WHERE (role = 'client' OR is_client = 1)");
+$total_clients = null;
+if ($isTrainer && $actorId > 0) {
+  $total_clients = safe_count_sql(
+    $conn,
+    "SELECT COUNT(*) FROM users WHERE (role = 'client' OR is_client = 1) AND assigned_trainer_id = ?",
+    'i',
+    $actorId
+  );
+} else {
+  $total_clients = safe_count_sql($conn, "SELECT COUNT(*) FROM users WHERE (role = 'client' OR is_client = 1)");
+}
+$total_clients = $total_clients ?? 0;
 $workout_plans   = safe_count_sql($conn, "SELECT COUNT(*) FROM workout_plans");
 $exercises_total = safe_count_sql($conn, "SELECT COUNT(*) FROM exercises");
 
 /* ---------- Invites (now: accepted, pending, expired, registered) ---------- */
 $now = date('Y-m-d H:i:s');
-$invite_counts = safe_row_sql(
-  $conn,
-  "
+$inviteSql = "
   SELECT
     SUM(
       CASE
@@ -517,11 +530,15 @@ $invite_counts = safe_row_sql(
         ELSE 0
       END
     ) AS registered
-  FROM invites
-  ",
-  "sss",
-  $now, $now, $now
-) ?? ['accepted'=>0,'pending'=>0,'expired'=>0,'registered'=>0];
+  FROM invites";
+$inviteTypes = 'sss';
+$inviteParams = [$now, $now, $now];
+if ($isTrainer && $actorId > 0) {
+  $inviteSql .= ' WHERE created_by = ?';
+  $inviteTypes .= 'i';
+  $inviteParams[] = $actorId;
+}
+$invite_counts = safe_row_sql($conn, $inviteSql, $inviteTypes, ...$inviteParams) ?? ['accepted'=>0,'pending'=>0,'expired'=>0,'registered'=>0];
 
 $pending_invites   = (int)($invite_counts['pending']    ?? 0);
 $accepted_invites  = (int)($invite_counts['accepted']   ?? 0);
