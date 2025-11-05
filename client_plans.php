@@ -2349,6 +2349,8 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
               ?>
                 <tr data-session-row="<?php echo $sid; ?>"
                     data-package-id="<?php echo $pkgId; ?>"
+                    data-session-package="<?php echo h($packageName); ?>"
+                    data-session-start-label="<?php echo h($startLabel); ?>"
                     data-session-status="<?php echo h($statusKey); ?>"
                     data-session-start-iso="<?php echo h($startIso ?? ''); ?>"
                     data-session-end-iso="<?php echo h($endIso ?? ''); ?>"
@@ -3246,51 +3248,73 @@ $canCloseSessions = $isSelfView || is_trainer_admin($VIEWER_ROLE);
       });
     }
     if (endBtn && sessionId) {
-      endBtn.addEventListener('click', async () => {
+      endBtn.addEventListener('click', () => {
         if (endBtn.disabled || endBtn.classList.contains('is-processing')) return;
         const originalText = endBtn.textContent;
         endBtn.classList.add('is-processing');
-        endBtn.textContent = 'Ending…';
+        endBtn.textContent = 'Preparing QR…';
         endBtn.disabled = true;
         endBtn.setAttribute('aria-disabled', 'true');
-        try {
-          const payload = await sendSessionAction(sessionId, 'end_session');
-          applySessionPayload(row, payload.session || null);
-          const pkgTotals = payload.package_totals || null;
-          const pkgId = pkgTotals && typeof pkgTotals.package_id !== 'undefined'
-            ? String(pkgTotals.package_id)
-            : getPackageIdForRow(row);
-          if (pkgId) {
-            const summary = packageTotals.get(pkgId);
-            if (summary) {
-              if (summary.purchased && pkgTotals && typeof pkgTotals.purchased !== 'undefined') {
-                summary.purchased.textContent = pkgTotals.purchased;
-              }
-              if (summary.used && pkgTotals && typeof pkgTotals.used !== 'undefined') {
-                summary.used.textContent = pkgTotals.used;
-              }
-              if (summary.remaining && pkgTotals && typeof pkgTotals.remaining !== 'undefined') {
-                summary.remaining.textContent = pkgTotals.remaining;
-              }
-            }
-          }
-          const overall = payload.overall_totals || null;
-          if (overall) {
-            Object.keys(sessionTotalsTargets).forEach(key => {
-              if (typeof overall[key] === 'undefined') return;
-              sessionTotalsTargets[key].forEach(node => {
-                node.textContent = overall[key];
-              });
-            });
-          }
-          endBtn.classList.remove('is-processing');
-          refreshAllSessions();
-        } catch (error) {
+        const packageName = row ? row.dataset.sessionPackage || '' : '';
+        const startLabel = row ? row.dataset.sessionStartLabel || '' : '';
+        const onReady = () => {
           endBtn.classList.remove('is-processing');
           endBtn.textContent = originalText || 'End Session';
+          endBtn.disabled = false;
+          endBtn.removeAttribute('aria-disabled');
           updateButtons(entry);
-          window.alert(error && error.message ? error.message : 'Unable to end the session.');
-        }
+        };
+        window.ppfSessionQrOpen(sessionId, {
+          packageName: packageName && startLabel ? `${packageName} — ${startLabel}` : (packageName || startLabel),
+          onReady,
+          onStatus: (payload) => {
+            if (!payload) return;
+            const session = payload.session || null;
+            if (session) {
+              applySessionPayload(row, session);
+              refreshAllSessions();
+            }
+            const pkgTotals = payload.package_totals || null;
+            const pkgId = pkgTotals && typeof pkgTotals.package_id !== 'undefined'
+              ? String(pkgTotals.package_id)
+              : getPackageIdForRow(row);
+            if (pkgId && pkgTotals) {
+              const summary = packageTotals.get(pkgId);
+              if (summary) {
+                if (summary.purchased && typeof pkgTotals.purchased !== 'undefined') {
+                  summary.purchased.textContent = pkgTotals.purchased;
+                }
+                if (summary.used && typeof pkgTotals.used !== 'undefined') {
+                  summary.used.textContent = pkgTotals.used;
+                }
+                if (summary.remaining && typeof pkgTotals.remaining !== 'undefined') {
+                  summary.remaining.textContent = pkgTotals.remaining;
+                }
+              }
+            }
+            const overall = payload.overall_totals || null;
+            if (overall) {
+              Object.keys(sessionTotalsTargets).forEach(key => {
+                if (typeof overall[key] === 'undefined') return;
+                sessionTotalsTargets[key].forEach(node => {
+                  node.textContent = overall[key];
+                });
+              });
+            }
+          },
+          onCompleted: (payload) => {
+            if (!payload) return;
+            const session = payload.session || null;
+            if (session) {
+              applySessionPayload(row, session);
+            }
+            refreshAllSessions();
+          },
+          onClose: onReady,
+        }).catch((error) => {
+          onReady();
+          window.alert(error && error.message ? error.message : 'Unable to generate the QR code.');
+        });
       });
     }
   });
