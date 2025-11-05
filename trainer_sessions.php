@@ -34,6 +34,21 @@ ppf_trainer_sessions_ensure_schema($conn);
 
 $clients = ppf_trainer_sessions_fetch_clients($conn);
 
+$pricingMode = ppf_trainer_sessions_pricing_mode($conn);
+$catalogPackages = ppf_trainer_sessions_fetch_catalog_packages($conn, [
+    'mode' => $pricingMode,
+    'trainer_id' => $trainerId,
+]);
+$roleKey = ppf_role_key($role);
+$canManageCatalog = false;
+if ($pricingMode === 'trainer') {
+    $canManageCatalog = in_array($roleKey, ['trainer', 'trainer_admin'], true) || $isAdmin;
+} else {
+    $canManageCatalog = ($roleKey === 'trainer_admin') || $isAdmin;
+}
+$catalogDefaultSessions = 5;
+$catalogDefaultPrice = 100.00;
+
 $trainerOptions = [];
 if ($isAdmin) {
     $hasIsTrainer = function_exists('column_exists') ? column_exists($conn, 'users', 'is_trainer') : false;
@@ -129,6 +144,17 @@ function ts_status_badge(string $status): string {
     .ts-card h2{margin:0 0 12px 0;font-size:18px;}
     .ts-card h3{margin:16px 0 10px;font-size:16px;}
     .ts-card p{margin:0;color:var(--muted);}
+    .ts-catalog-header{display:flex;flex-direction:column;gap:8px;}
+    .ts-mode-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;background:color-mix(in srgb,var(--brand) 26%,transparent 74%);color:color-mix(in srgb,var(--brand) 70%,var(--text) 30%);width:max-content;}
+    .ts-mode-description{font-size:13px;color:var(--muted);}
+    .ts-catalog-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
+    .ts-catalog-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:16px;}
+    .ts-catalog-item{border:1px solid var(--card-border);border-radius:16px;padding:14px;background:color-mix(in srgb,var(--panel-muted) 84%,transparent 16%);display:flex;flex-direction:column;gap:10px;}
+    .ts-catalog-item h3{margin:0;font-size:15px;}
+    .ts-catalog-meta{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);}
+    .ts-catalog-total{font-size:24px;font-weight:600;color:var(--text);}
+    .ts-catalog-empty{margin-top:16px;padding:16px;border:1px dashed var(--card-border);border-radius:14px;font-size:13px;color:var(--muted);text-align:center;}
+    .ts-catalog-expire{font-size:12px;color:var(--muted);}
     .ts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;padding-top:12px;}
     .ts-summary-item{padding:12px;border:1px solid var(--card-border);border-radius:14px;background:color-mix(in srgb, var(--panel) 88%, transparent 12%);}
     .ts-summary-item span{display:block;}
@@ -187,6 +213,21 @@ function ts_status_badge(string $status): string {
     .flash-inline{display:none;margin:10px 0;padding:10px 12px;border-radius:12px;border:1px solid var(--card-border);background:color-mix(in srgb, var(--panel-muted) 84%, transparent 16%);color:var(--text);font-size:13px;}
     .flash-inline.ok{border-color:color-mix(in srgb, var(--success) 55%, transparent 45%);color:color-mix(in srgb, var(--success) 75%, var(--text) 25%);}
     .flash-inline.err{border-color:color-mix(in srgb, var(--danger) 55%, transparent 45%);color:color-mix(in srgb, var(--danger) 75%, var(--text) 25%);}
+    .ts-catalog-modal-backdrop{position:fixed;inset:0;background:color-mix(in srgb,var(--theme-swatch-1,#05070d) 60%,rgba(2,6,23,0.55) 40%);display:none;align-items:center;justify-content:center;z-index:5200;padding:16px;}
+    .ts-catalog-modal{background:var(--panel-elevated);border:1px solid var(--card-border);border-radius:18px;padding:20px;width:min(520px,95vw);max-height:90vh;overflow:auto;box-shadow:var(--card-shadow);}
+    .ts-catalog-modal h3{margin:0 0 12px;font-size:18px;}
+    .ts-catalog-modal form{display:flex;flex-direction:column;gap:12px;}
+    .ts-catalog-modal label{display:flex;flex-direction:column;font-size:13px;color:var(--muted);gap:6px;}
+    .ts-catalog-modal input,.ts-catalog-modal select{padding:9px 11px;border-radius:10px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text);}
+    .ts-catalog-modal .inline{display:flex;gap:12px;flex-wrap:wrap;}
+    .ts-catalog-modal .inline label{flex:1;min-width:140px;}
+    .ts-catalog-modal .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:4px;}
+    .ts-catalog-modal .total-preview{font-size:14px;font-weight:600;color:var(--text);}
+    .ts-catalog-modal .radio-row{display:flex;flex-direction:column;gap:8px;}
+    .ts-catalog-modal .radio-option{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:12px;border:1px solid var(--card-border);background:color-mix(in srgb,var(--panel-muted) 80%,transparent 20%);cursor:pointer;transition:border-color .2s ease, background .2s ease;}
+    .ts-catalog-modal .radio-option input{width:18px;height:18px;}
+    .ts-catalog-modal .radio-option:hover{border-color:color-mix(in srgb,var(--brand) 45%,transparent 55%);}
+    .ts-catalog-modal .flash-inline{margin-top:4px;}
     @media (max-width:720px){
       .wrap.ts-wrap{padding-bottom:40px;}
       .ts-inline-form label{min-width:140px;}
@@ -211,6 +252,53 @@ function ts_status_badge(string $status): string {
         },
     ]);
     ?>
+
+    <section class="ts-card" id="tsCatalogCard">
+      <div class="ts-catalog-header">
+        <span class="ts-mode-pill"><?php echo $pricingMode === 'trainer' ? 'Trainer Packages' : 'Global Packages'; ?></span>
+        <h2>Packages</h2>
+        <p class="ts-mode-description">
+          <?php if ($pricingMode === 'trainer'): ?>
+            Create pricing options that only you can offer to your clients.
+          <?php else: ?>
+            Trainer Admin packages apply to every trainer and stay in sync automatically.
+          <?php endif; ?>
+        </p>
+      </div>
+      <?php if ($canManageCatalog): ?>
+      <div class="ts-catalog-actions">
+        <button class="btn brand" type="button" id="btnOpenCatalogModal">Create Package</button>
+      </div>
+      <?php endif; ?>
+      <?php if (empty($catalogPackages)): ?>
+        <div class="ts-catalog-empty">
+          <?php if ($canManageCatalog): ?>
+            No pricing packages yet. Use “Create Package” to define your first offering.
+          <?php else: ?>
+            No pricing packages are available yet. Please reach out to your trainer admin.
+          <?php endif; ?>
+        </div>
+      <?php else: ?>
+        <div class="ts-catalog-grid" role="list">
+          <?php foreach ($catalogPackages as $catalog): ?>
+            <article class="ts-catalog-item" role="listitem">
+              <h3><?php echo h($catalog['title'] !== '' ? $catalog['title'] : 'Untitled Package'); ?></h3>
+              <div class="ts-catalog-total"><?php echo ts_money($catalog['total_price'] ?? 0); ?></div>
+              <div class="ts-catalog-meta">
+                <span><?php echo (int)($catalog['session_count'] ?? 0); ?> sessions · <?php echo ts_money($catalog['price_per_session'] ?? 0); ?> each</span>
+                <span class="ts-catalog-expire"><?php echo h($catalog['expires_label'] ?? 'Sessions do not expire'); ?></span>
+                <?php if (!empty($catalog['created_at'])): ?>
+                  <span>Created <?php echo h(ts_datetime($catalog['created_at'])); ?></span>
+                <?php endif; ?>
+                <?php if (!empty($catalog['updated_at']) && $catalog['updated_at'] !== $catalog['created_at']): ?>
+                  <span>Updated <?php echo h(ts_datetime($catalog['updated_at'])); ?></span>
+                <?php endif; ?>
+              </div>
+            </article>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+    </section>
 
     <div class="ts-card" id="tsFilters">
       <h2>Filters &amp; Rate Card</h2>
@@ -519,6 +607,82 @@ function ts_status_badge(string $status): string {
     <?php endif; ?>
   </main>
 
+  <?php if ($canManageCatalog): ?>
+  <div class="ts-catalog-modal-backdrop" id="catalogModal" aria-hidden="true">
+    <div class="ts-catalog-modal" role="dialog" aria-modal="true" aria-labelledby="catalogModalTitle">
+      <h3 id="catalogModalTitle">Create Package</h3>
+      <form class="js-ajax" data-refresh="1" data-modal-close="#catalogModal">
+        <input type="hidden" name="csrf_token" value="<?php echo h($csrf); ?>">
+        <input type="hidden" name="action" value="create_price_package">
+        <?php if ($pricingMode === 'trainer' && $isAdmin): ?>
+          <label>Trainer
+            <select name="trainer_id" required>
+              <option value="">Select trainer</option>
+              <?php foreach ($trainerOptions as $trainer):
+                $tid = (int)($trainer['id'] ?? 0);
+                $name = trim(($trainer['first_name'] ?? '') . ' ' . ($trainer['last_name'] ?? ''));
+                $display = $name !== '' ? $name : ($trainer['email'] ?? ('Trainer #' . $tid));
+              ?>
+                <option value="<?php echo $tid; ?>"><?php echo h($display); ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+        <?php endif; ?>
+        <label>Package name
+          <input type="text" name="title" maxlength="191" placeholder="e.g. Strength Starter" required>
+        </label>
+        <div class="inline">
+          <label>Sessions included
+            <input type="number" name="session_count" min="1" step="1" value="<?php echo (int)$catalogDefaultSessions; ?>" required>
+          </label>
+          <label>Price per session
+            <input type="number" name="price_per_session" min="0.01" step="0.01" value="<?php echo number_format($catalogDefaultPrice, 2, '.', ''); ?>" required>
+          </label>
+        </div>
+        <div class="total-preview" id="catalogTotalPreview">Total: <?php echo ts_money($catalogDefaultSessions * $catalogDefaultPrice); ?></div>
+        <div class="radio-row" id="catalogExpireGroup">
+          <span class="muted">Sessions expire</span>
+          <label class="radio-option">
+            <input type="radio" name="expires_type" value="none" checked>
+            <span>Sessions do not expire</span>
+          </label>
+          <label class="radio-option" data-expire-target="duration">
+            <input type="radio" name="expires_type" value="duration">
+            <span>Expire after a duration</span>
+          </label>
+          <div class="inline" data-expiry-fields="duration" hidden>
+            <label>Duration value
+              <input type="number" name="expires_value" min="1" value="30">
+            </label>
+            <label>Duration unit
+              <select name="expires_unit">
+                <option value="days">Days</option>
+                <option value="weeks">Weeks</option>
+                <option value="months">Months</option>
+                <option value="years">Years</option>
+              </select>
+            </label>
+          </div>
+          <label class="radio-option" data-expire-target="date">
+            <input type="radio" name="expires_type" value="date">
+            <span>Expire on a specific date</span>
+          </label>
+          <div class="inline" data-expiry-fields="date" hidden>
+            <label>Expiration date
+              <input type="date" name="expires_on">
+            </label>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn" type="button" data-catalog-close>Cancel</button>
+          <button class="btn brand" type="submit">Create Package</button>
+        </div>
+        <div class="flash-inline" data-role="flash"></div>
+      </form>
+    </div>
+  </div>
+  <?php endif; ?>
+
   <div class="ts-modal-backdrop" id="tsModal" role="dialog" aria-modal="true">
     <div class="ts-modal" id="tsModalContent">
       <h3 id="tsModalTitle">Adjust Sessions</h3>
@@ -557,6 +721,105 @@ function ts_status_badge(string $status): string {
         });
       }
 
+      const catalogModal = document.getElementById('catalogModal');
+      const catalogForm = catalogModal ? catalogModal.querySelector('form') : null;
+      const openCatalogBtn = document.getElementById('btnOpenCatalogModal');
+
+      function formatCatalogCurrency(amount) {
+        const value = Number.isFinite(amount) ? amount : 0;
+        return '$' + value.toFixed(2);
+      }
+
+      function updateCatalogTotal(form) {
+        if (!form) return;
+        const sessionsInput = form.elements['session_count'];
+        const priceInput = form.elements['price_per_session'];
+        const totalPreview = form.querySelector('#catalogTotalPreview');
+        const sessionsRaw = sessionsInput ? Number.parseFloat(sessionsInput.value || '0') : 0;
+        const priceRaw = priceInput ? Number.parseFloat(priceInput.value || '0') : 0;
+        const sessions = Number.isFinite(sessionsRaw) ? sessionsRaw : 0;
+        const price = Number.isFinite(priceRaw) ? priceRaw : 0;
+        const total = Math.max(0, sessions) * Math.max(0, price);
+        if (totalPreview) {
+          totalPreview.textContent = 'Total: ' + formatCatalogCurrency(total);
+        }
+      }
+
+      function updateExpiryVisibility(form) {
+        if (!form) return;
+        const checked = form.querySelector('input[name="expires_type"]:checked');
+        const type = checked ? checked.value : 'none';
+        form.querySelectorAll('[data-expiry-fields]').forEach((wrapper) => {
+          const target = wrapper.getAttribute('data-expiry-fields');
+          const isActive = target === type;
+          wrapper.hidden = !isActive;
+          wrapper.querySelectorAll('input, select').forEach((field) => {
+            field.disabled = !isActive;
+          });
+        });
+      }
+
+      function closeCatalogModal() {
+        if (!catalogModal) return;
+        catalogModal.style.display = 'none';
+        catalogModal.setAttribute('aria-hidden', 'true');
+      }
+
+      function openCatalogModal() {
+        if (!catalogModal || !catalogForm) return;
+        catalogForm.reset();
+        const flash = catalogForm.querySelector('[data-role="flash"]');
+        if (flash) {
+          flash.style.display = 'none';
+          flash.textContent = '';
+          flash.classList.remove('ok', 'err');
+        }
+        updateCatalogTotal(catalogForm);
+        updateExpiryVisibility(catalogForm);
+        catalogModal.style.display = 'flex';
+        catalogModal.setAttribute('aria-hidden', 'false');
+        const titleField = catalogForm.querySelector('input[name="title"]');
+        if (titleField) {
+          setTimeout(() => titleField.focus(), 20);
+        }
+      }
+
+      if (openCatalogBtn && catalogModal) {
+        openCatalogBtn.addEventListener('click', () => {
+          openCatalogModal();
+        });
+      }
+
+      if (catalogModal) {
+        catalogModal.addEventListener('click', (event) => {
+          if (event.target === catalogModal) {
+            closeCatalogModal();
+          }
+        });
+        document.querySelectorAll('[data-catalog-close]').forEach((btn) => {
+          btn.addEventListener('click', () => closeCatalogModal());
+        });
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && catalogModal.style.display === 'flex') {
+            closeCatalogModal();
+          }
+        });
+        if (catalogForm) {
+          const listenFields = ['session_count', 'price_per_session'];
+          listenFields.forEach((name) => {
+            const field = catalogForm.elements[name];
+            if (field) {
+              field.addEventListener('input', () => updateCatalogTotal(catalogForm));
+            }
+          });
+          catalogForm.querySelectorAll('input[name="expires_type"]').forEach((radio) => {
+            radio.addEventListener('change', () => updateExpiryVisibility(catalogForm));
+          });
+          updateCatalogTotal(catalogForm);
+          updateExpiryVisibility(catalogForm);
+        }
+      }
+
       function showFlash(container, ok, message){
         if (!container) return;
         container.textContent = message;
@@ -589,6 +852,9 @@ function ts_status_badge(string $status): string {
           showFlash(flash, !!data.ok, data.message);
         }
         if (data && data.ok) {
+          if (form.dataset.modalClose === '#catalogModal') {
+            closeCatalogModal();
+          }
           if (form.dataset.refresh === '1' || data.refresh) {
             setTimeout(() => window.location.reload(), 450);
           }

@@ -75,6 +75,127 @@ function ensure_package_access(mysqli $conn, int $packageId, string $role, int $
     return $pkg;
 }
 
+if ($action === 'create_price_package') {
+    $mode = ppf_trainer_sessions_pricing_mode($conn);
+    $roleKey = ppf_role_key($role);
+    $scope = $mode === 'admin' ? 'global' : 'trainer';
+    $isTrainerAdmin = $roleKey === 'trainer_admin';
+    if ($scope === 'global') {
+        if (!$isTrainerAdmin && !ppf_is_admin_role($role)) {
+            respond(false, 'Only trainer admins or higher can create global packages.');
+        }
+    } else {
+        if (!in_array($roleKey, ['trainer', 'trainer_admin'], true) && !ppf_is_admin_role($role)) {
+            respond(false, 'You do not have permission to create trainer packages.');
+        }
+    }
+
+    $title = trim((string)($_POST['title'] ?? $_POST['package_title'] ?? ''));
+    if ($title === '') {
+        respond(false, 'Enter a package title.');
+    }
+
+    $sessions = max(1, (int)($_POST['session_count'] ?? $_POST['sessions'] ?? 0));
+    $pricePer = ppf_trainer_sessions_parse_amount($_POST['price_per_session'] ?? 0);
+    if ($pricePer <= 0) {
+        respond(false, 'Enter a price per session greater than 0.');
+    }
+    $total = round($sessions * $pricePer, 2);
+
+    $expiresType = strtolower(trim((string)($_POST['expires_type'] ?? 'none')));
+    $expiresType = in_array($expiresType, ['duration', 'date', 'none'], true) ? $expiresType : 'none';
+    $expiresUnit = null;
+    $expiresValue = null;
+    $expiresOn = null;
+    if ($expiresType === 'duration') {
+        $expiresValue = max(1, (int)($_POST['expires_value'] ?? 0));
+        $maybeUnit = strtolower(trim((string)($_POST['expires_unit'] ?? '')));
+        if (!in_array($maybeUnit, ['days','weeks','months','years'], true)) {
+            respond(false, 'Choose a valid expiration unit.');
+        }
+        $expiresUnit = $maybeUnit;
+    } elseif ($expiresType === 'date') {
+        $raw = trim((string)($_POST['expires_on'] ?? $_POST['expires_date'] ?? ''));
+        if ($raw === '') {
+            respond(false, 'Select an expiration date.');
+        }
+        $dt = DateTime::createFromFormat('Y-m-d', $raw);
+        if (!$dt || $dt->format('Y-m-d') !== $raw) {
+            respond(false, 'Enter a valid expiration date.');
+        }
+        $expiresOn = $dt->format('Y-m-d');
+    }
+
+    $targetTrainer = $scope === 'trainer' ? $actorId : 0;
+    if ($scope === 'trainer' && ppf_is_admin_role($role)) {
+        $targetTrainer = max(0, (int)($_POST['trainer_id'] ?? $actorId));
+        if ($targetTrainer <= 0) {
+            respond(false, 'Choose a trainer for this package.');
+        }
+    }
+    if ($scope === 'global') {
+        $targetTrainer = 0;
+    }
+
+    $sql = "INSERT INTO trainer_session_price_packages (scope, trainer_id, title, session_count, price_mode, price_per_session, total_price, expires_type, expires_unit, expires_value, expires_on, created_at, updated_at, created_by) VALUES (?, ?, ?, ?, 'per_session', ?, ?, ?, NULLIF(?, ''), NULLIF(?, 0), NULLIF(?, ''), NOW(), NOW(), ?)";
+    if (!$stmt = $conn->prepare($sql)) {
+        respond(false, 'Failed to prepare statement.');
+    }
+    $expiresUnitParam = $expiresUnit ?? '';
+    $expiresValueParam = $expiresType === 'duration' ? (int)$expiresValue : 0;
+    $expiresOnParam = $expiresType === 'date' ? $expiresOn : '';
+    $trainerParam = max(0, (int)$targetTrainer);
+    $stmt->bind_param(
+        'sisiddssisi',
+        $scope,
+        $trainerParam,
+        $title,
+        $sessions,
+        $pricePer,
+        $total,
+        $expiresType,
+        $expiresUnitParam,
+        $expiresValueParam,
+        $expiresOnParam,
+        $actorId
+    );
+    if (!$stmt->execute()) {
+        $err = $stmt->error;
+        $stmt->close();
+        respond(false, 'Failed to create package. ' . $err);
+    }
+    $newId = $stmt->insert_id;
+    $stmt->close();
+
+    $details = ts_json([
+        'catalog_id' => $newId,
+        'scope' => $scope,
+        'trainer_id' => $trainerParam,
+        'title' => $title,
+        'session_count' => $sessions,
+        'price_per_session' => $pricePer,
+        'total_price' => $total,
+        'expires_type' => $expiresType,
+        'expires_unit' => $expiresUnit,
+        'expires_value' => $expiresValue,
+        'expires_on' => $expiresOn,
+    ]);
+    if (function_exists('ppf_log')) {
+        ppf_log(
+            $conn,
+            $actorId,
+            $_SESSION['email'] ?? null,
+            $_SESSION['role'] ?? null,
+            'trainer_price_package_created',
+            'session_price_package',
+            (string)$newId,
+            $details
+        );
+    }
+
+    respond(true, 'Package created.', ['refresh' => true]);
+}
+
 if ($action === 'create_package') {
     $clientId = max(0, (int)($_POST['client_id'] ?? 0));
     $trainerId = ppf_is_admin_role($role) ? max(0, (int)($_POST['trainer_id'] ?? 0)) : $actorId;

@@ -325,6 +325,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ss_set($conn, 'test_register_token_enabled', $testEnabled);
             ss_set($conn, 'test_register_token_value', $testValue);
 
+            $pricingModeRaw = strtolower(trim((string)($_POST['trainer_sessions_pricing_mode'] ?? 'trainer')));
+            $pricingMode = $pricingModeRaw === 'admin' ? 'admin' : 'trainer';
+            ss_set($conn, 'trainer_sessions_pricing_mode', $pricingMode);
+
             $statusType = 'success';
             $messageParts = [];
             $demoAjaxRequested = false;
@@ -821,6 +825,8 @@ $lockoutTrainer = (int)(ss_get($conn, 'lockout_minutes_trainer', (string)$lockou
 $lockoutAdmin   = (int)(ss_get($conn, 'lockout_minutes_admin', (string)$lockoutDefault) ?? $lockoutDefault);
 $testTokenEnabled = ss_get($conn, 'test_register_token_enabled', '0') === '1';
 $testTokenValue   = ss_get($conn, 'test_register_token_value', '');
+$trainerPricingMode = ss_get($conn, 'trainer_sessions_pricing_mode', 'trainer');
+$trainerPricingMode = strtolower($trainerPricingMode) === 'admin' ? 'admin' : 'trainer';
 
 $demoModeStatusClass = 'is-error';
 $demoModeStatusLabel = 'Unavailable';
@@ -1504,6 +1510,91 @@ if ($demoModeControlsAvailable) {
       align-items: start;
     }
 
+    .trainer-pricing-settings {
+      grid-column: 1 / -1;
+      margin-top: 24px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(15, 23, 42, 0.42);
+      box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.18);
+    }
+    .trainer-pricing-settings h3 {
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+    }
+    .trainer-pricing-settings p.small-text {
+      margin: 0;
+      color: rgba(226, 232, 240, 0.8);
+    }
+    .pricing-mode-options {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .pricing-mode-option {
+      display: flex;
+      align-items: stretch;
+      gap: 14px;
+      cursor: pointer;
+    }
+    .pricing-mode-option input {
+      appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      border: 2px solid rgba(148, 163, 184, 0.55);
+      background: rgba(15, 23, 42, 0.4);
+      position: relative;
+      margin-top: 2px;
+      transition: border-color .2s ease, background .2s ease;
+    }
+    .pricing-mode-option input::after {
+      content: '';
+      position: absolute;
+      inset: 4px;
+      border-radius: 4px;
+      background: color-mix(in srgb, var(--brand, #38bdf8) 75%, transparent 25%);
+      opacity: 0;
+      transform: scale(0.6);
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .pricing-mode-option input:checked {
+      border-color: color-mix(in srgb, var(--brand, #38bdf8) 60%, transparent 40%);
+      background: color-mix(in srgb, var(--brand, #38bdf8) 20%, transparent 80%);
+    }
+    .pricing-mode-option input:checked::after {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .pricing-mode-card {
+      flex: 1;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(12, 21, 36, 0.65);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color .2s ease, background .2s ease;
+    }
+    .pricing-mode-option input:checked + .pricing-mode-card {
+      border-color: color-mix(in srgb, var(--brand, #38bdf8) 55%, transparent 45%);
+      background: rgba(14, 26, 44, 0.82);
+    }
+    .pricing-mode-card strong {
+      font-weight: 600;
+      font-size: 1rem;
+      color: #f8fafc;
+    }
+    .pricing-mode-card p {
+      margin: 0;
+      color: rgba(203, 213, 225, 0.85);
+      font-size: .9rem;
+      line-height: 1.3;
+    }
+
     .demo-mode-status {
       display: inline-flex;
       align-items: center;
@@ -2055,6 +2146,27 @@ if ($demoModeControlsAvailable) {
               <p class="small-text">Share this value privately with testers who should bypass invites via register.php.</p>
             </div>
 
+          </div>
+
+          <div class="trainer-pricing-settings">
+            <h3>Trainer Sessions</h3>
+            <p class="small-text">Select who controls pricing for trainer session packages.</p>
+            <div class="pricing-mode-options">
+              <label class="pricing-mode-option">
+                <input type="radio" name="trainer_sessions_pricing_mode" value="trainer" <?php echo $trainerPricingMode === 'trainer' ? 'checked' : ''; ?>>
+                <div class="pricing-mode-card">
+                  <strong>Trainers set own prices.</strong>
+                  <p>Empower each trainer to create unique packages that match their coaching style.</p>
+                </div>
+              </label>
+              <label class="pricing-mode-option">
+                <input type="radio" name="trainer_sessions_pricing_mode" value="admin" <?php echo $trainerPricingMode === 'admin' ? 'checked' : ''; ?>>
+                <div class="pricing-mode-card">
+                  <strong>Trainer Admin sets prices.</strong>
+                  <p>Maintain a global price catalog so every trainer offers the same packages.</p>
+                </div>
+              </label>
+            </div>
           </div>
 
           <div style="grid-column:1 / -1; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
