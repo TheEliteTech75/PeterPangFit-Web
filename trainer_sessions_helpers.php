@@ -228,22 +228,26 @@ if (!function_exists('ppf_trainer_sessions_ensure_schema')) {
             "CREATE TABLE IF NOT EXISTS trainer_sessions (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 package_id INT UNSIGNED NOT NULL,
-                scheduled_start DATETIME NOT NULL,
+                scheduled_start DATETIME NULL,
                 scheduled_end DATETIME NULL,
                 actual_start_at DATETIME NULL,
                 actual_end_at DATETIME NULL,
-                status ENUM('scheduled','in_progress','completed','cancelled') NOT NULL DEFAULT 'scheduled',
+                status ENUM('scheduled','active','completed','canceled','cancelled','refunded','rescheduled','in_progress') NOT NULL DEFAULT 'scheduled',
                 completed_at DATETIME NULL,
                 completion_marked_by INT NULL,
                 timer_started_by INT NULL,
                 timer_ended_by INT NULL,
                 duration_seconds INT NULL,
                 notes TEXT NULL,
+                public_token CHAR(36) NULL,
+                token_verified_at DATETIME NULL,
+                verified_by INT NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NULL,
                 INDEX idx_package (package_id),
                 INDEX idx_start (scheduled_start),
-                INDEX idx_status (status)
+                INDEX idx_status (status),
+                UNIQUE KEY uq_trainer_sessions_token (public_token)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
 
@@ -257,6 +261,9 @@ if (!function_exists('ppf_trainer_sessions_ensure_schema')) {
             ['timer_started_by', "ALTER TABLE trainer_sessions ADD COLUMN timer_started_by INT NULL AFTER completion_marked_by"],
             ['timer_ended_by', "ALTER TABLE trainer_sessions ADD COLUMN timer_ended_by INT NULL AFTER timer_started_by"],
             ['duration_seconds', "ALTER TABLE trainer_sessions ADD COLUMN duration_seconds INT NULL AFTER timer_ended_by"],
+            ['public_token', "ALTER TABLE trainer_sessions ADD COLUMN public_token CHAR(36) NULL AFTER notes"],
+            ['token_verified_at', "ALTER TABLE trainer_sessions ADD COLUMN token_verified_at DATETIME NULL AFTER public_token"],
+            ['verified_by', "ALTER TABLE trainer_sessions ADD COLUMN verified_by INT NULL AFTER token_verified_at"],
         ];
         foreach ($alterStatements as [$column, $sql]) {
             $shouldAlter = true;
@@ -283,16 +290,48 @@ if (!function_exists('ppf_trainer_sessions_ensure_schema')) {
             }
         }
 
-        // Ensure the status ENUM contains the in_progress state used for the
-        // stopwatch flow.
+        // Ensure the status ENUM contains the states used by the redesigned workflow.
         if ($res = @$conn->query("SHOW COLUMNS FROM trainer_sessions LIKE 'status'")) {
             if ($row = $res->fetch_assoc()) {
                 $type = $row['Type'] ?? '';
-                if (stripos($type, "'in_progress'") === false) {
-                    @$conn->query("ALTER TABLE trainer_sessions MODIFY COLUMN status ENUM('scheduled','in_progress','completed','cancelled') NOT NULL DEFAULT 'scheduled'");
+                $expectedStates = [
+                    "'scheduled'",
+                    "'active'",
+                    "'completed'",
+                    "'canceled'",
+                    "'cancelled'",
+                    "'refunded'",
+                    "'rescheduled'",
+                    "'in_progress'",
+                ];
+                $missing = false;
+                foreach ($expectedStates as $stateFragment) {
+                    if (stripos($type, $stateFragment) === false) {
+                        $missing = true;
+                        break;
+                    }
+                }
+                if ($missing) {
+                    @$conn->query("ALTER TABLE trainer_sessions MODIFY COLUMN status ENUM('scheduled','active','completed','canceled','cancelled','refunded','rescheduled','in_progress') NOT NULL DEFAULT 'scheduled'");
                 }
             }
             $res->free();
+        }
+
+        // Ensure the unique constraint for the token exists.
+        try {
+            @$conn->query("ALTER TABLE trainer_sessions ADD UNIQUE KEY uq_trainer_sessions_token (public_token)");
+        } catch (Throwable $e) {
+            $code = method_exists($e, 'getCode') ? (int)$e->getCode() : 0;
+            if ($code !== 1061) {
+                throw $e;
+            }
+        }
+
+        try {
+            @$conn->query("ALTER TABLE trainer_sessions MODIFY COLUMN scheduled_start DATETIME NULL");
+        } catch (Throwable $e) {
+            // ignore errors when column already nullable
         }
 
         @$conn->query(
@@ -519,6 +558,251 @@ if (!function_exists('ppf_trainer_sessions_fetch_transactions_for_package')) {
         }
         $stmt->close();
         return $rows;
+    }
+}
+
+if (!function_exists('ppf_trainer_sessions_format_money')) {
+    function ppf_trainer_sessions_format_money($amount): string {
+        $value = (float)$amount;
+        $sign = $value < 0 ? '-' : '';
+        $abs = abs($value);
+        return $sign . '$' . number_format($abs, 2);
+    }
+}
+
+if (!function_exists('ppf_trainer_sessions_generate_token')) {
+    function ppf_trainer_sessions_generate_token(mysqli $conn): string {
+        for ($attempt = 0; $attempt < 20; $attempt++) {
+            $bytes = random_bytes(16);
+            $hex = bin2hex($bytes);
+            $token = substr($hex, 0, 8) . '-' . substr($hex, 8, 4) . '-' . substr($hex, 12, 4) . '-' . substr($hex, 16, 4) . '-' . substr($hex, 20, 12);
+            $sql = "SELECT 1 FROM trainer_sessions WHERE public_token = ? LIMIT 1";
+            if ($stmt = $conn->prepare($sql)) {
+                $stmt->bind_param('s', $token);
+                $stmt->execute();
+                $stmt->store_result();
+                $exists = $stmt->num_rows > 0;
+                $stmt->close();
+                if (!$exists) {
+                    return $token;
+                }
+            }
+        }
+        throw new RuntimeException('Failed to generate unique session token.');
+    }
+}
+
+if (!function_exists('ppf_trainer_sessions_assign_token')) {
+    function ppf_trainer_sessions_assign_token(mysqli $conn, int $sessionId): ?string {
+        if ($sessionId <= 0) {
+            return null;
+        }
+        $token = ppf_trainer_sessions_generate_token($conn);
+        $sql = "UPDATE trainer_sessions SET public_token = ?, updated_at = NOW() WHERE id = ?";
+        if ($stmt = $conn->prepare($sql)) {
+            $stmt->bind_param('si', $token, $sessionId);
+            if ($stmt->execute()) {
+                $stmt->close();
+                return $token;
+            }
+            $stmt->close();
+        }
+        return null;
+    }
+}
+
+if (!function_exists('ppf_trainer_sessions_collect_client_overview')) {
+    function ppf_trainer_sessions_collect_client_overview(mysqli $conn, array $options = []): array {
+        ppf_trainer_sessions_ensure_schema($conn);
+        $trainerId = isset($options['trainer_id']) ? (int)$options['trainer_id'] : 0;
+        $includeUnassigned = !empty($options['include_unassigned']);
+
+        $params = [];
+        $types = '';
+        $conditions = [];
+        $conditions[] = "(u.role='client' OR u.is_client=1)";
+        if ($trainerId > 0) {
+            $conditions[] = '(u.assigned_trainer_id = ? OR EXISTS (SELECT 1 FROM trainer_session_packages sp WHERE sp.client_id = u.id AND sp.trainer_id = ?))';
+            $params[] = $trainerId;
+            $params[] = $trainerId;
+            $types .= 'ii';
+        }
+        if (!$includeUnassigned) {
+            $conditions[] = '(u.assigned_trainer_id IS NOT NULL OR EXISTS (SELECT 1 FROM trainer_session_packages sp WHERE sp.client_id = u.id))';
+        }
+        $where = $conditions ? ('WHERE ' . implode(' AND ', $conditions)) : '';
+
+        $sql = "
+            SELECT
+                u.id,
+                u.first_name,
+                u.middle_name,
+                u.last_name,
+                u.email,
+                u.phone,
+                u.birthdate,
+                u.height_ft,
+                u.height_in,
+                u.weight_lbs,
+                u.assigned_trainer_id,
+                agg.total_packages,
+                agg.total_sessions,
+                agg.completed_sessions,
+                agg.canceled_sessions,
+                agg.refunded_sessions,
+                agg.latest_purchase,
+                agg.latest_session,
+                agg.total_payments,
+                agg.total_refunds
+            FROM users u
+            LEFT JOIN (
+                SELECT
+                    p.client_id,
+                    COUNT(DISTINCT p.id) AS total_packages,
+                    SUM(p.purchased_sessions) AS total_sessions,
+                    SUM(IFNULL(stat.completed_sessions, 0)) AS completed_sessions,
+                    SUM(IFNULL(stat.canceled_sessions, 0)) AS canceled_sessions,
+                    SUM(IFNULL(stat.refunded_sessions, 0)) AS refunded_sessions,
+                    MAX(p.created_at) AS latest_purchase,
+                    MAX(stat.latest_session) AS latest_session,
+                    SUM(IFNULL(tx.payments_total, 0)) AS total_payments,
+                    SUM(IFNULL(tx.refunds_total, 0)) AS total_refunds,
+                    MAX(p.trainer_id) AS last_trainer_id
+                FROM trainer_session_packages p
+                LEFT JOIN (
+                    SELECT
+                        s.package_id,
+                        SUM(s.status IN ('completed')) AS completed_sessions,
+                        SUM(s.status IN ('canceled','cancelled')) AS canceled_sessions,
+                        SUM(s.status IN ('refunded')) AS refunded_sessions,
+                        MAX(s.scheduled_start) AS latest_session
+                    FROM trainer_sessions s
+                    GROUP BY s.package_id
+                ) stat ON stat.package_id = p.id
+                LEFT JOIN (
+                    SELECT
+                        package_id,
+                        SUM(CASE WHEN txn_type='payment' THEN amount ELSE 0 END) AS payments_total,
+                        SUM(CASE WHEN txn_type='refund' THEN amount ELSE 0 END) AS refunds_total
+                    FROM trainer_session_transactions
+                    GROUP BY package_id
+                ) tx ON tx.package_id = p.id
+                GROUP BY p.client_id
+            ) agg ON agg.client_id = u.id
+            {$where}
+            GROUP BY u.id
+            ORDER BY u.last_name, u.first_name, u.id
+        ";
+
+        if (!$stmt = $conn->prepare($sql)) {
+            return [];
+        }
+        if ($params) {
+            $bind = [$types];
+            foreach ($params as $idx => $val) {
+                $bind[] = &$params[$idx];
+            }
+            call_user_func_array([$stmt, 'bind_param'], $bind);
+        }
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $rows = [];
+        while ($row = $res->fetch_assoc()) {
+            $rows[] = $row;
+        }
+        $stmt->close();
+        return $rows;
+    }
+}
+
+if (!function_exists('ppf_trainer_sessions_collect_client_packages')) {
+    function ppf_trainer_sessions_collect_client_packages(mysqli $conn, int $clientId, ?int $trainerId = null): array {
+        $packages = ppf_trainer_sessions_fetch_packages($conn, $trainerId, $clientId);
+        foreach ($packages as &$package) {
+            $pid = (int)($package['id'] ?? 0);
+            $package['sessions'] = ppf_trainer_sessions_fetch_sessions_for_package($conn, $pid);
+            $package['transactions'] = ppf_trainer_sessions_fetch_transactions_for_package($conn, $pid);
+        }
+        unset($package);
+        return $packages;
+    }
+}
+
+if (!function_exists('ppf_trainer_sessions_find_active_session_for_client')) {
+    function ppf_trainer_sessions_find_active_session_for_client(mysqli $conn, int $clientId): ?array {
+        if ($clientId <= 0) {
+            return null;
+        }
+        $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $sql = "
+            SELECT s.*, p.package_name, p.trainer_id, p.client_id
+            FROM trainer_sessions s
+            JOIN trainer_session_packages p ON p.id = s.package_id
+            WHERE p.client_id = ?
+              AND s.status IN ('scheduled','rescheduled','active','in_progress')
+              AND s.scheduled_start IS NOT NULL
+              AND s.scheduled_start <= ?
+              AND (s.scheduled_end IS NULL OR s.scheduled_end >= ?)
+            ORDER BY s.scheduled_start ASC, s.id ASC
+            LIMIT 1";
+        if (!$stmt = $conn->prepare($sql)) {
+            return null;
+        }
+        $stmt->bind_param('iss', $clientId, $now, $now);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $session = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+        if (!$session) {
+            return null;
+        }
+        if (empty($session['public_token'])) {
+            $newToken = ppf_trainer_sessions_assign_token($conn, (int)$session['id']);
+            if ($newToken) {
+                $session['public_token'] = $newToken;
+            }
+        }
+        return $session;
+    }
+}
+
+if (!function_exists('ppf_trainer_sessions_find_active_session_for_trainer')) {
+    function ppf_trainer_sessions_find_active_session_for_trainer(mysqli $conn, int $trainerId): ?array {
+        if ($trainerId <= 0) {
+            return null;
+        }
+        $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $sql = "
+            SELECT s.*, p.package_name, p.trainer_id, p.client_id,
+                   u.first_name AS client_first, u.last_name AS client_last
+            FROM trainer_sessions s
+            JOIN trainer_session_packages p ON p.id = s.package_id
+            JOIN users u ON u.id = p.client_id
+            WHERE p.trainer_id = ?
+              AND s.status IN ('scheduled','rescheduled','active','in_progress')
+              AND s.scheduled_start IS NOT NULL
+              AND s.scheduled_start <= ?
+              AND (s.scheduled_end IS NULL OR s.scheduled_end >= ?)
+            ORDER BY s.scheduled_start ASC, s.id ASC
+            LIMIT 1";
+        if (!$stmt = $conn->prepare($sql)) {
+            return null;
+        }
+        $stmt->bind_param('iss', $trainerId, $now, $now);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $session = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+        if (!$session) {
+            return null;
+        }
+        if (empty($session['public_token'])) {
+            $newToken = ppf_trainer_sessions_assign_token($conn, (int)$session['id']);
+            if ($newToken) {
+                $session['public_token'] = $newToken;
+            }
+        }
+        return $session;
     }
 }
 
