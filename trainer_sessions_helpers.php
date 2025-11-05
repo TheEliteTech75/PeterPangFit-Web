@@ -57,6 +57,116 @@ if (!function_exists('ppf_trainer_sessions_rate_for_quantity')) {
     }
 }
 
+if (!function_exists('ppf_trainer_sessions_pricing_mode')) {
+    function ppf_trainer_sessions_pricing_mode(mysqli $conn): string {
+        $default = 'trainer';
+        $value = null;
+        try {
+            if (function_exists('ppf_ss_get')) {
+                $value = ppf_ss_get($conn, 'trainer_sessions_pricing_mode', $default);
+            } else {
+                $sql = "SELECT value FROM system_settings WHERE `key`='trainer_sessions_pricing_mode' LIMIT 1";
+                if ($res = $conn->query($sql)) {
+                    if ($row = $res->fetch_assoc()) {
+                        $value = $row['value'] ?? null;
+                    }
+                    $res->free();
+                }
+            }
+        } catch (Throwable $e) {
+            $value = $default;
+        }
+        $value = strtolower(trim((string)$value));
+        return $value === 'admin' ? 'admin' : $default;
+    }
+}
+
+if (!function_exists('ppf_trainer_sessions_format_catalog_expiration')) {
+    function ppf_trainer_sessions_format_catalog_expiration(array $row): string {
+        $type = strtolower((string)($row['expires_type'] ?? 'none'));
+        if ($type === 'date') {
+            $date = $row['expires_on'] ?? null;
+            if (!$date) {
+                return 'Expires on purchase date';
+            }
+            try {
+                $dt = new DateTime($date);
+                return 'Expires ' . $dt->format('M j, Y');
+            } catch (Throwable $e) {
+                return 'Expires ' . $date;
+            }
+        }
+        if ($type === 'duration') {
+            $value = (int)($row['expires_value'] ?? 0);
+            $unit = strtolower((string)($row['expires_unit'] ?? ''));
+            if ($value <= 0 || !in_array($unit, ['days','weeks','months','years'], true)) {
+                return 'Sessions expire after purchase';
+            }
+            $unitLabel = $unit;
+            if ($value === 1) {
+                $unitLabel = rtrim($unitLabel, 's');
+            }
+            return 'Expires after ' . $value . ' ' . $unitLabel;
+        }
+        return 'Sessions do not expire';
+    }
+}
+
+if (!function_exists('ppf_trainer_sessions_fetch_catalog_packages')) {
+    function ppf_trainer_sessions_fetch_catalog_packages(mysqli $conn, array $options = []): array {
+        ppf_trainer_sessions_ensure_schema($conn);
+        $mode = strtolower((string)($options['mode'] ?? 'trainer'));
+        $trainerId = (int)($options['trainer_id'] ?? 0);
+        $scope = $mode === 'admin' ? 'global' : 'trainer';
+        $params = [$scope];
+        $types = 's';
+        $where = 'WHERE scope = ?';
+        if ($scope === 'trainer') {
+            $where .= ' AND trainer_id = ?';
+            $params[] = $trainerId;
+            $types .= 'i';
+        }
+        $sql = "SELECT id, scope, trainer_id, title, session_count, price_mode, price_per_session, total_price, expires_type, expires_unit, expires_value, expires_on, created_at, updated_at FROM trainer_session_price_packages {$where} ORDER BY created_at DESC, id DESC";
+        if (!$stmt = $conn->prepare($sql)) {
+            return [];
+        }
+        if ($types !== '') {
+            $bind = [$types];
+            foreach ($params as $idx => $val) {
+                $bind[] = &$params[$idx];
+            }
+            call_user_func_array([$stmt, 'bind_param'], $bind);
+        }
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $packages = [];
+        while ($row = $res->fetch_assoc()) {
+            $sessionCount = max(1, (int)($row['session_count'] ?? 1));
+            $pricePer = (float)($row['price_per_session'] ?? 0);
+            $total = $row['total_price'] !== null ? (float)$row['total_price'] : $pricePer * $sessionCount;
+            $packages[] = [
+                'id' => (int)($row['id'] ?? 0),
+                'scope' => (string)($row['scope'] ?? $scope),
+                'trainer_id' => (int)($row['trainer_id'] ?? 0),
+                'title' => (string)($row['title'] ?? ''),
+                'session_count' => $sessionCount,
+                'price_mode' => (string)($row['price_mode'] ?? 'per_session'),
+                'price_per_session' => $pricePer,
+                'total_price' => $total,
+                'expires_type' => (string)($row['expires_type'] ?? 'none'),
+                'expires_unit' => $row['expires_unit'] ?? null,
+                'expires_value' => $row['expires_value'] ?? null,
+                'expires_on' => $row['expires_on'] ?? null,
+                'expires_label' => ppf_trainer_sessions_format_catalog_expiration($row),
+                'created_at' => $row['created_at'] ?? null,
+                'updated_at' => $row['updated_at'] ?? null,
+            ];
+        }
+        $stmt->close();
+        return $packages;
+    }
+}
+
 if (!function_exists('ppf_trainer_sessions_parse_amount')) {
     /**
      * Parse a money string to float. Returns 0.0 when empty/invalid.
@@ -75,19 +185,42 @@ if (!function_exists('ppf_trainer_sessions_ensure_schema')) {
      * Ensure supporting tables exist (idempotent).
      */
     function ppf_trainer_sessions_ensure_schema(mysqli $conn): void {
-        @$conn->query(
-            "CREATE TABLE IF NOT EXISTS trainer_session_packages (
-                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                client_id INT NOT NULL,
-                trainer_id INT NOT NULL,
-                package_name VARCHAR(191) NOT NULL,
-                purchased_sessions INT NOT NULL DEFAULT 0,
+    @$conn->query(
+        "CREATE TABLE IF NOT EXISTS trainer_session_packages (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            client_id INT NOT NULL,
+            trainer_id INT NOT NULL,
+            package_name VARCHAR(191) NOT NULL,
+            purchased_sessions INT NOT NULL DEFAULT 0,
                 price_per_session DECIMAL(10,2) NOT NULL DEFAULT 0.00,
                 notes TEXT NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NULL,
                 INDEX idx_trainer (trainer_id),
                 INDEX idx_client (client_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+
+        @$conn->query(
+            "CREATE TABLE IF NOT EXISTS trainer_session_price_packages (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                scope ENUM('trainer','global') NOT NULL DEFAULT 'trainer',
+                trainer_id INT UNSIGNED NOT NULL DEFAULT 0,
+                title VARCHAR(191) NOT NULL,
+                session_count INT UNSIGNED NOT NULL DEFAULT 1,
+                price_mode ENUM('per_session') NOT NULL DEFAULT 'per_session',
+                price_per_session DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                total_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                expires_type ENUM('none','duration','date') NOT NULL DEFAULT 'none',
+                expires_unit ENUM('days','weeks','months','years') DEFAULT NULL,
+                expires_value INT UNSIGNED DEFAULT NULL,
+                expires_on DATE DEFAULT NULL,
+                created_by INT UNSIGNED DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NULL,
+                INDEX idx_scope (scope),
+                INDEX idx_trainer (trainer_id),
+                INDEX idx_scope_trainer (scope, trainer_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
 
