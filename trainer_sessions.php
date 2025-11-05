@@ -307,126 +307,201 @@ if ($pricingMode === 'admin') {
 
 ?>
 <style>
-  #trainerSessions {
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg, #05070d);
+    color: var(--text, #f8fafc);
+    font: 14px/1.5 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 100%;
+    margin: 24px auto;
+    padding: 0 clamp(14px, 3vw, 28px);
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 24px;
-    padding-bottom: 48px;
+    gap: 20px;
   }
-  #trainerSessions .session-layout {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-  #trainerSessions .session-mode-chip {
+  .btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
-    padding: 6px 14px;
+    background: rgba(30, 41, 59, 0.65);
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    color: var(--text, #f8fafc);
+    padding: 8px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    min-height: 34px;
+    line-height: 1.1;
+    font-size: 14px;
+    transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  }
+  .btn:hover,
+  .btn:focus-visible {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: rgba(56, 189, 248, 0.35);
+    box-shadow: 0 16px 32px rgba(14, 165, 233, 0.25);
+    transform: translateY(-1px);
+    outline: none;
+  }
+  .btn:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.5);
+    outline-offset: 2px;
+  }
+  .btn.small {
+    padding: 6px 10px;
+    font-size: 12px;
+    min-height: 30px;
+  }
+  .btn.brand {
+    background: var(--brand, #38bdf8);
+    border-color: var(--brand, #38bdf8);
+    color: #0b1120;
+  }
+  .btn.brand:hover,
+  .btn.brand:focus-visible {
+    background: color-mix(in srgb, var(--brand, #38bdf8) 80%, #ffffff 20%);
+    border-color: transparent;
+    color: #020617;
+  }
+  .btn.secondary {
+    background: rgba(15, 23, 42, 0.7);
+    border-color: rgba(148, 163, 184, 0.3);
+    color: rgba(226, 232, 240, 0.92);
+  }
+  .btn.tertiary {
+    background: rgba(8, 13, 23, 0.72);
+    border-color: rgba(148, 163, 184, 0.24);
+    color: rgba(203, 213, 225, 0.9);
+  }
+  .btn[disabled],
+  .btn[disabled]:hover {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background: rgba(15, 23, 42, 0.45);
+    border-color: rgba(148, 163, 184, 0.25);
+    color: rgba(148, 163, 184, 0.75);
+    transform: none;
+    box-shadow: none;
+  }
+  .session-mode-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
     border-radius: 999px;
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    background: rgba(15, 23, 42, 0.72);
+    text-transform: uppercase;
     font-size: 12px;
     font-weight: 600;
-    letter-spacing: 0.3px;
-    background: rgba(37, 99, 235, 0.14);
-    border: 1px solid rgba(37, 99, 235, 0.35);
-    color: rgba(191, 219, 254, 0.95);
-    text-transform: uppercase;
+    letter-spacing: 0.35px;
+    color: rgba(203, 213, 225, 0.88);
   }
-  #trainerSessions .session-mode-chip.is-trainer {
-    background: rgba(16, 185, 129, 0.14);
-    border-color: rgba(16, 185, 129, 0.35);
-    color: rgba(167, 243, 208, 0.95);
+  .session-mode-chip.is-admin {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.35);
+    color: #e0f2fe;
   }
-  .session-panel {
-    background: rgba(12, 18, 32, 0.78);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 18px;
-    box-shadow: 0 28px 70px rgba(2, 8, 23, 0.55);
-    backdrop-filter: blur(12px);
-    overflow: hidden;
+  .session-mode-chip.is-trainer {
+    background: rgba(16, 185, 129, 0.18);
+    border-color: rgba(16, 185, 129, 0.32);
+    color: #bbf7d0;
   }
-  .session-panel__header {
+  .session-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .panel {
+    background: var(--panel, rgba(15, 23, 42, 0.82));
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.22));
+    border-radius: 14px;
+    box-shadow: 0 24px 48px rgba(2, 6, 23, 0.35);
+    padding: 22px 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .panel-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    padding: 22px 26px;
-    gap: 18px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.88), rgba(30, 41, 59, 0.45));
+    gap: 16px;
+    flex-wrap: wrap;
   }
-  .session-panel__title-group {
+  .panel-title {
     display: flex;
     flex-direction: column;
     gap: 6px;
     min-width: 0;
   }
-  .session-panel__title {
+  .panel-title h2 {
     margin: 0;
     font-size: 20px;
     font-weight: 700;
-    letter-spacing: 0.3px;
-    color: var(--text, #f8fafc);
+    letter-spacing: 0.2px;
   }
-  .session-panel__subtitle {
+  .panel-subtitle {
     margin: 0;
-    color: var(--muted, rgba(148, 163, 184, 0.88));
+    color: var(--muted, #9ba4c2);
     font-size: 13px;
-    line-height: 1.45;
     max-width: 520px;
   }
-  .session-panel__actions {
+  .panel-actions {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
+    gap: 10px;
     flex-wrap: wrap;
-    position: relative;
   }
-  .session-panel__actions .btn {
-    border-radius: 10px;
-    min-width: 0;
-    white-space: nowrap;
-  }
-  .session-panel__body {
-    padding: 24px 26px 28px;
+  .panel-body {
     display: flex;
     flex-direction: column;
-    gap: 22px;
+    gap: 16px;
   }
-  .session-panel__body--flush {
+  .panel-body--flush {
     padding: 0;
+    gap: 0;
   }
-  .session-panel__body .empty-state {
-    padding: 40px 24px;
-    border-radius: 14px;
-    border: 1px dashed rgba(148, 163, 184, 0.3);
-    background: rgba(8, 13, 23, 0.72);
+  .empty-state {
+    border: 1px dashed rgba(148, 163, 184, 0.35);
+    border-radius: 12px;
+    padding: 24px 18px;
     text-align: center;
-    color: var(--muted, rgba(148, 163, 184, 0.85));
+    color: var(--muted, #9ba4c2);
     font-size: 14px;
   }
-  .session-panel__body .empty-state p {
+  .empty-state p {
     margin: 0;
   }
   .package-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 18px;
+    gap: 16px;
   }
   .package-card {
-    background: linear-gradient(155deg, rgba(17, 24, 39, 0.92), rgba(30, 41, 59, 0.65));
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 16px;
-    padding: 20px 22px;
+    background: rgba(9, 14, 28, 0.92);
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.24));
+    border-radius: 12px;
+    padding: 18px;
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    gap: 14px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
   }
   .package-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 24px 50px rgba(8, 24, 55, 0.45);
-    border-color: color-mix(in srgb, rgba(148, 163, 184, 0.18) 40%, var(--brand, #38bdf8) 60%);
+    transform: translateY(-2px);
+    box-shadow: 0 18px 36px rgba(2, 6, 23, 0.38);
   }
   .package-card header {
     display: flex;
@@ -436,118 +511,120 @@ if ($pricingMode === 'admin') {
   }
   .package-card h3 {
     margin: 0;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 600;
-    color: var(--text, #f8fafc);
   }
   .package-card .package-price {
-    font-weight: 700;
     font-size: 16px;
+    font-weight: 700;
     color: var(--brand, #38bdf8);
   }
   .package-card dl {
     margin: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 14px;
-  }
-  .package-card dl div {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    gap: 10px;
   }
   .package-card dt {
-    font-size: 11px;
-    letter-spacing: 0.6px;
+    font-size: 12px;
+    letter-spacing: 0.4px;
     text-transform: uppercase;
-    color: var(--muted, rgba(148, 163, 184, 0.78));
+    color: var(--muted, #9ba4c2);
   }
   .package-card dd {
     margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: var(--text, #f8fafc);
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+  .muted {
+    color: var(--muted, #9ba4c2);
+    font-size: 12px;
   }
   .filter-group {
     display: flex;
     align-items: center;
-    gap: 10px;
-    position: relative;
-  }
-  .filter-group .input {
-    background: rgba(8, 13, 23, 0.86);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    color: var(--text, #f8fafc);
-    padding: 8px 12px;
-    border-radius: 10px;
-    min-height: 36px;
-  }
-  .filter-group .input::placeholder {
-    color: rgba(148, 163, 184, 0.75);
-  }
-  .filter-group.has-menu {
-    position: relative;
-  }
-  .column-toggle-menu {
-    position: absolute;
-    top: calc(100% + 10px);
-    right: 0;
-    background: rgba(8, 13, 23, 0.96);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 14px;
-    padding: 12px 14px;
-    display: grid;
     gap: 8px;
-    min-width: 200px;
-    box-shadow: 0 22px 48px rgba(2, 8, 23, 0.55);
+    position: relative;
+  }
+  .filter-group select,
+  .filter-group input {
+    background: rgba(8, 13, 23, 0.9);
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--text, #f8fafc);
+    font-size: 13px;
+    min-width: 180px;
+  }
+  .filter-group.has-menu .column-toggle-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: rgba(9, 14, 28, 0.95);
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 180px;
+    box-shadow: 0 18px 40px rgba(2, 6, 23, 0.45);
     z-index: 30;
   }
-  .column-toggle-menu label {
+  .filter-group.has-menu .column-toggle-menu label {
     display: flex;
     align-items: center;
     gap: 8px;
     font-size: 13px;
     color: var(--text, #f8fafc);
-    white-space: nowrap;
   }
-  .column-toggle-menu input {
-    accent-color: var(--brand, #38bdf8);
-  }
-  .table-responsive {
-    width: 100%;
+  .table-wrapper {
+    position: relative;
     overflow-x: auto;
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    border-radius: 12px;
+    background: rgba(8, 13, 23, 0.75);
   }
-  #clientTable {
+  .table-wrapper table {
     width: 100%;
     border-collapse: collapse;
     min-width: 960px;
   }
-  #clientTable thead th {
-    background: rgba(12, 18, 32, 0.84);
-    padding: 14px 16px;
+  .table-wrapper thead th {
+    background: rgba(7, 12, 23, 0.95);
+    color: var(--muted, #9ba4c2);
+    padding: 12px 14px;
     font-size: 12px;
+    letter-spacing: 0.35px;
     text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--muted, rgba(148, 163, 184, 0.8));
+    text-align: left;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
-  #clientTable thead th .sort-btn {
-    color: inherit;
-  }
-  #clientTable tbody td {
-    padding: 14px 16px;
-    border-top: 1px solid rgba(148, 163, 184, 0.12);
-    font-size: 14px;
+  .table-wrapper tbody td {
+    padding: 12px 14px;
+    border-top: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    font-size: 13px;
     color: var(--text, #f8fafc);
   }
-  #clientTable tbody tr {
-    transition: background 0.18s ease, box-shadow 0.18s ease;
+  .table-wrapper tbody tr {
+    transition: background 0.18s ease, outline 0.18s ease;
+    cursor: pointer;
   }
-  #clientTable tbody tr:hover {
-    background: rgba(56, 189, 248, 0.08);
+  .table-wrapper tbody tr:hover {
+    background: #141a25;
   }
-  #clientTable tbody tr.is-active {
-    background: rgba(56, 189, 248, 0.16);
-    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
+  .table-wrapper tbody tr.is-active,
+  .table-wrapper tbody tr.expanded {
+    background: #141a25;
+    outline: 2px solid var(--brand, #38bdf8);
+    outline-offset: -2px;
   }
   .table-actions {
     display: flex;
@@ -566,198 +643,254 @@ if ($pricingMode === 'admin') {
   }
   .client-expansion > td {
     padding: 0;
-    background: rgba(5, 9, 20, 0.85);
-    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    background: #0e121a;
+    border-top: 1px solid var(--line, rgba(148, 163, 184, 0.26));
   }
   .client-detail-panel {
-    padding: 24px;
+    padding: 18px;
     display: grid;
-    gap: 18px;
-    background: linear-gradient(150deg, rgba(12, 18, 32, 0.92), rgba(8, 13, 23, 0.86));
-    border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, 0.14);
+    gap: 16px;
+    background: rgba(9, 14, 28, 0.94);
   }
   .detail-card {
-    background: rgba(9, 14, 28, 0.82);
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-radius: 14px;
-    padding: 20px;
+    background: rgba(8, 13, 23, 0.9);
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.24));
+    border-radius: 12px;
+    padding: 18px;
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+    gap: 14px;
   }
   .detail-card header h3 {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
-    color: var(--text, #f8fafc);
   }
   .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
   }
   .metrics-grid .label {
     display: block;
     font-size: 11px;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.4px;
     text-transform: uppercase;
-    color: var(--muted, rgba(148, 163, 184, 0.75));
+    color: var(--muted, #9ba4c2);
   }
   .metrics-grid .value {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
-    color: var(--text, #f8fafc);
   }
   .inner-table {
     width: 100%;
     border-collapse: collapse;
-    background: rgba(8, 13, 23, 0.7);
-    border-radius: 12px;
+    background: rgba(8, 13, 23, 0.82);
+    border-radius: 10px;
     overflow: hidden;
   }
   .inner-table thead th {
-    background: rgba(15, 23, 42, 0.88);
-    color: var(--muted, rgba(148, 163, 184, 0.85));
+    background: rgba(7, 12, 23, 0.95);
+    color: var(--muted, #9ba4c2);
+    padding: 10px 12px;
     font-size: 12px;
+    letter-spacing: 0.35px;
     text-transform: uppercase;
-    letter-spacing: 0.6px;
-    padding: 12px 14px;
   }
   .inner-table tbody td {
-    padding: 12px 14px;
-    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    padding: 10px 12px;
+    border-top: 1px solid var(--line, rgba(148, 163, 184, 0.26));
     font-size: 13px;
-    color: var(--text, #f8fafc);
   }
   .inner-table tbody tr:hover {
-    background: rgba(56, 189, 248, 0.08);
-  }
-  .session-row.is-active .status-pill {
-    background: rgba(16, 185, 129, 0.18);
-    color: #6ee7b7;
+    background: #141a25;
   }
   .status-pill {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 10px;
+    padding: 3px 9px;
     border-radius: 999px;
     font-size: 12px;
     font-weight: 600;
     background: rgba(56, 189, 248, 0.18);
-    color: rgba(125, 211, 252, 0.95);
+    color: #bae6fd;
     text-transform: capitalize;
   }
+  .session-row.is-active .status-pill {
+    background: rgba(16, 185, 129, 0.18);
+    color: #bbf7d0;
+  }
   .modal-backdrop {
-    background: rgba(8, 13, 23, 0.86);
-    backdrop-filter: blur(6px);
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 4000;
+  }
+  .modal-backdrop.hidden {
+    display: none;
   }
   .modal {
-    background: rgba(10, 16, 28, 0.96);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 18px;
-    box-shadow: 0 24px 60px rgba(2, 8, 23, 0.6);
+    width: min(520px, 94vw);
+    background: rgba(9, 14, 28, 0.96);
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    border-radius: 14px;
+    box-shadow: 0 24px 56px rgba(0, 0, 0, 0.55);
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
   }
   .modal-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    padding: 18px;
+    border-bottom: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+  }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--muted, #9ba4c2);
+    font-size: 24px;
+    cursor: pointer;
   }
   .modal-body {
-    padding: 24px;
-    max-height: 70vh;
+    padding: 18px;
     overflow-y: auto;
   }
   .form-grid {
     display: grid;
-    gap: 18px;
+    gap: 14px;
   }
   .form-grid .field {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
+  }
+  .form-grid label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted, #9ba4c2);
   }
   .form-grid .input,
   .form-grid select {
-    background: rgba(8, 13, 23, 0.86);
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(8, 13, 23, 0.9);
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    border-radius: 8px;
+    padding: 9px 12px;
     color: var(--text, #f8fafc);
-    padding: 10px 12px;
-    border-radius: 10px;
-  }
-  .form-grid .input:focus-visible,
-  .form-grid select:focus-visible {
-    outline: 2px solid rgba(56, 189, 248, 0.55);
-    outline-offset: 2px;
-  }
-  .form-grid .radio-group {
-    display: grid;
-    gap: 8px;
+    font-size: 14px;
   }
   .form-grid .split {
     display: flex;
     gap: 10px;
+    flex-wrap: wrap;
   }
   .form-actions {
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+    margin-top: 8px;
   }
   .form-actions .btn {
-    min-width: 140px;
+    min-width: 120px;
+  }
+  .sort-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    color: inherit;
+  }
+  .sort-btn:focus-visible {
+    outline: 2px solid var(--brand, #38bdf8);
+    outline-offset: 2px;
+  }
+  .sort-indicator {
+    font-size: 10px;
+    opacity: 0.45;
+    line-height: 1;
+  }
+  .sort-btn[data-state="asc"] .sort-indicator::before {
+    content: '▲';
+  }
+  .sort-btn[data-state="desc"] .sort-indicator::before {
+    content: '▼';
+  }
+  .sort-btn[data-state="off"] .sort-indicator::before {
+    content: '';
+  }
+  .table-wrapper::-webkit-scrollbar {
+    height: 8px;
+  }
+  .table-wrapper::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+    border-radius: 999px;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    border: 0;
   }
   @media (max-width: 1100px) {
-    .session-panel__header {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-    .session-panel__actions {
+    .panel-actions {
       width: 100%;
       justify-content: flex-start;
     }
-    #clientTable {
+    .table-wrapper table {
       min-width: 840px;
     }
   }
   @media (max-width: 720px) {
-    #trainerSessions {
-      gap: 18px;
+    .panel {
+      padding: 18px;
     }
-    .session-panel__body {
-      padding: 20px;
+    .panel-actions {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .filter-group {
+      width: 100%;
+    }
+    .filter-group input,
+    .filter-group select {
+      width: 100%;
     }
     .package-grid {
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     }
-    .session-panel__actions {
-      gap: 10px;
-    }
-    .filter-group {
-      width: 100%;
-    }
-    .filter-group .input {
-      width: 100%;
-    }
     .client-detail-panel {
-      padding: 18px;
+      padding: 16px;
     }
   }
   @media (max-width: 560px) {
-    .session-panel__actions {
-      flex-direction: column;
-      align-items: stretch;
+    .btn {
+      width: 100%;
     }
-    .filter-group {
-      flex-direction: column;
-      align-items: stretch;
-    }
-    .filter-group.has-menu .column-toggle-menu {
-      left: 0;
-      right: auto;
-    }
-    .session-panel__body {
-      padding: 18px;
+    .table-actions .btn {
+      flex: 1 1 auto;
     }
   }
 </style>
@@ -777,22 +910,22 @@ if ($pricingMode === 'admin') {
   ?>
 
   <div class="session-layout">
-    <section class="session-panel" id="catalogCard">
-      <header class="session-panel__header">
-        <div class="session-panel__title-group">
-          <h2 class="session-panel__title">Packages</h2>
+    <section class="panel session-panel" id="catalogCard">
+      <header class="panel-header">
+        <div class="panel-title">
+          <h2>Packages</h2>
           <?php if ($pricingMode === 'trainer'): ?>
-            <p class="session-panel__subtitle">Build personalised packages that reflect your coaching style and value.</p>
+            <p class="panel-subtitle">Build personalised packages that reflect your coaching style and value.</p>
           <?php else: ?>
-            <p class="session-panel__subtitle">Create global packages for your trainers to offer consistently across the team.</p>
+            <p class="panel-subtitle">Create global packages for your trainers to offer consistently across the team.</p>
           <?php endif; ?>
         </div>
-        <div class="session-panel__actions">
+        <div class="panel-actions">
           <button class="btn brand" type="button" id="createPackageBtn">Create Package</button>
         </div>
       </header>
 
-      <div class="session-panel__body">
+      <div class="panel-body">
         <?php if (empty($catalogCards)): ?>
           <div class="empty-state">
             <p>No packages yet. Create your first offer to start selling sessions.</p>
@@ -827,13 +960,13 @@ if ($pricingMode === 'admin') {
     </section>
 
     <?php if ($pricingMode === 'admin'): ?>
-    <section class="session-panel" id="clientRoster">
-      <header class="session-panel__header">
-        <div class="session-panel__title-group">
-          <h2 class="session-panel__title">Clients</h2>
-          <p class="session-panel__subtitle">Monitor client engagement, manage sessions, and keep financials balanced.</p>
+    <section class="panel session-panel" id="clientRoster">
+      <header class="panel-header">
+        <div class="panel-title">
+          <h2>Clients</h2>
+          <p class="panel-subtitle">Monitor client engagement, manage sessions, and keep financials balanced.</p>
         </div>
-        <div class="session-panel__actions">
+        <div class="panel-actions">
           <?php if ($isTrainerAdmin || $isAdmin): ?>
           <div class="filter-group">
             <label for="rosterScope" class="visually-hidden">Filter clients</label>
@@ -861,8 +994,8 @@ if ($pricingMode === 'admin') {
         </div>
       </header>
 
-      <div class="session-panel__body session-panel__body--flush">
-        <div class="table-responsive">
+      <div class="panel-body panel-body--flush">
+        <div class="table-wrapper">
           <table class="data-table" id="clientTable">
         <colgroup>
           <col span="1">
@@ -880,17 +1013,17 @@ if ($pricingMode === 'admin') {
         </colgroup>
         <thead>
           <tr>
-            <th><button type="button" class="sort-btn" data-sort-key="first">First Name</button></th>
-            <th data-column="middle"><button type="button" class="sort-btn" data-sort-key="middle">Middle Name</button></th>
-            <th><button type="button" class="sort-btn" data-sort-key="last">Last Name</button></th>
-            <th><button type="button" class="sort-btn" data-sort-key="email">Email</button></th>
-            <th data-column="phone"><button type="button" class="sort-btn" data-sort-key="phone">Phone Number</button></th>
-            <th data-column="birthdate"><button type="button" class="sort-btn" data-sort-key="birthdate">Birthdate</button></th>
-            <th data-column="age"><button type="button" class="sort-btn" data-sort-key="age">Age</button></th>
-            <th data-column="height"><button type="button" class="sort-btn" data-sort-key="height">Height</button></th>
-            <th data-column="weight"><button type="button" class="sort-btn" data-sort-key="weight">Weight</button></th>
-            <th><button type="button" class="sort-btn" data-sort-key="purchased">Sessions Purchased</button></th>
-            <th><button type="button" class="sort-btn" data-sort-key="remaining">Sessions Remaining</button></th>
+            <th><button type="button" class="sort-btn" data-sort-key="first">First Name <span class="sort-indicator"></span></button></th>
+            <th data-column="middle"><button type="button" class="sort-btn" data-sort-key="middle">Middle Name <span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-key="last">Last Name <span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-key="email">Email <span class="sort-indicator"></span></button></th>
+            <th data-column="phone"><button type="button" class="sort-btn" data-sort-key="phone">Phone Number <span class="sort-indicator"></span></button></th>
+            <th data-column="birthdate"><button type="button" class="sort-btn" data-sort-key="birthdate">Birthdate <span class="sort-indicator"></span></button></th>
+            <th data-column="age"><button type="button" class="sort-btn" data-sort-key="age">Age <span class="sort-indicator"></span></button></th>
+            <th data-column="height"><button type="button" class="sort-btn" data-sort-key="height">Height <span class="sort-indicator"></span></button></th>
+            <th data-column="weight"><button type="button" class="sort-btn" data-sort-key="weight">Weight <span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-key="purchased">Sessions Purchased <span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-key="remaining">Sessions Remaining <span class="sort-indicator"></span></button></th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -967,7 +1100,7 @@ if ($pricingMode === 'admin') {
                       <p>No sessions have been scheduled yet.</p>
                     </div>
                   <?php else: ?>
-                    <div class="table-responsive">
+                    <div class="table-wrapper">
                       <table class="inner-table">
                         <thead>
                           <tr>
