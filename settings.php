@@ -2151,16 +2151,17 @@ if ($demoModeControlsAvailable) {
           <div class="trainer-pricing-settings">
             <h3>Trainer Sessions</h3>
             <p class="small-text">Select who controls pricing for trainer session packages.</p>
+            <input type="hidden" name="trainer_sessions_pricing_mode" id="trainerPricingModeInput" value="<?php echo h($trainerPricingMode); ?>">
             <div class="pricing-mode-options">
               <label class="pricing-mode-option">
-                <input type="radio" name="trainer_sessions_pricing_mode" value="trainer" <?php echo $trainerPricingMode === 'trainer' ? 'checked' : ''; ?>>
+                <input type="checkbox" data-pricing-mode-option="trainer" <?php echo $trainerPricingMode === 'trainer' ? 'checked' : ''; ?> aria-checked="<?php echo $trainerPricingMode === 'trainer' ? 'true' : 'false'; ?>">
                 <div class="pricing-mode-card">
                   <strong>Trainers set own prices.</strong>
                   <p>Empower each trainer to create unique packages that match their coaching style.</p>
                 </div>
               </label>
               <label class="pricing-mode-option">
-                <input type="radio" name="trainer_sessions_pricing_mode" value="admin" <?php echo $trainerPricingMode === 'admin' ? 'checked' : ''; ?>>
+                <input type="checkbox" data-pricing-mode-option="admin" <?php echo $trainerPricingMode === 'admin' ? 'checked' : ''; ?> aria-checked="<?php echo $trainerPricingMode === 'admin' ? 'true' : 'false'; ?>">
                 <div class="pricing-mode-card">
                   <strong>Trainer Admin sets prices.</strong>
                   <p>Maintain a global price catalog so every trainer offers the same packages.</p>
@@ -2224,6 +2225,45 @@ if ($demoModeControlsAvailable) {
     const tabButtons = Array.from(document.querySelectorAll('.settings-tab'));
     const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
     const tabStorageKey = 'ppf-settings-active-tab';
+
+    const pricingModeInput = document.getElementById('trainerPricingModeInput');
+    const pricingModeBoxes = Array.from(document.querySelectorAll('input[data-pricing-mode-option]'));
+
+    function setPricingMode(mode) {
+      if (!pricingModeInput || !pricingModeBoxes.length) return;
+      const normalized = (mode || '').toLowerCase() === 'admin' ? 'admin' : 'trainer';
+      pricingModeInput.value = normalized;
+      pricingModeBoxes.forEach((box) => {
+        const value = (box.dataset.pricingModeOption || '').toLowerCase();
+        const isMatch = value === normalized;
+        box.checked = isMatch;
+        box.setAttribute('aria-checked', isMatch ? 'true' : 'false');
+        box.closest('.pricing-mode-option')?.classList.toggle('is-active', isMatch);
+      });
+    }
+
+    if (pricingModeInput && pricingModeBoxes.length) {
+      setPricingMode(pricingModeInput.value || 'trainer');
+      pricingModeBoxes.forEach((box) => {
+        box.addEventListener('click', (event) => {
+          event.preventDefault();
+          const desired = box.dataset.pricingModeOption || 'trainer';
+          setPricingMode(desired);
+        });
+        box.addEventListener('keydown', (event) => {
+          const key = event.key || '';
+          if (key === ' ' || key === 'Spacebar' || key === 'Enter') {
+            event.preventDefault();
+            const desired = box.dataset.pricingModeOption || 'trainer';
+            setPricingMode(desired);
+          }
+        });
+        box.addEventListener('change', () => {
+          const desired = box.dataset.pricingModeOption || 'trainer';
+          setPricingMode(desired);
+        });
+      });
+    }
 
     function tabFromHash(hash) {
       if (!hash) return null;
