@@ -776,10 +776,39 @@ if ($pricingMode === 'admin') {
     flex-direction: column;
     gap: 6px;
   }
+  .form-grid fieldset {
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 0;
+    background: rgba(8, 13, 23, 0.72);
+  }
+  .form-grid fieldset legend {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 0 4px;
+    color: var(--muted, #94a3b8);
+  }
   .form-grid label {
     font-size: 13px;
     font-weight: 600;
     color: var(--muted, #9ba4c2);
+  }
+  .form-grid .radio-group {
+    display: grid;
+    gap: 8px;
+  }
+  .form-grid .radio {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text, #f8fafc);
+  }
+  .form-grid .radio input[type="radio"] {
+    width: 18px;
+    height: 18px;
   }
   .form-grid .input,
   .form-grid select {
@@ -909,6 +938,15 @@ if ($pricingMode === 'admin') {
   ]);
   ?>
 
+  <?php
+  $canCreateCatalogPackages = false;
+  if ($pricingMode === 'trainer') {
+      $canCreateCatalogPackages = in_array($roleKey, ['trainer', 'trainer_admin'], true) || $isAdmin;
+  } else {
+      $canCreateCatalogPackages = $isTrainerAdmin || $isAdmin;
+  }
+  ?>
+
   <div class="session-layout">
     <section class="panel session-panel" id="catalogCard">
       <header class="panel-header">
@@ -921,7 +959,11 @@ if ($pricingMode === 'admin') {
           <?php endif; ?>
         </div>
         <div class="panel-actions">
-          <button class="btn brand" type="button" id="createPackageBtn">Create Package</button>
+          <?php if ($canCreateCatalogPackages): ?>
+            <button class="btn brand" type="button" id="createPackageBtn">Create Package</button>
+          <?php else: ?>
+            <span class="muted" style="font-size:12px;">Contact a trainer admin to update packages.</span>
+          <?php endif; ?>
         </div>
       </header>
 
@@ -1204,10 +1246,19 @@ if ($pricingMode === 'admin') {
     wrapper.innerHTML = `
       <input type="hidden" name="csrf_token" value="${csrfToken}">
       <input type="hidden" name="action" value="create_price_package">
+      <input type="hidden" name="price_mode" value="per_session">
       <div class="field">
         <label for="pkgTitle">Package Name</label>
         <input id="pkgTitle" name="title" class="input" required>
       </div>
+      <fieldset class="field">
+        <legend>Price Mode</legend>
+        <label class="radio">
+          <input type="radio" name="price_mode_display" value="per_session" checked disabled>
+          Per Session
+        </label>
+        <small class="muted">Charge by the session. Additional pricing modes will be available soon.</small>
+      </fieldset>
       <div class="field">
         <label for="pkgSessions">Sessions Included</label>
         <input id="pkgSessions" name="session_count" type="number" min="1" class="input" value="5" required>
