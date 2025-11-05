@@ -12,8 +12,8 @@ $userId = (int)($USER_ID   ?? ($_SESSION['user_id'] ?? 0));
 
 $roleLower   = ppf_role_key($role);
 $isAdmin     = ppf_is_admin_role($role);
-$hasTrainerAccess = in_array($roleLower, ['trainer', 'trainer_admin'], true);
-$isTrainer   = ($roleLower === 'trainer');
+$hasTrainerAccess = ppf_role_has_trainer_access($role);
+$isTrainer   = ppf_role_counts_as_trainer($role);
 $isTrainerAdmin = ($roleLower === 'trainer_admin');
 $isClient    = ($roleLower === 'client');
 

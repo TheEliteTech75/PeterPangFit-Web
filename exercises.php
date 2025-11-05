@@ -70,7 +70,8 @@ if (!is_trainer_admin($USER_ROLE ?? null)) {
 
 $roleKey = ppf_role_key($USER_ROLE ?? 'guest');
 $actorId = (int)($USER_ID ?? 0);
-$isTrainer = ($roleKey === 'trainer');
+$isTrainer = ppf_role_counts_as_trainer($USER_ROLE ?? null);
+$isStrictTrainer = ($roleKey === 'trainer');
 $isTrainerAdmin = ($roleKey === 'trainer_admin');
 $isTrainerAdminOrHigher = $isTrainerAdmin || ppf_is_admin_role($USER_ROLE ?? null);
 
@@ -344,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           }
           $stmt->close();
         }
-        if ($isTrainer && $HAS_CREATED_BY && $exerciseOwnerId !== $actorId) {
+        if ($isStrictTrainer && $HAS_CREATED_BY && $exerciseOwnerId !== $actorId) {
           throw new Exception('You do not have permission to edit this exercise.');
         }
         $beforeCats = [];
@@ -431,7 +432,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           }
           $stmt->close();
         }
-        if ($isTrainer && $HAS_CREATED_BY && $exerciseOwnerId !== $actorId) {
+        if ($isStrictTrainer && $HAS_CREATED_BY && $exerciseOwnerId !== $actorId) {
           throw new Exception('You do not have permission to delete this exercise.');
         }
         if ($stmt = $conn->prepare("SELECT category_id FROM exercise_categories WHERE exercise_id = ?")) {
@@ -515,7 +516,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $stmtOwner->close();
           }
-          if ($isTrainer && $exerciseOwnerId !== $actorId) {
+          if ($isStrictTrainer && $exerciseOwnerId !== $actorId) {
             throw new Exception('You do not have permission to update this exercise.');
           }
         }

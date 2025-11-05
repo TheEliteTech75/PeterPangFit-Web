@@ -39,7 +39,8 @@ if (!in_array($roleKey, ['trainer', 'trainer_admin'], true) && !$isAdminRole) {
 }
 
 $actorId = (int)($USER_ID ?? 0);
-$isTrainer = ($roleKey === 'trainer');
+$isTrainer = ppf_role_counts_as_trainer($USER_ROLE ?? null);
+$isStrictTrainer = ($roleKey === 'trainer');
 $isTrainerAdmin = ($roleKey === 'trainer_admin');
 $isTrainerAdminOrHigher = $isTrainerAdmin || $isAdminRole;
 $showSentByColumn = $isTrainerAdminOrHigher;
@@ -95,16 +96,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $fetch->close();
             }
 
-            $ownsInvite = !$isTrainer || (int)($inviteRow['created_by'] ?? 0) === $actorId;
+            $ownsInvite = !$isStrictTrainer || (int)($inviteRow['created_by'] ?? 0) === $actorId;
 
             if (!$ownsInvite) {
                 $flash = 'You do not have permission to cancel this invite.';
             } else {
-                $sql = $isTrainer
+                $sql = $isStrictTrainer
                     ? "UPDATE invites SET cancelled_at = NOW() WHERE id = ? AND cancelled_at IS NULL AND created_by = ?"
                     : "UPDATE invites SET cancelled_at = NOW() WHERE id = ? AND cancelled_at IS NULL";
                 if ($stmt = $conn->prepare($sql)) {
-                    if ($isTrainer) {
+                    if ($isStrictTrainer) {
                         $stmt->bind_param('ii', $invite_id, $actorId);
                     } else {
                         $stmt->bind_param('i', $invite_id);
@@ -152,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!$row) {
                 $flash = 'Invite not found.';
-            } elseif ($isTrainer && (int)($row['created_by'] ?? 0) !== $actorId) {
+            } elseif ($isStrictTrainer && (int)($row['created_by'] ?? 0) !== $actorId) {
                 $flash = 'You do not have permission to resend this invite.';
             } else {
                 $cancelled = !empty($row['cancelled_at']);
@@ -289,7 +290,7 @@ $sql = "
 ";
 $types = '';
 $params = [];
-if ($isTrainer) {
+if ($isStrictTrainer) {
     $sql .= " WHERE i.created_by = ?";
     $types = 'i';
     $params[] = $actorId;

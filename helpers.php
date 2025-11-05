@@ -2765,6 +2765,16 @@ if (!function_exists('ppf_role_has_trainer_access')) {
   }
 }
 
+if (!function_exists('ppf_role_counts_as_trainer')) {
+  function ppf_role_counts_as_trainer($role): bool {
+    $key = ppf_role_key($role);
+    if (in_array($key, ['trainer', 'trainer_admin', 'admin_trainer'], true)) {
+      return true;
+    }
+    return ppf_is_admin_role($role);
+  }
+}
+
 if (!function_exists('ppf_ensure_super_admin_role')) {
   function ppf_ensure_super_admin_role(mysqli $conn): void {
     try {
