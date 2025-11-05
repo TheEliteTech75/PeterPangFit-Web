@@ -171,32 +171,44 @@ $catalogCards = array_map(function (array $pkg) {
 }, $catalogPackages);
 
 $rosterScope = 'my';
-if ($pricingMode === 'admin' && ($isTrainerAdmin || $isAdmin)) {
+if (($isTrainerAdmin || $isAdmin)) {
     $scopeCandidate = strtolower((string)($_GET['scope'] ?? 'my'));
     if (in_array($scopeCandidate, ['my', 'all', 'unassigned'], true)) {
         $rosterScope = $scopeCandidate;
     }
 }
 
+$rosterTrainerId = $trainerId;
+if ($isAdmin && isset($_GET['trainer_id'])) {
+    $rosterTrainerId = max(0, (int)$_GET['trainer_id']);
+}
+
 $rosterRows = [];
-if ($pricingMode === 'admin') {
-    if ($isAdmin && isset($_GET['trainer_id'])) {
-        $trainerId = max(0, (int)$_GET['trainer_id']);
-    }
+if ($isTrainerAdmin || $isAdmin) {
     switch ($rosterScope) {
         case 'all':
             $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, ['include_unassigned' => true]);
             break;
         case 'unassigned':
-            $rosterRows = array_filter(
+            $rosterRows = array_values(array_filter(
                 ppf_trainer_sessions_collect_client_overview($conn, ['include_unassigned' => true]),
                 fn($row) => (int)($row['assigned_trainer_id'] ?? 0) === 0
-            );
+            ));
             break;
         default:
-            $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, ['trainer_id' => $trainerId]);
+            if ($rosterTrainerId > 0) {
+                $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, ['trainer_id' => $rosterTrainerId]);
+            } else {
+                $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, ['include_unassigned' => false]);
+            }
             break;
     }
+} else {
+    $options = [];
+    if ($rosterTrainerId > 0) {
+        $options['trainer_id'] = $rosterTrainerId;
+    }
+    $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, $options);
 }
 
 $clientSummaries = [];
@@ -204,8 +216,7 @@ $clientDetails = [];
 $availablePackagesForClients = [];
 $clientRosterPayload = [];
 
-if ($pricingMode === 'admin') {
-    foreach ($rosterRows as $row) {
+foreach ($rosterRows as $row) {
         $clientId = (int)($row['id'] ?? 0);
         if ($clientId <= 0) {
             continue;
@@ -240,8 +251,7 @@ if ($pricingMode === 'admin') {
             'payments_total' => ts_format_currency($row['total_payments'] ?? 0),
             'refunds_total' => ts_format_currency($row['total_refunds'] ?? 0),
         ];
-
-        $packages = ppf_trainer_sessions_collect_client_packages($conn, $clientId, $trainerId > 0 ? $trainerId : null);
+        $packages = ppf_trainer_sessions_collect_client_packages($conn, $clientId, $rosterTrainerId > 0 ? $rosterTrainerId : null);
         $transactionsCount = 0;
         $sessionRows = [];
         $packageCards = [];
@@ -352,14 +362,13 @@ if ($pricingMode === 'admin') {
         ];
     }
 
-    $availablePackagesForClients = array_map(function ($pkg) {
-        return [
-            'id' => (int)($pkg['id'] ?? 0),
-            'title' => $pkg['title'] ?? 'Package',
-            'label' => ($pkg['title'] ?? 'Package') . ' • ' . ts_format_currency($pkg['total_price'] ?? 0) . ' (' . (int)($pkg['session_count'] ?? 1) . ' sessions)',
-        ];
-    }, $catalogPackages);
-}
+$availablePackagesForClients = array_map(function ($pkg) {
+    return [
+        'id' => (int)($pkg['id'] ?? 0),
+        'title' => $pkg['title'] ?? 'Package',
+        'label' => ($pkg['title'] ?? 'Package') . ' • ' . ts_format_currency($pkg['total_price'] ?? 0) . ' (' . (int)($pkg['session_count'] ?? 1) . ' sessions)',
+    ];
+}, $catalogPackages);
 
 ?>
 <style>
@@ -1089,7 +1098,6 @@ if ($pricingMode === 'admin') {
       </div>
     </section>
 
-    <?php if ($pricingMode === 'admin'): ?>
     <section class="panel session-panel" id="clientRoster">
       <header class="panel-header">
         <div class="panel-title">
@@ -1125,6 +1133,11 @@ if ($pricingMode === 'admin') {
       </header>
 
       <div class="panel-body panel-body--flush">
+        <?php if (empty($clientSummaries)): ?>
+          <div class="empty-state">
+            <p>No clients are assigned yet. Once you add clients, they will appear here.</p>
+          </div>
+        <?php else: ?>
         <div class="table-wrapper">
           <table class="data-table" id="clientTable">
         <colgroup>
@@ -1270,9 +1283,9 @@ if ($pricingMode === 'admin') {
         </tbody>
           </table>
         </div>
+        <?php endif; ?>
       </div>
     </section>
-  <?php endif; ?>
   </div>
 </main>
 
