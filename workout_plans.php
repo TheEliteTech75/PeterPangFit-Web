@@ -184,7 +184,8 @@ if (!is_trainer_admin($USER_ROLE ?? null)) {
 
 $roleKey = ppf_role_key($USER_ROLE ?? 'guest');
 $actorId = (int)($USER_ID ?? 0);
-$isTrainer = ($roleKey === 'trainer');
+$isTrainer = ppf_role_counts_as_trainer($USER_ROLE ?? null);
+$isStrictTrainer = ($roleKey === 'trainer');
 $isTrainerAdmin = ($roleKey === 'trainer_admin');
 $isTrainerAdminOrHigher = $isTrainerAdmin || ppf_is_admin_role($USER_ROLE ?? null);
 
@@ -320,7 +321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
           throw new Exception('Failed to load plan.');
         }
-        if ($isTrainer && $HAS_CREATED_BY && $planOwnerId !== $actorId) {
+        if ($isStrictTrainer && $HAS_CREATED_BY && $planOwnerId !== $actorId) {
           throw new Exception('You do not have permission to edit this workout plan.');
         }
         if ($stmtOld = $conn->prepare("SELECT exercise_id FROM plan_exercises WHERE plan_id = ? ORDER BY position ASC, exercise_id ASC")) {
@@ -401,7 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
           throw new Exception('Failed to load plan.');
         }
-        if ($isTrainer && $HAS_CREATED_BY && $planOwnerId !== $actorId) {
+        if ($isStrictTrainer && $HAS_CREATED_BY && $planOwnerId !== $actorId) {
           throw new Exception('You do not have permission to delete this workout plan.');
         }
         if ($stmtOld = $conn->prepare("SELECT exercise_id FROM plan_exercises WHERE plan_id = ? ORDER BY position ASC, exercise_id ASC")) {

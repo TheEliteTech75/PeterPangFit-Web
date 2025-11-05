@@ -473,13 +473,14 @@ $role_key  = ppf_role_key($role);
 $actorId = isset($USER_ID) ? (int)$USER_ID : 0;
 $can_admin = in_array($role_key, ['trainer', 'trainer_admin'], true) || ppf_is_admin_role($role);
 $is_admin  = ppf_is_admin_role($role);
-$isTrainer = ($role_key === 'trainer');
+$isTrainer = ppf_role_counts_as_trainer($role);
+$isStrictTrainer = ($role_key === 'trainer');
 $isTrainerAdmin = ($role_key === 'trainer_admin');
 $isTrainerAdminOrHigher = $isTrainerAdmin || $is_admin;
 
 /* ---------- Topline metrics (admin/trainer) ---------- */
 $total_clients = null;
-if ($isTrainer && $actorId > 0) {
+if ($isStrictTrainer && $actorId > 0) {
   $total_clients = safe_count_sql(
     $conn,
     "SELECT COUNT(*) FROM users WHERE (role = 'client' OR is_client = 1) AND assigned_trainer_id = ?",
@@ -533,7 +534,7 @@ $inviteSql = "
   FROM invites";
 $inviteTypes = 'sss';
 $inviteParams = [$now, $now, $now];
-if ($isTrainer && $actorId > 0) {
+if ($isStrictTrainer && $actorId > 0) {
   $inviteSql .= ' WHERE created_by = ?';
   $inviteTypes .= 'i';
   $inviteParams[] = $actorId;
