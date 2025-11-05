@@ -652,6 +652,9 @@ $availablePackagesForClients = array_map(function ($pkg) {
     box-shadow: 0 18px 40px rgba(2, 6, 23, 0.45);
     z-index: 30;
   }
+  .filter-group.has-menu .column-toggle-menu[hidden] {
+    display: none !important;
+  }
   .filter-group.has-menu .column-toggle-menu label {
     display: flex;
     align-items: center;
@@ -1119,7 +1122,7 @@ $availablePackagesForClients = array_map(function ($pkg) {
             <input type="search" id="clientSearch" class="input" placeholder="Search clients">
           </div>
           <div class="filter-group has-menu">
-            <button class="btn secondary" type="button" id="columnToggleBtn">Columns</button>
+            <button class="btn secondary" type="button" id="columnToggleBtn" aria-haspopup="true" aria-expanded="false">Columns</button>
             <div class="column-toggle-menu" id="columnToggleMenu" hidden>
               <label><input type="checkbox" data-column="middle" checked> Middle Name</label>
               <label><input type="checkbox" data-column="phone" checked> Phone Number</label>
@@ -1511,14 +1514,32 @@ $availablePackagesForClients = array_map(function ($pkg) {
 
   function setupColumnToggle(){
     if (!columnToggleBtn || !columnToggleMenu) return;
-    columnToggleBtn.addEventListener('click', () => {
-      columnToggleMenu.hidden = !columnToggleMenu.hidden;
+    const setMenuVisibility = (shouldShow) => {
+      columnToggleMenu.hidden = !shouldShow;
+      columnToggleBtn.setAttribute('aria-expanded', shouldShow ? 'true' : 'false');
+    };
+
+    setMenuVisibility(false);
+
+    columnToggleBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      const willOpen = columnToggleMenu.hidden;
+      setMenuVisibility(willOpen);
     });
+
     document.addEventListener('click', (event) => {
       if (!columnToggleMenu.hidden && !columnToggleMenu.contains(event.target) && event.target !== columnToggleBtn) {
-        columnToggleMenu.hidden = true;
+        setMenuVisibility(false);
       }
     });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !columnToggleMenu.hidden) {
+        setMenuVisibility(false);
+        columnToggleBtn.focus();
+      }
+    });
+
     columnToggleMenu.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
       checkbox.addEventListener('change', () => {
         const column = checkbox.dataset.column;
