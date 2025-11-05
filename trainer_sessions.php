@@ -202,6 +202,7 @@ if ($pricingMode === 'admin') {
 $clientSummaries = [];
 $clientDetails = [];
 $availablePackagesForClients = [];
+$clientRosterPayload = [];
 
 if ($pricingMode === 'admin') {
     foreach ($rosterRows as $row) {
@@ -245,30 +246,45 @@ if ($pricingMode === 'admin') {
         $sessionRows = [];
         $packageCards = [];
         $packageOptions = [];
+        $packagePayload = [];
+        $sessionPayload = [];
 
         foreach ($packages as $package) {
             $packageId = (int)($package['id'] ?? 0);
             $packageName = $package['package_name'] ?? 'Package';
+            $pricePerSession = (float)($package['price_per_session'] ?? 0);
+            $purchasedSessions = (int)($package['purchased_sessions'] ?? 0);
+            $completedSessions = (int)($package['completed_count'] ?? 0);
+            $cancelledSessions = (int)($package['cancelled_count'] ?? 0);
+            $refundedSessions = 0;
+            $packageCreatedAt = $package['created_at'] ?? null;
+
             $packageCards[] = [
-                'id' => (int)($package['id'] ?? 0),
+                'id' => $packageId,
                 'name' => $packageName,
-                'purchased_sessions' => (int)($package['purchased_sessions'] ?? 0),
-                'price_per_session' => ts_format_currency($package['price_per_session'] ?? 0),
-                'created_at' => ts_format_date($package['created_at'] ?? null),
+                'purchased_sessions' => $purchasedSessions,
+                'price_per_session' => ts_format_currency($pricePerSession),
+                'created_at' => ts_format_date($packageCreatedAt),
             ];
             $packageOptions[] = [
                 'id' => $packageId,
-                'label' => $packageName . ' • ' . (int)($package['purchased_sessions'] ?? 0) . ' sessions',
+                'label' => $packageName . ' • ' . $purchasedSessions . ' sessions',
             ];
             foreach ($package['transactions'] as $txn) {
                 $transactionsCount++;
             }
+
+            $packageSessionPayload = [];
             foreach ($package['sessions'] as $session) {
-                $sessionRows[] = [
+                $status = strtolower((string)($session['status'] ?? 'scheduled'));
+                if ($status === 'refunded') {
+                    $refundedSessions++;
+                }
+                $sessionRow = [
                     'session_id' => (int)($session['id'] ?? 0),
                     'package_id' => $packageId,
                     'package_name' => $packageName,
-                    'purchase_date' => ts_format_date($package['created_at'] ?? null),
+                    'purchase_date' => ts_format_date($packageCreatedAt),
                     'scheduled_date' => ts_format_date($session['scheduled_start'] ?? null),
                     'start_time' => ts_format_time($session['scheduled_start'] ?? null),
                     'end_time' => ts_format_time($session['scheduled_end'] ?? null),
@@ -276,7 +292,39 @@ if ($pricingMode === 'admin') {
                     'is_active' => ts_is_active_session($session, $now),
                     'raw' => $session,
                 ];
+                $sessionRows[] = $sessionRow;
+
+                $sessionPayloadItem = [
+                    'id' => (int)($session['id'] ?? 0),
+                    'package_id' => $packageId,
+                    'package_name' => $packageName,
+                    'status' => $status,
+                    'scheduled_start' => $session['scheduled_start'] ?? null,
+                    'scheduled_end' => $session['scheduled_end'] ?? null,
+                    'price_per_session' => $pricePerSession,
+                    'purchase_date' => $packageCreatedAt,
+                    'notes' => $session['notes'] ?? '',
+                    'public_token' => $session['public_token'] ?? null,
+                    'is_editable' => !in_array($status, ['completed', 'refunded'], true),
+                    'is_removable' => !in_array($status, ['completed', 'refunded'], true),
+                ];
+                $packageSessionPayload[] = $sessionPayloadItem;
+                $sessionPayload[] = $sessionPayloadItem;
             }
+
+            $remainingSessions = $package['remaining_sessions'] ?? max(0, $purchasedSessions - $completedSessions - $cancelledSessions - $refundedSessions);
+
+            $packagePayload[] = [
+                'id' => $packageId,
+                'name' => $packageName,
+                'price_per_session' => $pricePerSession,
+                'purchased_sessions' => $purchasedSessions,
+                'completed_sessions' => $completedSessions,
+                'cancelled_sessions' => $cancelledSessions,
+                'refunded_sessions' => $refundedSessions,
+                'remaining_sessions' => (int)$remainingSessions,
+                'sessions' => $packageSessionPayload,
+            ];
         }
 
         usort($sessionRows, function ($a, $b) {
@@ -293,6 +341,14 @@ if ($pricingMode === 'admin') {
             'lifetime_refunded' => ts_format_currency($row['total_refunds'] ?? 0),
             'refund_due' => '$0.00',
             'package_options' => $packageOptions,
+            'package_payload' => $packagePayload,
+            'session_payload' => $sessionPayload,
+        ];
+
+        $clientRosterPayload[$clientId] = [
+            'summary' => $clientSummaries[$clientId],
+            'packages' => $packagePayload,
+            'sessions' => $sessionPayload,
         ];
     }
 
@@ -378,6 +434,17 @@ if ($pricingMode === 'admin') {
     background: rgba(15, 23, 42, 0.7);
     border-color: rgba(148, 163, 184, 0.3);
     color: rgba(226, 232, 240, 0.92);
+  }
+  .btn.danger {
+    background: rgba(239, 68, 68, 0.18);
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #fee2e2;
+  }
+  .btn.danger:hover,
+  .btn.danger:focus-visible {
+    background: rgba(239, 68, 68, 0.28);
+    border-color: rgba(248, 113, 113, 0.45);
+    color: #fff1f2;
   }
   .btn.tertiary {
     background: rgba(8, 13, 23, 0.72);
@@ -824,6 +891,27 @@ if ($pricingMode === 'admin') {
     gap: 10px;
     flex-wrap: wrap;
   }
+  .form-grid .value {
+    font-weight: 600;
+  }
+  .session-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 12px;
+    border: 1px solid var(--line, rgba(148, 163, 184, 0.26));
+    border-radius: 10px;
+    background: rgba(8, 13, 23, 0.72);
+  }
+  .session-checklist label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text, #f8fafc);
+  }
   .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -1157,7 +1245,7 @@ if ($pricingMode === 'admin') {
                         </thead>
                         <tbody>
                         <?php foreach ($clientDetails[$cid]['sessions'] as $session): ?>
-                          <tr class="session-row<?php echo $session['is_active'] ? ' is-active' : ''; ?>" data-session-id="<?php echo h($session['session_id']); ?>" data-package-id="<?php echo h($session['package_id']); ?>">
+                          <tr class="session-row<?php echo $session['is_active'] ? ' is-active' : ''; ?>" data-session-id="<?php echo h($session['session_id']); ?>" data-package-id="<?php echo h($session['package_id']); ?>" data-client-id="<?php echo h($cid); ?>">
                             <td><?php echo h($session['package_name']); ?></td>
                             <td><?php echo h($session['purchase_date']); ?></td>
                             <td><?php echo h($session['scheduled_date']); ?></td>
@@ -1203,6 +1291,7 @@ if ($pricingMode === 'admin') {
   const pricingMode = <?php echo json_encode($pricingMode, JSON_UNESCAPED_SLASHES); ?>;
   const csrfToken = <?php echo json_encode($csrfToken, JSON_UNESCAPED_SLASHES); ?>;
   const packagesForClients = <?php echo json_encode($availablePackagesForClients, JSON_UNESCAPED_SLASHES); ?>;
+  const clientRosterData = <?php echo json_encode($clientRosterPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 
   const modalBackdrop = document.getElementById('sessionModal');
   const modalBody = modalBackdrop?.querySelector('.modal-body');
@@ -1214,6 +1303,49 @@ if ($pricingMode === 'admin') {
   const rosterScope = document.getElementById('rosterScope');
   const clientSearch = document.getElementById('clientSearch');
   const clientTable = document.getElementById('clientTable');
+
+  const currencyFormatter = (typeof Intl !== 'undefined' && typeof Intl.NumberFormat === 'function')
+    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+    : null;
+
+  function formatCurrency(value) {
+    const amount = Number(value || 0);
+    if (currencyFormatter) {
+      try {
+        return currencyFormatter.format(amount);
+      } catch (err) {
+        // fall through
+      }
+    }
+    return '$' + amount.toFixed(2);
+  }
+
+  function splitDateTimeParts(iso) {
+    if (!iso) return { date: '', time: '' };
+    const normalized = String(iso).replace('T', ' ').trim();
+    const parts = normalized.split(' ');
+    if (parts.length === 1) {
+      const segment = parts[0];
+      const datePart = segment.slice(0, 10);
+      const timePart = segment.length >= 16 ? segment.slice(11, 16) : '';
+      return { date: datePart, time: timePart };
+    }
+    return { date: parts[0], time: (parts[1] || '').slice(0, 5) };
+  }
+
+  function toDateInputValue(iso) {
+    return splitDateTimeParts(iso).date;
+  }
+
+  function toTimeInputValue(iso) {
+    return splitDateTimeParts(iso).time;
+  }
+
+  function formatDisplayDateTime(iso) {
+    if (!iso) return 'Unscheduled';
+    const parts = splitDateTimeParts(iso);
+    return parts.time ? `${parts.date} ${parts.time}` : parts.date;
+  }
 
   function openModal(title, content){
     if (!modalBackdrop || !modalBody || !modalTitle) return;
@@ -1309,7 +1441,7 @@ if ($pricingMode === 'admin') {
       const rawPrice = priceInput.value || '';
       const numeric = parseFloat(rawPrice.replace(/[^0-9.]/g, '')) || 0;
       const total = sessions * numeric;
-      totalLabel.textContent = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(total);
+      totalLabel.textContent = formatCurrency(total);
     }
 
     function refreshExpiration(){
@@ -1412,7 +1544,12 @@ if ($pricingMode === 'admin') {
 
   const clientRows = document.querySelectorAll('.client-row');
   clientRows.forEach((row) => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (event) => {
+      if (event && event.target instanceof HTMLElement) {
+        if (event.target.closest('.table-actions') || event.target.closest('button') || event.target.closest('a')) {
+          return;
+        }
+      }
       const clientId = row.dataset.clientId;
       document.querySelectorAll('.client-row').forEach((r) => r.classList.remove('is-active'));
       document.querySelectorAll('.client-expansion').forEach((exp) => {
@@ -1434,31 +1571,97 @@ if ($pricingMode === 'admin') {
     }
   });
 
+  function getClientData(clientId){
+    if (!clientId) return null;
+    if (!clientRosterData || typeof clientRosterData !== 'object') return null;
+    return clientRosterData[clientId] || null;
+  }
+
+  function findSessionDetail(sessionId){
+    const sid = parseInt(sessionId, 10);
+    if (!sid) return null;
+    if (!clientRosterData || typeof clientRosterData !== 'object') return null;
+    for (const [clientId, data] of Object.entries(clientRosterData)) {
+      const sessions = (data && Array.isArray(data.sessions)) ? data.sessions : [];
+      const match = sessions.find((session) => session.id === sid);
+      if (match) {
+        return { clientId, session: match };
+      }
+    }
+    return null;
+  }
+
   function buildAddSessionsForm(clientId){
     const form = document.createElement('form');
     form.className = 'form-grid';
+    const hasPackages = Array.isArray(packagesForClients) && packagesForClients.length > 0;
+    const optionsHtml = hasPackages
+      ? packagesForClients.map((pkg) => `<option value="${pkg.id}">${pkg.label}</option>`).join('')
+      : '<option value="">No packages available</option>';
+    const helpText = hasPackages ? '' : '<small class="muted">Create a price package before adding sessions.</small>';
+
     form.innerHTML = `
       <input type="hidden" name="csrf_token" value="${csrfToken}">
       <input type="hidden" name="action" value="manual_add_sessions">
+      <input type="hidden" name="schedule_now" value="0">
       <div class="field">
         <label for="addCount">Number of Sessions</label>
         <input id="addCount" name="count" type="number" min="1" class="input" value="1" required>
       </div>
       <div class="field">
         <label for="addPackage">Price Package</label>
-        <select id="addPackage" name="catalog_package_id" class="input">
-          ${packagesForClients.map(pkg => `<option value="${pkg.id}">${pkg.label}</option>`).join('')}
+        <select id="addPackage" name="catalog_package_id" class="input" required>
+          ${optionsHtml}
         </select>
+        ${helpText}
       </div>
       <div class="field">
-        <label for="scheduleNow">Schedule Immediately</label>
-        <textarea id="scheduleNow" class="input" name="schedule_notes" placeholder="Optional notes or proposed dates"></textarea>
+        <label for="addNotes">Notes</label>
+        <textarea id="addNotes" class="input" name="schedule_notes" placeholder="Optional notes for this adjustment"></textarea>
       </div>
+      <fieldset class="field">
+        <legend>Schedule Options</legend>
+        <label class="checkbox">
+          <input type="checkbox" id="addScheduleToggle">
+          Schedule these sessions now
+        </label>
+        <div class="schedule-fields" data-schedule-fields hidden>
+          <div class="field">
+            <label for="addScheduleDate">First Session Date</label>
+            <input id="addScheduleDate" name="schedule_date" type="date" class="input">
+          </div>
+          <div class="field">
+            <label for="addScheduleStart">Start Time</label>
+            <input id="addScheduleStart" name="schedule_start_time" type="time" class="input">
+          </div>
+          <div class="field">
+            <label for="addScheduleEnd">End Time</label>
+            <input id="addScheduleEnd" name="schedule_end_time" type="time" class="input">
+          </div>
+          <div class="field">
+            <label for="addScheduleFrequency">Frequency</label>
+            <select id="addScheduleFrequency" name="schedule_frequency" class="input">
+              <option value="weekly">Weekly</option>
+              <option value="daily">Daily</option>
+            </select>
+            <small class="muted">Sessions will be scheduled sequentially using this cadence.</small>
+          </div>
+        </div>
+      </fieldset>
       <div class="form-actions">
-        <button type="submit" class="btn">Add Sessions</button>
+        <button type="submit" class="btn"${hasPackages ? '' : ' disabled'}>Add Sessions</button>
         <button type="button" class="btn secondary" data-close>Cancel</button>
       </div>
     `;
+
+    const scheduleToggle = form.querySelector('#addScheduleToggle');
+    const scheduleFields = form.querySelector('[data-schedule-fields]');
+    const scheduleFlag = form.querySelector('input[name="schedule_now"]');
+    scheduleToggle?.addEventListener('change', () => {
+      const enabled = !!scheduleToggle.checked;
+      if (scheduleFields) scheduleFields.hidden = !enabled;
+      if (scheduleFlag) scheduleFlag.value = enabled ? '1' : '0';
+    });
 
     form.addEventListener('click', (event) => {
       if (event.target && event.target.matches('[data-close]')) {
@@ -1469,12 +1672,20 @@ if ($pricingMode === 'admin') {
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const formData = new FormData(form);
       const pkgSelect = form.querySelector('#addPackage');
-      if (pkgSelect && !pkgSelect.value) {
+      if (!pkgSelect || !pkgSelect.value) {
         alert('Select a price package.');
         return;
       }
+      if (scheduleToggle && scheduleToggle.checked) {
+        const dateInput = form.querySelector('#addScheduleDate');
+        const startInput = form.querySelector('#addScheduleStart');
+        if (!dateInput || !dateInput.value || !startInput || !startInput.value) {
+          alert('Provide a date and start time to schedule sessions.');
+          return;
+        }
+      }
+      const formData = new FormData(form);
       formData.append('client_id', clientId);
       const response = await fetch('trainer_sessions_actions.php', {
         method: 'POST',
@@ -1491,36 +1702,109 @@ if ($pricingMode === 'admin') {
     return form;
   }
 
-  function buildRemoveSessionsForm(clientId, packageOptions){
+  function buildRemoveSessionsForm(clientId){
     const form = document.createElement('form');
     form.className = 'form-grid';
+    const clientData = getClientData(String(clientId));
+    const packages = clientData && Array.isArray(clientData.packages) ? clientData.packages : [];
+    const optionsHtml = packages.map((pkg) => `<option value="${pkg.id}">${pkg.name} • ${pkg.purchased_sessions} sessions</option>`).join('');
+    const hasPackages = packages.length > 0;
+
     form.innerHTML = `
       <input type="hidden" name="csrf_token" value="${csrfToken}">
       <input type="hidden" name="action" value="manual_remove_sessions">
       <div class="field">
         <label for="removePackage">Package</label>
-        <select id="removePackage" name="package_id" class="input" required>
-          ${(packageOptions && packageOptions.length) ? packageOptions.map(pkg => `<option value="${pkg.id}">${pkg.label}</option>`).join('') : '<option value="">No packages available</option>'}
+        <select id="removePackage" name="package_id" class="input" required ${hasPackages ? '' : 'disabled'}>
+          ${hasPackages ? optionsHtml : '<option value="">No packages available</option>'}
         </select>
-        ${(!packageOptions || !packageOptions.length) ? '<small class="muted">Add a package before removing sessions.</small>' : ''}
+        ${hasPackages ? '' : '<small class="muted">Add a package before removing sessions.</small>'}
       </div>
       <div class="field">
-        <label for="removeCount">Sessions to remove</label>
-        <input id="removeCount" name="count" type="number" min="1" class="input" value="1" required>
+        <label>Sessions</label>
+        <div class="session-checklist" data-session-list></div>
+        <div class="muted" data-selected-summary>No sessions selected.</div>
       </div>
+      <fieldset class="field">
+        <legend>Refund Client?</legend>
+        <label class="radio"><input type="radio" name="issue_refund" value="1"> Yes</label>
+        <label class="radio"><input type="radio" name="issue_refund" value="0" checked> No</label>
+      </fieldset>
       <div class="field">
-        <label for="removeAmount">Refund Amount</label>
-        <input id="removeAmount" name="amount" type="text" class="input" placeholder="$0.00" required>
+        <label>Refund Amount</label>
+        <div class="value" data-refund-amount>$0.00</div>
       </div>
       <div class="field">
         <label for="removeNotes">Notes</label>
         <textarea id="removeNotes" name="notes" class="input" placeholder="Explain the adjustment"></textarea>
       </div>
       <div class="form-actions">
-        <button type="submit" class="btn danger">Remove Sessions</button>
+        <button type="submit" class="btn danger"${hasPackages ? '' : ' disabled'}>Remove Sessions</button>
         <button type="button" class="btn secondary" data-close>Cancel</button>
       </div>
     `;
+
+    const sessionList = form.querySelector('[data-session-list]');
+    const packageSelect = form.querySelector('#removePackage');
+    const summary = form.querySelector('[data-selected-summary]');
+    const refundAmount = form.querySelector('[data-refund-amount]');
+    const refundRadios = form.querySelectorAll('input[name="issue_refund"]');
+
+    function renderSessions(pkgId){
+      if (!sessionList) return;
+      sessionList.innerHTML = '';
+      const pkg = packages.find((p) => String(p.id) === String(pkgId));
+      if (!pkg || !Array.isArray(pkg.sessions) || pkg.sessions.length === 0) {
+        sessionList.innerHTML = '<div class="muted">No sessions are available to remove.</div>';
+        if (summary) summary.textContent = 'No sessions selected.';
+        if (refundAmount) refundAmount.textContent = '$0.00';
+        return;
+      }
+      const removable = pkg.sessions.filter((session) => session.is_removable !== false);
+      if (!removable.length) {
+        sessionList.innerHTML = '<div class="muted">All sessions in this package are completed or refunded.</div>';
+        if (summary) summary.textContent = 'No sessions selected.';
+        if (refundAmount) refundAmount.textContent = '$0.00';
+        return;
+      }
+      removable.forEach((session) => {
+        const label = document.createElement('label');
+        label.className = 'checkbox';
+        label.innerHTML = `
+          <input type="checkbox" name="session_ids[]" value="${session.id}">
+          <span>
+            ${formatDisplayDateTime(session.scheduled_start)} • ${session.package_name}
+          </span>
+        `;
+        sessionList.appendChild(label);
+      });
+      updateRefund();
+    }
+
+    function updateRefund(){
+      if (!sessionList || !refundAmount || !summary) return;
+      const checked = sessionList.querySelectorAll('input[name="session_ids[]"]:checked');
+      const pkg = packages.find((p) => String(p.id) === String(packageSelect?.value || ''));
+      const count = checked.length;
+      const refundYes = Array.from(refundRadios).some((radio) => radio.checked && radio.value === '1');
+      const amount = refundYes && pkg ? Number(pkg.price_per_session || 0) * count : 0;
+      refundAmount.textContent = formatCurrency(amount);
+      summary.textContent = count ? `${count} session${count === 1 ? '' : 's'} selected.` : 'No sessions selected.';
+    }
+
+    packageSelect?.addEventListener('change', () => {
+      renderSessions(packageSelect.value);
+    });
+
+    sessionList?.addEventListener('change', (event) => {
+      if (event.target && event.target.matches('input[type="checkbox"]')) {
+        updateRefund();
+      }
+    });
+
+    refundRadios.forEach((radio) => radio.addEventListener('change', updateRefund));
+
+    renderSessions(packageSelect ? packageSelect.value : null);
 
     form.addEventListener('click', (event) => {
       if (event.target && event.target.matches('[data-close]')) {
@@ -1531,9 +1815,13 @@ if ($pricingMode === 'admin') {
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const pkgSelect = form.querySelector('#removePackage');
-      if (!pkgSelect || !pkgSelect.value) {
+      if (!packageSelect || !packageSelect.value) {
         alert('Choose a package to adjust.');
+        return;
+      }
+      const selectedSessions = sessionList ? sessionList.querySelectorAll('input[name="session_ids[]"]:checked') : [];
+      if (!selectedSessions.length) {
+        alert('Select at least one session to remove.');
         return;
       }
       const formData = new FormData(form);
@@ -1549,45 +1837,222 @@ if ($pricingMode === 'admin') {
         alert(payload.message || 'Unable to remove sessions.');
       }
     });
+
     return form;
   }
 
-  function buildScheduleForm(clientId, packageOptions){
+  function buildScheduleModal(clientId){
     const form = document.createElement('form');
     form.className = 'form-grid';
     form.innerHTML = `
       <input type="hidden" name="csrf_token" value="${csrfToken}">
-      <input type="hidden" name="action" value="schedule_session_batch">
-      <input type="hidden" name="client_id" value="${clientId}">
+      <input type="hidden" name="action" value="save_client_schedule">
       <div class="field">
-        <label for="schedulePackage">Package</label>
-        <select id="schedulePackage" name="package_id" class="input" required>
-          ${(packageOptions && packageOptions.length) ? packageOptions.map(pkg => `<option value="${pkg.id}">${pkg.label}</option>`).join('') : '<option value="">No packages available</option>'}
-        </select>
-        ${(!packageOptions || !packageOptions.length) ? '<small class="muted">Create a package before scheduling sessions.</small>' : ''}
+        <p class="muted">Enter a date and time for each session. Leave blank to keep a session unscheduled.</p>
       </div>
-      <div class="field">
-        <label for="scheduleDate">Session Date</label>
-        <input id="scheduleDate" name="session_date" type="date" class="input" required>
-      </div>
-      <div class="field">
-        <label for="startTime">Start Time</label>
-        <input id="startTime" name="start_time" type="time" class="input" required>
-      </div>
-      <div class="field">
-        <label for="endTime">End Time</label>
-        <input id="endTime" name="end_time" type="time" class="input">
-      </div>
-      <div class="field">
-        <label for="sessionCount">Number of Sessions</label>
-        <input id="sessionCount" name="session_count" type="number" min="1" class="input" value="1" required>
-      </div>
-      <div class="field">
-        <label for="sessionNotes">Notes</label>
-        <textarea id="sessionNotes" name="notes" class="input" placeholder="Optional notes for the client"></textarea>
-      </div>
+      <div class="field" data-schedule-table></div>
       <div class="form-actions">
         <button type="submit" class="btn">Schedule Sessions</button>
+        <button type="button" class="btn secondary" data-close>Cancel</button>
+      </div>
+    `;
+
+    const tableHost = form.querySelector('[data-schedule-table]');
+    const clientData = getClientData(String(clientId));
+    const sessions = clientData && Array.isArray(clientData.sessions) ? clientData.sessions : [];
+
+    if (!sessions.length) {
+      tableHost.innerHTML = '<div class="empty-state"><p>No purchased sessions are available yet.</p></div>';
+    } else {
+      const controls = document.createElement('div');
+      controls.className = 'field';
+      controls.innerHTML = `
+        <button type="button" class="btn small tertiary" data-copy-first>Apply first populated row to empty rows</button>
+      `;
+      form.insertBefore(controls, tableHost);
+
+      const table = document.createElement('table');
+      table.className = 'inner-table';
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Package</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th>Start Time</th>
+            <th>End Time</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+      const tbody = table.querySelector('tbody');
+
+      sessions.forEach((session) => {
+        const row = document.createElement('tr');
+        row.dataset.sessionId = session.id;
+        row.dataset.packageId = session.package_id;
+        const editable = session.is_editable !== false;
+        row.dataset.editable = editable ? '1' : '0';
+
+        const dateInput = document.createElement('input');
+        dateInput.type = 'date';
+        dateInput.className = 'input';
+        dateInput.value = toDateInputValue(session.scheduled_start);
+        dateInput.dataset.field = 'date';
+        dateInput.disabled = !editable;
+
+        const startInput = document.createElement('input');
+        startInput.type = 'time';
+        startInput.className = 'input';
+        startInput.value = toTimeInputValue(session.scheduled_start);
+        startInput.dataset.field = 'start';
+        startInput.disabled = !editable;
+
+        const endInput = document.createElement('input');
+        endInput.type = 'time';
+        endInput.className = 'input';
+        endInput.value = toTimeInputValue(session.scheduled_end);
+        endInput.dataset.field = 'end';
+        endInput.disabled = !editable;
+
+        row.innerHTML = `
+          <td>${session.package_name}</td>
+          <td>${session.status ? session.status.charAt(0).toUpperCase() + session.status.slice(1) : 'Scheduled'}</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        `;
+        const cells = row.querySelectorAll('td');
+        cells[2].appendChild(dateInput);
+        cells[3].appendChild(startInput);
+        cells[4].appendChild(endInput);
+
+        if (!editable) {
+          row.classList.add('is-disabled');
+        }
+
+        tbody.appendChild(row);
+      });
+
+      tableHost.appendChild(table);
+
+      controls.addEventListener('click', (event) => {
+        if (!(event.target instanceof HTMLElement)) return;
+        if (event.target.matches('[data-copy-first], [data-copy-first] *')) {
+          event.preventDefault();
+          const rows = Array.from(table.querySelectorAll('tbody tr'));
+          const firstRow = rows.find((r) => {
+            const dateVal = r.querySelector('[data-field="date"]')?.value;
+            const startVal = r.querySelector('[data-field="start"]')?.value;
+            return dateVal && startVal;
+          });
+          if (!firstRow) {
+            alert('Fill in at least one row before applying to others.');
+            return;
+          }
+          const dateVal = firstRow.querySelector('[data-field="date"]').value;
+          const startVal = firstRow.querySelector('[data-field="start"]').value;
+          const endVal = firstRow.querySelector('[data-field="end"]')?.value || '';
+          rows.forEach((row) => {
+            if (row.dataset.editable === '0') return;
+            const dateField = row.querySelector('[data-field="date"]');
+            const startField = row.querySelector('[data-field="start"]');
+            const endField = row.querySelector('[data-field="end"]');
+            if (dateField && !dateField.value) dateField.value = dateVal;
+            if (startField && !startField.value) startField.value = startVal;
+            if (endField && !endField.value) endField.value = endVal;
+          });
+        }
+      });
+    }
+
+    form.addEventListener('click', (event) => {
+      if (event.target && event.target.matches('[data-close]')) {
+        event.preventDefault();
+        closeModal();
+      }
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const payload = [];
+      const rows = form.querySelectorAll('tbody tr');
+      rows.forEach((row) => {
+        const editable = row.dataset.editable !== '0';
+        if (!editable) return;
+        const sessionId = parseInt(row.dataset.sessionId || '0', 10);
+        if (!sessionId) return;
+        const date = row.querySelector('[data-field="date"]')?.value || '';
+        const start = row.querySelector('[data-field="start"]')?.value || '';
+        const end = row.querySelector('[data-field="end"]')?.value || '';
+        payload.push({
+          session_id: sessionId,
+          date,
+          start_time: start,
+          end_time: end,
+        });
+      });
+      if (!payload.length) {
+        alert('No sessions are editable for scheduling.');
+        return;
+      }
+      const formData = new FormData(form);
+      formData.append('client_id', clientId);
+      formData.append('session_updates', JSON.stringify(payload));
+      const response = await fetch('trainer_sessions_actions.php', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      if (data.ok) {
+        window.location.reload();
+      } else {
+        alert(data.message || 'Unable to schedule sessions.');
+      }
+    });
+
+    return form;
+  }
+
+  function buildRescheduleForm(sessionId){
+    const detail = findSessionDetail(sessionId);
+    const form = document.createElement('form');
+    form.className = 'form-grid';
+    if (!detail) {
+      form.innerHTML = '<p class="muted">This session could not be found.</p>';
+      return form;
+    }
+    const { session } = detail;
+    const dateValue = toDateInputValue(session.scheduled_start);
+    const startValue = toTimeInputValue(session.scheduled_start);
+    const endValue = toTimeInputValue(session.scheduled_end);
+
+    form.innerHTML = `
+      <input type="hidden" name="csrf_token" value="${csrfToken}">
+      <input type="hidden" name="action" value="reschedule_session">
+      <input type="hidden" name="session_id" value="${session.id}">
+      <div class="field">
+        <strong>${session.package_name}</strong>
+        <div class="muted">${formatDisplayDateTime(session.scheduled_start)}</div>
+      </div>
+      <div class="field">
+        <label for="rescheduleDate">New Date</label>
+        <input id="rescheduleDate" name="scheduled_date" type="date" class="input" value="${dateValue}" required>
+      </div>
+      <div class="field">
+        <label for="rescheduleStart">New Start Time</label>
+        <input id="rescheduleStart" name="scheduled_start_time" type="time" class="input" value="${startValue}" required>
+      </div>
+      <div class="field">
+        <label for="rescheduleEnd">New End Time</label>
+        <input id="rescheduleEnd" name="scheduled_end_time" type="time" class="input" value="${endValue}">
+      </div>
+      <div class="field">
+        <label for="rescheduleNotes">Notes</label>
+        <textarea id="rescheduleNotes" name="notes" class="input" placeholder="Optional message for the client"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn">Reschedule Session</button>
         <button type="button" class="btn secondary" data-close>Cancel</button>
       </div>
     `;
@@ -1601,20 +2066,84 @@ if ($pricingMode === 'admin') {
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const pkgSelect = form.querySelector('#schedulePackage');
-      if (!pkgSelect || !pkgSelect.value) {
-        alert('Select a package to schedule against.');
+      const dateInput = form.querySelector('#rescheduleDate');
+      const startInput = form.querySelector('#rescheduleStart');
+      if (!dateInput || !dateInput.value || !startInput || !startInput.value) {
+        alert('Provide a date and start time.');
         return;
       }
+      const formData = new FormData(form);
       const response = await fetch('trainer_sessions_actions.php', {
         method: 'POST',
-        body: new FormData(form)
+        body: formData,
       });
       const payload = await response.json();
       if (payload.ok) {
         window.location.reload();
       } else {
-        alert(payload.message || 'Unable to schedule sessions.');
+        alert(payload.message || 'Unable to reschedule session.');
+      }
+    });
+
+    return form;
+  }
+
+  function buildCancelForm(sessionId){
+    const detail = findSessionDetail(sessionId);
+    const form = document.createElement('form');
+    form.className = 'form-grid';
+    if (!detail) {
+      form.innerHTML = '<p class="muted">This session could not be found.</p>';
+      return form;
+    }
+    const { session } = detail;
+    const refundAmount = formatCurrency(session.price_per_session || 0);
+
+    form.innerHTML = `
+      <input type="hidden" name="csrf_token" value="${csrfToken}">
+      <input type="hidden" name="action" value="cancel_session">
+      <input type="hidden" name="session_id" value="${session.id}">
+      <div class="field">
+        <strong>${session.package_name}</strong>
+        <div class="muted">${formatDisplayDateTime(session.scheduled_start)}</div>
+      </div>
+      <div class="field">
+        <p>Are you sure you want to cancel this session?</p>
+      </div>
+      <fieldset class="field">
+        <legend>Refund Client?</legend>
+        <label class="radio"><input type="radio" name="issue_refund" value="1"> Yes — refund ${refundAmount}</label>
+        <label class="radio"><input type="radio" name="issue_refund" value="0" checked> No refund</label>
+      </fieldset>
+      <div class="field">
+        <label for="cancelNotes">Notes</label>
+        <textarea id="cancelNotes" name="notes" class="input" placeholder="Optional explanation for the client"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn danger">Cancel Session</button>
+        <button type="button" class="btn secondary" data-close>Go Back</button>
+      </div>
+    `;
+
+    form.addEventListener('click', (event) => {
+      if (event.target && event.target.matches('[data-close]')) {
+        event.preventDefault();
+        closeModal();
+      }
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const response = await fetch('trainer_sessions_actions.php', {
+        method: 'POST',
+        body: formData,
+      });
+      const payload = await response.json();
+      if (payload.ok) {
+        window.location.reload();
+      } else {
+        alert(payload.message || 'Unable to cancel session.');
       }
     });
 
@@ -1624,36 +2153,34 @@ if ($pricingMode === 'admin') {
   document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
-    if (target.dataset.action === 'add') {
-      const clientId = target.dataset.clientId;
+    const action = target.dataset.action;
+    if (!action) return;
+
+    const clientId = target.dataset.clientId || target.closest('[data-client-id]')?.dataset.clientId || '';
+    const sessionRow = target.closest('.session-row');
+    const sessionId = target.dataset.sessionId || sessionRow?.dataset.sessionId || '';
+
+    if (['add','remove','schedule','reschedule-session','cancel-session'].includes(action)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (action === 'add') {
       openModal('Add Sessions', buildAddSessionsForm(clientId));
     }
-    if (target.dataset.action === 'remove') {
-      const clientId = target.dataset.clientId;
-      const hostRow = target.closest('.client-row');
-      let packageOptions = [];
-      if (hostRow && hostRow.dataset.packages) {
-        try {
-          packageOptions = JSON.parse(hostRow.dataset.packages) || [];
-        } catch (err) {
-          packageOptions = [];
-        }
-      }
-      openModal('Remove Sessions', buildRemoveSessionsForm(clientId, packageOptions));
+    if (action === 'remove') {
+      openModal('Remove Sessions', buildRemoveSessionsForm(clientId));
     }
-    if (target.dataset.action === 'schedule') {
-      const clientId = target.dataset.clientId;
-      const hostRow = target.closest('.client-row');
-      let packageOptions = [];
-      if (hostRow && hostRow.dataset.packages) {
-        try {
-          packageOptions = JSON.parse(hostRow.dataset.packages) || [];
-        } catch (err) {
-          packageOptions = [];
-        }
-      }
-      openModal('Schedule Sessions', buildScheduleForm(clientId, packageOptions));
+    if (action === 'schedule') {
+      openModal('Schedule Sessions', buildScheduleModal(clientId));
+    }
+    if (action === 'reschedule-session') {
+      openModal('Reschedule Session', buildRescheduleForm(sessionId));
+    }
+    if (action === 'cancel-session') {
+      openModal('Cancel Session', buildCancelForm(sessionId));
     }
   });
 })();
+;
 </script>
