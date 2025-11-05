@@ -527,7 +527,7 @@ if (!function_exists('ppf_trainer_sessions_fetch_packages')) {
 
 if (!function_exists('ppf_trainer_sessions_fetch_sessions_for_package')) {
     function ppf_trainer_sessions_fetch_sessions_for_package(mysqli $conn, int $packageId): array {
-        $sql = "SELECT id, package_id, scheduled_start, scheduled_end, actual_start_at, actual_end_at, status, completed_at, completion_marked_by, timer_started_by, timer_ended_by, duration_seconds, notes, created_at, updated_at FROM trainer_sessions WHERE package_id = ? ORDER BY scheduled_start ASC, id ASC";
+        $sql = "SELECT id, package_id, scheduled_start, scheduled_end, actual_start_at, actual_end_at, status, completed_at, completion_marked_by, timer_started_by, timer_ended_by, duration_seconds, notes, created_at, updated_at, public_token FROM trainer_sessions WHERE package_id = ? ORDER BY scheduled_start ASC, id ASC";
         if (!$stmt = $conn->prepare($sql)) {
             return [];
         }

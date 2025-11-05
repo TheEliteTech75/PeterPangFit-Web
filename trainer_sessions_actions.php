@@ -59,6 +59,116 @@ function ts_format_email_datetime(?string $iso): string {
     }
 }
 
+function ts_fetch_package_context(mysqli $conn, int $packageId): ?array {
+    $sql = "SELECT p.id, p.package_name, p.client_id, p.trainer_id, p.price_per_session,"
+        . " c.email AS client_email, c.first_name AS client_first, c.last_name AS client_last,"
+        . " t.email AS trainer_email, t.first_name AS trainer_first, t.last_name AS trainer_last"
+        . " FROM trainer_session_packages p"
+        . " LEFT JOIN users c ON c.id = p.client_id"
+        . " LEFT JOIN users t ON t.id = p.trainer_id"
+        . " WHERE p.id = ? LIMIT 1";
+    if (!$stmt = $conn->prepare($sql)) {
+        return null;
+    }
+    $stmt->bind_param('i', $packageId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    return $row ?: null;
+}
+
+function ts_send_pair_email(array $context, string $subject, string $body): void {
+    if (!function_exists('send_plain_email')) {
+        return;
+    }
+    $clientEmail = trim((string)($context['client_email'] ?? ''));
+    if ($clientEmail !== '') {
+        $clientName = trim(((string)($context['client_first'] ?? '')) . ' ' . ((string)($context['client_last'] ?? '')));
+        @send_plain_email($clientEmail, $clientName, $subject, $body);
+    }
+    $trainerEmail = trim((string)($context['trainer_email'] ?? ''));
+    if ($trainerEmail !== '') {
+        $trainerName = trim(((string)($context['trainer_first'] ?? '')) . ' ' . ((string)($context['trainer_last'] ?? '')));
+        @send_plain_email($trainerEmail, $trainerName, $subject, $body);
+    }
+}
+
+function ts_send_schedule_summary(mysqli $conn, int $packageId, string $subject, string $intro, ?array $sessionIds = null): void {
+    $context = ts_fetch_package_context($conn, $packageId);
+    if (!$context) {
+        return;
+    }
+    $sessions = ppf_trainer_sessions_fetch_sessions_for_package($conn, $packageId);
+    $filterIds = null;
+    if (is_array($sessionIds) && $sessionIds) {
+        $filterIds = array_map('intval', $sessionIds);
+    }
+    $lines = [];
+    foreach ($sessions as $session) {
+        $sessionId = (int)($session['id'] ?? 0);
+        if ($filterIds && !in_array($sessionId, $filterIds, true)) {
+            continue;
+        }
+        $start = $session['scheduled_start'] ?? null;
+        if (!$start) {
+            continue;
+        }
+        $status = strtolower((string)($session['status'] ?? 'scheduled'));
+        $statusLabel = ucfirst($status ?: 'scheduled');
+        $line = '- ' . ts_format_email_datetime($start);
+        if (!empty($session['scheduled_end'])) {
+            $line .= ' – ' . ts_format_email_datetime($session['scheduled_end']);
+        }
+        $line .= ' (' . $statusLabel . ')';
+        $lines[] = $line;
+    }
+    if (!$lines) {
+        $lines[] = '- No sessions are currently scheduled.';
+    }
+
+    $clientName = trim(((string)($context['client_first'] ?? '')) . ' ' . ((string)($context['client_last'] ?? '')));
+    $trainerName = trim(((string)($context['trainer_first'] ?? '')) . ' ' . ((string)($context['trainer_last'] ?? '')));
+
+    $body = $intro . "\n\n"
+        . 'Package: ' . ($context['package_name'] ?? 'Training package') . "\n"
+        . 'Client: ' . ($clientName !== '' ? $clientName : 'Client') . "\n"
+        . 'Trainer: ' . ($trainerName !== '' ? $trainerName : 'Trainer') . "\n\n"
+        . "Sessions:\n" . implode("\n", $lines) . "\n\n"
+        . 'If you have any questions, please reach out to your trainer.';
+
+    ts_send_pair_email($context, $subject, $body);
+}
+
+function ts_apply_schedule_to_sessions(mysqli $conn, array $sessionIds, DateTimeImmutable $startBase, ?DateTimeImmutable $endBase, string $frequency, string $notes = ''): array {
+    $sessionIds = array_values(array_filter(array_map('intval', $sessionIds)));
+    if (!$sessionIds) {
+        return [];
+    }
+    $intervalDays = $frequency === 'daily' ? 1 : 7;
+    $sql = "UPDATE trainer_sessions SET scheduled_start = ?, scheduled_end = NULLIF(?, ''), status = 'scheduled', notes = NULLIF(?, ''), updated_at = NOW() WHERE id = ?";
+    if (!$stmt = $conn->prepare($sql)) {
+        return [];
+    }
+    $scheduledIds = [];
+    foreach ($sessionIds as $index => $sessionId) {
+        $start = $startBase->modify('+' . ($index * $intervalDays) . ' days');
+        $startStr = $start->format('Y-m-d H:i:s');
+        $endStr = '';
+        if ($endBase) {
+            $end = $endBase->modify('+' . ($index * $intervalDays) . ' days');
+            $endStr = $end->format('Y-m-d H:i:s');
+        }
+        $notesParam = $notes !== '' ? $notes : '';
+        $stmt->bind_param('sssi', $startStr, $endStr, $notesParam, $sessionId);
+        if ($stmt->execute()) {
+            $scheduledIds[] = $sessionId;
+        }
+    }
+    $stmt->close();
+    return $scheduledIds;
+}
+
 function respond(bool $ok, string $message, array $extra = []): void {
     echo json_encode(array_merge(['ok' => $ok, 'message' => $message], $extra));
     exit;
@@ -201,6 +311,34 @@ if ($action === 'manual_add_sessions') {
     $catalogId = max(0, (int)($_POST['catalog_package_id'] ?? 0));
     $count = max(1, (int)($_POST['count'] ?? 0));
     $scheduleNotes = trim((string)($_POST['schedule_notes'] ?? ''));
+    $scheduleNow = isset($_POST['schedule_now']) && (int)$_POST['schedule_now'] === 1;
+    $scheduleDate = trim((string)($_POST['schedule_date'] ?? ''));
+    $scheduleStartRaw = trim((string)($_POST['schedule_start_time'] ?? ''));
+    $scheduleEndRaw = trim((string)($_POST['schedule_end_time'] ?? ''));
+    $scheduleFrequency = strtolower((string)($_POST['schedule_frequency'] ?? 'weekly'));
+    if (!in_array($scheduleFrequency, ['daily', 'weekly'], true)) {
+        $scheduleFrequency = 'weekly';
+    }
+    $scheduleBaseStart = null;
+    $scheduleBaseEnd = null;
+    if ($scheduleNow) {
+        if ($scheduleDate === '' || $scheduleStartRaw === '') {
+            respond(false, 'Provide a date and start time to schedule sessions.');
+        }
+        $scheduleBaseStart = DateTimeImmutable::createFromFormat('Y-m-d H:i', $scheduleDate . ' ' . $scheduleStartRaw);
+        if (!$scheduleBaseStart) {
+            respond(false, 'Invalid session start time.');
+        }
+        if ($scheduleEndRaw !== '') {
+            $scheduleBaseEnd = DateTimeImmutable::createFromFormat('Y-m-d H:i', $scheduleDate . ' ' . $scheduleEndRaw);
+            if (!$scheduleBaseEnd) {
+                respond(false, 'Invalid session end time.');
+            }
+            if ($scheduleBaseEnd <= $scheduleBaseStart) {
+                respond(false, 'End time must be after the start time.');
+            }
+        }
+    }
 
     if ($clientId <= 0) {
         respond(false, 'Select a client to add sessions for.');
@@ -274,6 +412,7 @@ if ($action === 'manual_add_sessions') {
     if (!$sessionStmt = $conn->prepare($insertSessionSql)) {
         respond(false, 'Unable to add sessions.');
     }
+    $createdSessionIds = [];
     for ($i = 0; $i < $count; $i++) {
         $token = ppf_trainer_sessions_generate_token($conn);
         $sessionStmt->bind_param('is', $packageId, $token);
@@ -282,8 +421,20 @@ if ($action === 'manual_add_sessions') {
             $sessionStmt->close();
             respond(false, 'Failed to create session. ' . $err);
         }
+        $createdSessionIds[] = (int)$sessionStmt->insert_id;
     }
     $sessionStmt->close();
+
+    if ($scheduleNow && $createdSessionIds && $scheduleBaseStart) {
+        try {
+            $scheduledIds = ts_apply_schedule_to_sessions($conn, $createdSessionIds, $scheduleBaseStart, $scheduleBaseEnd, $scheduleFrequency, $scheduleNotes);
+            if (!empty($scheduledIds)) {
+                ts_send_schedule_summary($conn, $packageId, 'Training sessions scheduled', 'New sessions have been scheduled for your training package.', $scheduledIds);
+            }
+        } catch (Throwable $e) {
+            // fail silently and continue
+        }
+    }
 
     if (function_exists('ppf_log')) {
         $details = ts_json([
@@ -293,6 +444,8 @@ if ($action === 'manual_add_sessions') {
             'sessions_added' => $count,
             'price_per_session' => $pricePer,
             'total_price' => $totalPrice,
+            'scheduled_now' => $scheduleNow,
+            'schedule_frequency' => $scheduleNow ? $scheduleFrequency : null,
         ]);
         ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_sessions_manual_add', 'session_package', (string)$packageId, $details);
     }
@@ -303,36 +456,72 @@ if ($action === 'manual_add_sessions') {
 if ($action === 'manual_remove_sessions') {
     $packageId = max(0, (int)($_POST['package_id'] ?? 0));
     $count = max(1, (int)($_POST['count'] ?? 0));
-    $refundAmount = ppf_trainer_sessions_parse_amount($_POST['amount'] ?? 0);
     $notes = trim((string)($_POST['notes'] ?? ''));
+    $issueRefund = isset($_POST['issue_refund']) && (int)$_POST['issue_refund'] === 1;
+    $manualAmount = ppf_trainer_sessions_parse_amount($_POST['amount'] ?? 0);
+    $sessionIdsInput = $_POST['session_ids'] ?? [];
+    if (!is_array($sessionIdsInput)) {
+        $sessionIdsInput = $sessionIdsInput !== '' ? [$sessionIdsInput] : [];
+    }
+    $selectedSessionIds = array_values(array_filter(array_map('intval', $sessionIdsInput)));
 
     if ($packageId <= 0) {
         respond(false, 'Choose a package to adjust.');
     }
-    if ($refundAmount < 0) {
-        respond(false, 'Refund amount cannot be negative.');
-    }
+
     $pkg = ensure_package_access($conn, $packageId, $role, $actorId);
+    $pricePer = (float)($pkg['price_per_session'] ?? 0);
+    if ($selectedSessionIds) {
+        $count = count($selectedSessionIds);
+    }
     $currentTotal = (int)($pkg['purchased_sessions'] ?? 0);
     if ($count > $currentTotal) {
         respond(false, 'Cannot remove more sessions than were purchased.');
     }
+
     $sessionIds = [];
-    if ($stmt = $conn->prepare("SELECT id FROM trainer_sessions WHERE package_id = ? AND status IN ('scheduled','rescheduled','active','in_progress') ORDER BY scheduled_start IS NULL DESC, scheduled_start ASC, id ASC LIMIT ?")) {
-        $stmt->bind_param('ii', $packageId, $count);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        while ($row = $res->fetch_assoc()) {
-            $sessionIds[] = (int)$row['id'];
+    $allowedStatuses = ['scheduled', 'rescheduled', 'active', 'in_progress'];
+    if ($selectedSessionIds) {
+        $placeholders = implode(',', array_fill(0, count($selectedSessionIds), '?'));
+        $types = str_repeat('i', count($selectedSessionIds) + 1);
+        $params = array_merge([$packageId], $selectedSessionIds);
+        $sql = "SELECT id, status FROM trainer_sessions WHERE package_id = ? AND id IN ($placeholders)";
+        if ($stmt = $conn->prepare($sql)) {
+            $bind = [$types];
+            foreach ($params as $idx => $val) {
+                $bind[] = &$params[$idx];
+            }
+            call_user_func_array([$stmt, 'bind_param'], $bind);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            while ($row = $res->fetch_assoc()) {
+                $status = strtolower((string)($row['status'] ?? ''));
+                if (!in_array($status, $allowedStatuses, true)) {
+                    respond(false, 'Only scheduled sessions can be removed.');
+                }
+                $sessionIds[] = (int)$row['id'];
+            }
+            $stmt->close();
         }
-        $stmt->close();
+        if (count($sessionIds) !== count($selectedSessionIds)) {
+            respond(false, 'Some selected sessions could not be removed.');
+        }
+    } else {
+        if ($stmt = $conn->prepare("SELECT id FROM trainer_sessions WHERE package_id = ? AND status IN ('scheduled','rescheduled','active','in_progress') ORDER BY scheduled_start IS NULL DESC, scheduled_start ASC, id ASC LIMIT ?")) {
+            $stmt->bind_param('ii', $packageId, $count);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            while ($row = $res->fetch_assoc()) {
+                $sessionIds[] = (int)$row['id'];
+            }
+            $stmt->close();
+        }
+        if (count($sessionIds) < $count) {
+            respond(false, 'Not enough sessions are available to remove.');
+        }
     }
 
-    if (count($sessionIds) < $count) {
-        respond(false, 'Not enough scheduled sessions are available to remove.');
-    }
-
-    $newTotal = max(0, $currentTotal - $count);
+    $newTotal = max(0, $currentTotal - count($sessionIds));
     if ($stmt = $conn->prepare("UPDATE trainer_session_packages SET purchased_sessions = ?, updated_at = NOW() WHERE id = ?")) {
         $stmt->bind_param('ii', $newTotal, $packageId);
         if (!$stmt->execute()) {
@@ -351,6 +540,13 @@ if ($action === 'manual_remove_sessions') {
         }
     }
 
+    $refundAmount = 0.0;
+    if ($selectedSessionIds) {
+        $refundAmount = $issueRefund && $pricePer > 0 ? round($pricePer * count($sessionIds), 2) : 0.0;
+    } else {
+        $refundAmount = $issueRefund ? max(0.0, $manualAmount) : 0.0;
+    }
+
     if ($refundAmount > 0) {
         if ($txn = $conn->prepare("INSERT INTO trainer_session_transactions (package_id, txn_type, amount, description, created_at, created_by) VALUES (?, 'refund', ?, NULLIF(?, ''), NOW(), ?)") ) {
             $txn->bind_param('idsi', $packageId, $refundAmount, $notes, $actorId);
@@ -362,9 +558,10 @@ if ($action === 'manual_remove_sessions') {
     if (function_exists('ppf_log')) {
         $details = ts_json([
             'package_id' => $packageId,
-            'sessions_removed' => $count,
+            'sessions_removed' => count($sessionIds),
             'refund_amount' => $refundAmount,
             'notes' => $notes,
+            'session_ids' => $sessionIds,
         ]);
         ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_sessions_manual_remove', 'session_package', (string)$packageId, $details);
     }
@@ -462,7 +659,163 @@ if ($action === 'schedule_session_batch') {
         ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_sessions_batch_schedule', 'session_package', (string)$packageId, $details);
     }
 
+    if (!empty($scheduledIds)) {
+        ts_send_schedule_summary($conn, $packageId, 'Training sessions scheduled', 'Your training sessions have been scheduled. Here are the details:', $scheduledIds);
+    }
+
     respond(true, 'Sessions scheduled.', ['refresh' => true]);
+}
+
+if ($action === 'save_client_schedule') {
+    $clientId = max(0, (int)($_POST['client_id'] ?? 0));
+    $updatesRaw = $_POST['session_updates'] ?? '[]';
+    $updates = json_decode($updatesRaw, true);
+    if (!is_array($updates)) {
+        respond(false, 'Invalid session data.');
+    }
+
+    $sessionIds = [];
+    foreach ($updates as $update) {
+        if (!is_array($update)) {
+            continue;
+        }
+        $sid = (int)($update['session_id'] ?? 0);
+        if ($sid > 0) {
+            $sessionIds[] = $sid;
+        }
+    }
+    $sessionIds = array_values(array_unique($sessionIds));
+    if (!$sessionIds) {
+        respond(false, 'Select sessions to update.');
+    }
+
+    $placeholders = implode(',', array_fill(0, count($sessionIds), '?'));
+    $types = str_repeat('i', count($sessionIds));
+    $sql = "SELECT s.id, s.package_id, s.scheduled_start, s.scheduled_end, s.status, p.client_id, p.trainer_id"
+        . " FROM trainer_sessions s"
+        . " JOIN trainer_session_packages p ON p.id = s.package_id"
+        . " WHERE s.id IN ($placeholders)";
+    if (!$stmt = $conn->prepare($sql)) {
+        respond(false, 'Unable to load sessions.');
+    }
+    $bind = [$types];
+    foreach ($sessionIds as $idx => $sid) {
+        $bind[] = &$sessionIds[$idx];
+    }
+    call_user_func_array([$stmt, 'bind_param'], $bind);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $sessionMap = [];
+    while ($row = $res->fetch_assoc()) {
+        $sessionMap[(int)$row['id']] = $row;
+    }
+    $stmt->close();
+
+    foreach ($sessionIds as $sid) {
+        if (!isset($sessionMap[$sid])) {
+            respond(false, 'One or more sessions could not be updated.');
+        }
+        $row = $sessionMap[$sid];
+        if (!ppf_is_admin_role($role) && (int)($row['trainer_id'] ?? 0) !== $actorId) {
+            respond(false, 'You do not have access to modify these sessions.');
+        }
+        if ($clientId > 0 && (int)($row['client_id'] ?? 0) !== $clientId) {
+            respond(false, 'Session does not belong to this client.');
+        }
+    }
+
+    $packagesTouched = [];
+    $updatesApplied = 0;
+
+    foreach ($updates as $update) {
+        if (!is_array($update)) {
+            continue;
+        }
+        $sessionId = (int)($update['session_id'] ?? 0);
+        if ($sessionId <= 0 || !isset($sessionMap[$sessionId])) {
+            continue;
+        }
+        $current = $sessionMap[$sessionId];
+        $status = strtolower((string)($current['status'] ?? 'scheduled'));
+        if (in_array($status, ['completed', 'refunded', 'cancelled', 'canceled'], true)) {
+            respond(false, 'Completed or cancelled sessions cannot be modified.');
+        }
+
+        $date = trim((string)($update['date'] ?? ''));
+        $startTime = trim((string)($update['start_time'] ?? ''));
+        $endTime = trim((string)($update['end_time'] ?? ''));
+
+        $newStartStr = null;
+        $newEndStr = null;
+
+        if ($date === '' && $startTime === '' && $endTime === '') {
+            // Clearing the schedule
+            $newStartStr = null;
+            $newEndStr = null;
+        } else {
+            if ($date === '' || $startTime === '') {
+                respond(false, 'Provide a date and start time for each session.');
+            }
+            $startObj = DateTimeImmutable::createFromFormat('Y-m-d H:i', $date . ' ' . $startTime);
+            if (!$startObj) {
+                respond(false, 'Invalid session start time.');
+            }
+            if ($endTime !== '') {
+                $endObj = DateTimeImmutable::createFromFormat('Y-m-d H:i', $date . ' ' . $endTime);
+                if (!$endObj) {
+                    respond(false, 'Invalid session end time.');
+                }
+                if ($endObj <= $startObj) {
+                    respond(false, 'End time must be after the start time.');
+                }
+                $newEndStr = $endObj->format('Y-m-d H:i:s');
+            }
+            $newStartStr = $startObj->format('Y-m-d H:i:s');
+        }
+
+        $previousStart = $current['scheduled_start'] ?? null;
+        $previousEnd = $current['scheduled_end'] ?? null;
+
+        if ($newStartStr === $previousStart && $newEndStr === $previousEnd) {
+            continue;
+        }
+
+        $statusToSet = 'scheduled';
+        if ($newStartStr !== null && $previousStart !== null && $newStartStr !== $previousStart) {
+            $statusToSet = 'rescheduled';
+        } elseif ($newStartStr === null) {
+            $statusToSet = 'scheduled';
+        }
+
+        if ($stmt = $conn->prepare("UPDATE trainer_sessions SET scheduled_start = ?, scheduled_end = NULLIF(?, ''), status = ?, updated_at = NOW() WHERE id = ?")) {
+            $endParam = $newEndStr ?? '';
+            $startParam = $newStartStr ?? '';
+            $stmt->bind_param('sssi', $startParam, $endParam, $statusToSet, $sessionId);
+            if ($stmt->execute()) {
+                $updatesApplied++;
+                $packagesTouched[(int)$current['package_id']][] = $sessionId;
+            }
+            $stmt->close();
+        }
+    }
+
+    if ($updatesApplied === 0) {
+        respond(false, 'No sessions were updated.');
+    }
+
+    if (function_exists('ppf_log')) {
+        $details = ts_json([
+            'sessions_updated' => $updatesApplied,
+            'packages' => array_keys($packagesTouched),
+        ]);
+        ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_sessions_schedule_saved', 'session', 'bulk', $details);
+    }
+
+    foreach ($packagesTouched as $packageId => $ids) {
+        ts_send_schedule_summary($conn, (int)$packageId, 'Training schedule updated', 'Your training schedule has been updated. Here are the latest details:', $ids);
+    }
+
+    respond(true, 'Schedule updated.', ['refresh' => true]);
 }
 
 if ($action === 'create_package') {
@@ -718,6 +1071,8 @@ if ($action === 'schedule_session') {
         ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_session_scheduled', 'session', (string)$sessionId, $details);
     }
 
+    ts_send_schedule_summary($conn, $packageId, 'Training session scheduled', 'A new training session has been scheduled for your training package.', [$sessionId]);
+
     respond(true, 'Session scheduled.', ['refresh' => true]);
 }
 
@@ -733,28 +1088,57 @@ if ($action === 'reschedule_session') {
     if (!$session) respond(false, 'Session not found.');
     if (!ppf_is_admin_role($role) && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
 
+    $dateRaw = trim((string)($_POST['scheduled_date'] ?? ''));
+    $startInput = trim((string)($_POST['scheduled_start_time'] ?? ''));
+    $endInput = trim((string)($_POST['scheduled_end_time'] ?? ''));
     $startRaw = trim((string)($_POST['scheduled_start'] ?? ''));
     $endRaw = trim((string)($_POST['scheduled_end'] ?? ''));
     $notes = trim((string)($_POST['notes'] ?? ''));
-    if ($startRaw === '') respond(false, 'Start time is required.');
-    try {
-        $start = new DateTime($startRaw);
-    } catch (Throwable $e) {
-        respond(false, 'Invalid start time.');
-    }
-    $end = null;
-    if ($endRaw !== '') {
+
+    $startObj = null;
+    if ($dateRaw !== '' || $startInput !== '') {
+        if ($dateRaw === '' || $startInput === '') {
+            respond(false, 'Provide a new date and start time.');
+        }
+        $startObj = DateTimeImmutable::createFromFormat('Y-m-d H:i', $dateRaw . ' ' . $startInput);
+        if (!$startObj) {
+            respond(false, 'Invalid start time.');
+        }
+    } else {
+        if ($startRaw === '') {
+            respond(false, 'Start time is required.');
+        }
         try {
-            $end = new DateTime($endRaw);
-            if ($end <= $start) respond(false, 'End time must be after start time.');
+            $startObj = new DateTimeImmutable($startRaw);
+        } catch (Throwable $e) {
+            respond(false, 'Invalid start time.');
+        }
+    }
+
+    $endObj = null;
+    if ($dateRaw !== '' || $endInput !== '') {
+        if ($endInput !== '') {
+            $endObj = DateTimeImmutable::createFromFormat('Y-m-d H:i', $dateRaw . ' ' . $endInput);
+            if (!$endObj) {
+                respond(false, 'Invalid end time.');
+            }
+        }
+    } elseif ($endRaw !== '') {
+        try {
+            $endObj = new DateTimeImmutable($endRaw);
         } catch (Throwable $e) {
             respond(false, 'Invalid end time.');
         }
     }
 
+    if ($endObj && $endObj <= $startObj) {
+        respond(false, 'End time must be after the start time.');
+    }
+
+    $startStr = $startObj->format('Y-m-d H:i:s');
+    $endStr = $endObj ? $endObj->format('Y-m-d H:i:s') : '';
+
     if ($stmt = $conn->prepare("UPDATE trainer_sessions SET scheduled_start = ?, scheduled_end = NULLIF(?, ''), notes = NULLIF(?, ''), status = 'rescheduled', updated_at = NOW() WHERE id = ?")) {
-        $startStr = $start->format('Y-m-d H:i:s');
-        $endStr = $end ? $end->format('Y-m-d H:i:s') : '';
         $notesParam = $notes !== '' ? $notes : '';
         $stmt->bind_param('sssi', $startStr, $endStr, $notesParam, $sessionId);
         if (!$stmt->execute()) {
@@ -774,15 +1158,39 @@ if ($action === 'reschedule_session') {
             ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_session_rescheduled', 'session', (string)$sessionId, $details);
         }
 
+        $packageId = (int)($session['package_id'] ?? 0);
+        if ($packageId > 0) {
+            $context = ts_fetch_package_context($conn, $packageId);
+            if ($context) {
+                $packageName = $context['package_name'] ?? 'Training package';
+                $oldStartLabel = ts_format_email_datetime($session['scheduled_start'] ?? null);
+                $oldEndLabel = ts_format_email_datetime($session['scheduled_end'] ?? null);
+                $newStartLabel = ts_format_email_datetime($startStr);
+                $newEndLabel = ts_format_email_datetime($endStr !== '' ? $endStr : null);
+                $body = "The session for {$packageName} has been rescheduled.\n\n"
+                    . 'Previous schedule: ' . $oldStartLabel
+                    . ($oldEndLabel !== 'unscheduled' ? ' – ' . $oldEndLabel : '') . "\n"
+                    . 'New schedule: ' . $newStartLabel
+                    . ($newEndLabel !== 'unscheduled' ? ' – ' . $newEndLabel : '') . "\n\n";
+                if ($notes !== '') {
+                    $body .= 'Trainer notes: ' . $notes . "\n\n";
+                }
+                $body .= 'If these times do not work for you, please contact your trainer.';
+                ts_send_pair_email($context, 'Session rescheduled: ' . $packageName, $body);
+            }
+        }
+
         respond(true, 'Session updated.', ['refresh' => true]);
     }
 
     respond(false, 'Failed to reschedule session.');
 }
 
-if ($action === 'delete_session') {
+if ($action === 'cancel_session' || $action === 'delete_session') {
     $sessionId = max(0, (int)($_POST['session_id'] ?? 0));
-    $sql = "SELECT s.*, p.trainer_id FROM trainer_sessions s JOIN trainer_session_packages p ON p.id = s.package_id WHERE s.id = ? LIMIT 1";
+    $issueRefund = isset($_POST['issue_refund']) && (int)$_POST['issue_refund'] === 1;
+    $notes = trim((string)($_POST['notes'] ?? ''));
+    $sql = "SELECT s.*, p.trainer_id, p.price_per_session, p.package_name FROM trainer_sessions s JOIN trainer_session_packages p ON p.id = s.package_id WHERE s.id = ? LIMIT 1";
     if (!$stmt = $conn->prepare($sql)) respond(false, 'Failed to load session.');
     $stmt->bind_param('i', $sessionId);
     $stmt->execute();
@@ -791,9 +1199,19 @@ if ($action === 'delete_session') {
     $stmt->close();
     if (!$session) respond(false, 'Session not found.');
     if (!ppf_is_admin_role($role) && (int)($session['trainer_id'] ?? 0) !== $actorId) respond(false, 'Access denied.');
+    $packageId = (int)($session['package_id'] ?? 0);
+    $pricePer = (float)($session['price_per_session'] ?? 0);
+    if ($pricePer <= 0 && $packageId > 0) {
+        $summary = ppf_trainer_sessions_fetch_package_summary($conn, $packageId);
+        if ($summary && isset($summary['price_per_session'])) {
+            $pricePer = (float)$summary['price_per_session'];
+        }
+    }
+    $refundAmount = ($issueRefund && $pricePer > 0) ? round($pricePer, 2) : 0.0;
 
-    if ($stmt = $conn->prepare("UPDATE trainer_sessions SET status = 'canceled', updated_at = NOW() WHERE id = ?")) {
-        $stmt->bind_param('i', $sessionId);
+    if ($stmt = $conn->prepare("UPDATE trainer_sessions SET status = 'canceled', notes = IFNULL(NULLIF(?, ''), notes), updated_at = NOW() WHERE id = ?")) {
+        $notesParam = $notes !== '' ? $notes : '';
+        $stmt->bind_param('si', $notesParam, $sessionId);
         if (!$stmt->execute()) {
             $err = $stmt->error;
             $stmt->close();
@@ -801,9 +1219,48 @@ if ($action === 'delete_session') {
         }
         $stmt->close();
 
+        if ($refundAmount > 0 && $packageId > 0) {
+            if ($txn = $conn->prepare("INSERT INTO trainer_session_transactions (package_id, txn_type, amount, description, created_at, created_by) VALUES (?, 'refund', ?, NULLIF(?, ''), NOW(), ?)") ) {
+                $desc = $notes !== '' ? $notes : 'Session cancelled refund';
+                $txn->bind_param('idsi', $packageId, $refundAmount, $desc, $actorId);
+                $txn->execute();
+                $txn->close();
+            }
+        }
+
         if (function_exists('ppf_log')) {
-            $details = ts_json(['session_id' => $sessionId]);
+            $details = ts_json([
+                'session_id' => $sessionId,
+                'package_id' => $packageId,
+                'issue_refund' => $issueRefund,
+                'refund_amount' => $refundAmount,
+                'notes' => $notes,
+            ]);
             ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_session_cancelled', 'session', (string)$sessionId, $details);
+        }
+
+        if ($packageId > 0) {
+            $context = ts_fetch_package_context($conn, $packageId);
+            if ($context) {
+                $packageName = $context['package_name'] ?? 'Training package';
+                $startLabel = ts_format_email_datetime($session['scheduled_start'] ?? null);
+                $endLabel = ts_format_email_datetime($session['scheduled_end'] ?? null);
+                $body = 'A session has been cancelled.' . "\n\n"
+                    . 'Package: ' . $packageName . "\n"
+                    . 'Scheduled: ' . $startLabel;
+                if ($endLabel !== 'unscheduled') {
+                    $body .= ' – ' . $endLabel;
+                }
+                $body .= "\n";
+                if ($refundAmount > 0) {
+                    $body .= 'Refund amount: $' . number_format($refundAmount, 2) . "\n";
+                }
+                if ($notes !== '') {
+                    $body .= 'Trainer notes: ' . $notes . "\n";
+                }
+                $body .= "\nIf you have any questions, please contact your trainer.";
+                ts_send_pair_email($context, 'Session cancelled: ' . $packageName, $body);
+            }
         }
 
         respond(true, 'Session cancelled.', ['refresh' => true]);
