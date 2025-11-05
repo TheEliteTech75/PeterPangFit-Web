@@ -611,6 +611,34 @@ if (!function_exists('ppf_trainer_sessions_assign_token')) {
     }
 }
 
+if (!function_exists('ppf_trainer_sessions_find_by_token')) {
+    function ppf_trainer_sessions_find_by_token(mysqli $conn, string $token): ?array {
+        $token = trim($token);
+        if ($token === '') {
+            return null;
+        }
+        $sql = "
+            SELECT s.*, p.package_name, p.trainer_id, p.client_id,
+                   u.first_name AS client_first, u.last_name AS client_last,
+                   t.first_name AS trainer_first, t.last_name AS trainer_last
+            FROM trainer_sessions s
+            JOIN trainer_session_packages p ON p.id = s.package_id
+            LEFT JOIN users u ON u.id = p.client_id
+            LEFT JOIN users t ON t.id = p.trainer_id
+            WHERE s.public_token = ?
+            LIMIT 1";
+        if (!$stmt = $conn->prepare($sql)) {
+            return null;
+        }
+        $stmt->bind_param('s', $token);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $session = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+        return $session ?: null;
+    }
+}
+
 if (!function_exists('ppf_trainer_sessions_collect_client_overview')) {
     function ppf_trainer_sessions_collect_client_overview(mysqli $conn, array $options = []): array {
         ppf_trainer_sessions_ensure_schema($conn);
@@ -735,9 +763,11 @@ if (!function_exists('ppf_trainer_sessions_find_active_session_for_client')) {
         }
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
         $sql = "
-            SELECT s.*, p.package_name, p.trainer_id, p.client_id
+            SELECT s.*, p.package_name, p.trainer_id, p.client_id,
+                   t.first_name AS trainer_first, t.last_name AS trainer_last
             FROM trainer_sessions s
             JOIN trainer_session_packages p ON p.id = s.package_id
+            LEFT JOIN users t ON t.id = p.trainer_id
             WHERE p.client_id = ?
               AND s.status IN ('scheduled','rescheduled','active','in_progress')
               AND s.scheduled_start IS NOT NULL

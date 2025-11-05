@@ -90,7 +90,7 @@ if ($actorId <= 0) {
 ppf_trainer_sessions_ensure_schema($conn);
 
 $action = (string)($_POST['action'] ?? '');
-$allowedActions = ['start_session', 'end_session'];
+$allowedActions = ['start_session', 'end_session', 'request_token', 'session_status'];
 if (!in_array($action, $allowedActions, true)) {
     client_sessions_respond(false, 'Unknown action.');
 }
@@ -138,6 +138,89 @@ if (!$allowed) {
 
 $status = strtolower((string)($session['status'] ?? 'scheduled'));
 $nowString = date('Y-m-d H:i:s');
+
+if ($action === 'request_token') {
+    if (empty($session['public_token'])) {
+        $token = ppf_trainer_sessions_assign_token($conn, $sessionId);
+    } else {
+        $token = $session['public_token'];
+    }
+    if (!$token) {
+        client_sessions_respond(false, 'Unable to generate QR code.');
+    }
+
+    client_sessions_respond(true, 'Token issued.', [
+        'token' => $token,
+        'session' => client_sessions_shape_session($session),
+        'package' => [
+            'name' => $session['package_name'] ?? 'Training Session',
+        ],
+        'client' => [
+            'id' => $clientId,
+            'first_name' => $session['client_first'] ?? '',
+            'last_name' => $session['client_last'] ?? '',
+        ],
+        'trainer' => [
+            'id' => $trainerId,
+            'first_name' => $session['trainer_first'] ?? '',
+            'last_name' => $session['trainer_last'] ?? '',
+        ],
+    ]);
+}
+
+if ($action === 'session_status') {
+    $fresh = null;
+    if ($stmt = $conn->prepare($sql)) {
+        $stmt->bind_param('i', $sessionId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $fresh = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+    }
+    if (!$fresh) {
+        client_sessions_respond(false, 'Session not found.');
+    }
+    $packageTotals = null;
+    $overallTotals = null;
+    $pkgId = (int)($fresh['package_id'] ?? 0);
+    if ($pkgId > 0) {
+        $summary = ppf_trainer_sessions_fetch_package_summary($conn, $pkgId);
+        if ($summary) {
+            $purchased = (int)($summary['purchased_sessions'] ?? 0);
+            $used = (int)($summary['completed_count'] ?? 0);
+            $scheduled = (int)($summary['scheduled_open'] ?? 0);
+            $packageTotals = [
+                'package_id' => $pkgId,
+                'purchased' => $purchased,
+                'used' => $used,
+                'scheduled' => $scheduled,
+                'remaining' => max(0, $purchased - $used),
+            ];
+        }
+    }
+    if ($clientId > 0) {
+        $packages = ppf_trainer_sessions_fetch_packages($conn, null, $clientId);
+        $totalPurchased = 0;
+        $totalUsed = 0;
+        $totalScheduled = 0;
+        foreach ($packages as $pkg) {
+            $totalPurchased += (int)($pkg['purchased_sessions'] ?? 0);
+            $totalUsed += (int)($pkg['completed_count'] ?? 0);
+            $totalScheduled += (int)($pkg['scheduled_open'] ?? 0);
+        }
+        $overallTotals = [
+            'purchased' => $totalPurchased,
+            'used' => $totalUsed,
+            'scheduled' => $totalScheduled,
+            'remaining' => max(0, $totalPurchased - $totalUsed),
+        ];
+    }
+    client_sessions_respond(true, 'Status loaded.', [
+        'session' => client_sessions_shape_session($fresh),
+        'package_totals' => $packageTotals,
+        'overall_totals' => $overallTotals,
+    ]);
+}
 
 if ($action === 'start_session') {
     if ($status === 'completed') {
@@ -210,17 +293,23 @@ if ($status === 'cancelled') {
 if (!client_sessions_within_timer_window($session)) {
     client_sessions_respond(false, 'Sessions can only be ended within the allowed window.');
 }
-if (empty($session['actual_start_at']) && $status !== 'in_progress') {
-    client_sessions_respond(false, 'Please start the session before ending it.');
-}
-
 $updateSql = "UPDATE trainer_sessions
-              SET status='completed', actual_end_at = NOW(), completed_at = NOW(), completion_marked_by = ?, timer_ended_by = ?, duration_seconds = CASE WHEN actual_start_at IS NULL THEN duration_seconds ELSE TIMESTAMPDIFF(SECOND, actual_start_at, NOW()) END, updated_at = NOW()
+              SET status='completed',
+                  actual_start_at = COALESCE(actual_start_at, scheduled_start, NOW()),
+                  actual_end_at = NOW(),
+                  completed_at = NOW(),
+                  completion_marked_by = ?,
+                  timer_started_by = IF(actual_start_at IS NULL, ?, timer_started_by),
+                  timer_ended_by = ?,
+                  duration_seconds = CASE WHEN COALESCE(actual_start_at, scheduled_start, NOW()) IS NULL
+                                            THEN duration_seconds
+                                            ELSE TIMESTAMPDIFF(SECOND, COALESCE(actual_start_at, scheduled_start, NOW()), NOW()) END,
+                  updated_at = NOW()
               WHERE id = ? AND status IN ('scheduled','in_progress')";
 if (!$updateStmt = $conn->prepare($updateSql)) {
     client_sessions_respond(false, 'Unable to update the session.');
 }
-$updateStmt->bind_param('iii', $actorId, $actorId, $sessionId);
+$updateStmt->bind_param('iiii', $actorId, $actorId, $actorId, $sessionId);
 if (!$updateStmt->execute()) {
     $err = $updateStmt->error;
     $updateStmt->close();
@@ -234,6 +323,7 @@ if ($affected <= 0) {
 }
 
 $session['status'] = 'completed';
+$session['actual_start_at'] = $session['actual_start_at'] ?: $session['scheduled_start'];
 $session['actual_end_at'] = $nowString;
 $session['completed_at'] = $nowString;
 $session['completion_marked_by'] = $actorId;
@@ -244,7 +334,7 @@ if (function_exists('ppf_log')) {
         'package_id' => $session['package_id'] ?? null,
         'completed_at' => $nowString,
         'completed_by' => $actorId,
-        'source' => 'client_plans',
+        'source' => (string)($_POST['source'] ?? 'client_plans'),
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     ppf_log($conn, $actorId, $_SESSION['email'] ?? null, $_SESSION['role'] ?? null, 'trainer_session_completed', 'session', (string)$sessionId, $details);
 }
