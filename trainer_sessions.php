@@ -171,32 +171,44 @@ $catalogCards = array_map(function (array $pkg) {
 }, $catalogPackages);
 
 $rosterScope = 'my';
-if ($pricingMode === 'admin' && ($isTrainerAdmin || $isAdmin)) {
+if (($isTrainerAdmin || $isAdmin)) {
     $scopeCandidate = strtolower((string)($_GET['scope'] ?? 'my'));
     if (in_array($scopeCandidate, ['my', 'all', 'unassigned'], true)) {
         $rosterScope = $scopeCandidate;
     }
 }
 
+$rosterTrainerId = $trainerId;
+if ($isAdmin && isset($_GET['trainer_id'])) {
+    $rosterTrainerId = max(0, (int)$_GET['trainer_id']);
+}
+
 $rosterRows = [];
-if ($pricingMode === 'admin') {
-    if ($isAdmin && isset($_GET['trainer_id'])) {
-        $trainerId = max(0, (int)$_GET['trainer_id']);
-    }
+if ($isTrainerAdmin || $isAdmin) {
     switch ($rosterScope) {
         case 'all':
             $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, ['include_unassigned' => true]);
             break;
         case 'unassigned':
-            $rosterRows = array_filter(
+            $rosterRows = array_values(array_filter(
                 ppf_trainer_sessions_collect_client_overview($conn, ['include_unassigned' => true]),
                 fn($row) => (int)($row['assigned_trainer_id'] ?? 0) === 0
-            );
+            ));
             break;
         default:
-            $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, ['trainer_id' => $trainerId]);
+            if ($rosterTrainerId > 0) {
+                $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, ['trainer_id' => $rosterTrainerId]);
+            } else {
+                $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, ['include_unassigned' => false]);
+            }
             break;
     }
+} else {
+    $options = [];
+    if ($rosterTrainerId > 0) {
+        $options['trainer_id'] = $rosterTrainerId;
+    }
+    $rosterRows = ppf_trainer_sessions_collect_client_overview($conn, $options);
 }
 
 $clientSummaries = [];
@@ -204,8 +216,7 @@ $clientDetails = [];
 $availablePackagesForClients = [];
 $clientRosterPayload = [];
 
-if ($pricingMode === 'admin') {
-    foreach ($rosterRows as $row) {
+foreach ($rosterRows as $row) {
         $clientId = (int)($row['id'] ?? 0);
         if ($clientId <= 0) {
             continue;
@@ -240,8 +251,7 @@ if ($pricingMode === 'admin') {
             'payments_total' => ts_format_currency($row['total_payments'] ?? 0),
             'refunds_total' => ts_format_currency($row['total_refunds'] ?? 0),
         ];
-
-        $packages = ppf_trainer_sessions_collect_client_packages($conn, $clientId, $trainerId > 0 ? $trainerId : null);
+        $packages = ppf_trainer_sessions_collect_client_packages($conn, $clientId, $rosterTrainerId > 0 ? $rosterTrainerId : null);
         $transactionsCount = 0;
         $sessionRows = [];
         $packageCards = [];
@@ -352,14 +362,13 @@ if ($pricingMode === 'admin') {
         ];
     }
 
-    $availablePackagesForClients = array_map(function ($pkg) {
-        return [
-            'id' => (int)($pkg['id'] ?? 0),
-            'title' => $pkg['title'] ?? 'Package',
-            'label' => ($pkg['title'] ?? 'Package') . ' • ' . ts_format_currency($pkg['total_price'] ?? 0) . ' (' . (int)($pkg['session_count'] ?? 1) . ' sessions)',
-        ];
-    }, $catalogPackages);
-}
+$availablePackagesForClients = array_map(function ($pkg) {
+    return [
+        'id' => (int)($pkg['id'] ?? 0),
+        'title' => $pkg['title'] ?? 'Package',
+        'label' => ($pkg['title'] ?? 'Package') . ' • ' . ts_format_currency($pkg['total_price'] ?? 0) . ' (' . (int)($pkg['session_count'] ?? 1) . ' sessions)',
+    ];
+}, $catalogPackages);
 
 ?>
 <style>
@@ -642,6 +651,9 @@ if ($pricingMode === 'admin') {
     min-width: 180px;
     box-shadow: 0 18px 40px rgba(2, 6, 23, 0.45);
     z-index: 30;
+  }
+  .filter-group.has-menu .column-toggle-menu[hidden] {
+    display: none !important;
   }
   .filter-group.has-menu .column-toggle-menu label {
     display: flex;
@@ -1089,7 +1101,6 @@ if ($pricingMode === 'admin') {
       </div>
     </section>
 
-    <?php if ($pricingMode === 'admin'): ?>
     <section class="panel session-panel" id="clientRoster">
       <header class="panel-header">
         <div class="panel-title">
@@ -1111,7 +1122,7 @@ if ($pricingMode === 'admin') {
             <input type="search" id="clientSearch" class="input" placeholder="Search clients">
           </div>
           <div class="filter-group has-menu">
-            <button class="btn secondary" type="button" id="columnToggleBtn">Columns</button>
+            <button class="btn secondary" type="button" id="columnToggleBtn" aria-haspopup="true" aria-expanded="false">Columns</button>
             <div class="column-toggle-menu" id="columnToggleMenu" hidden>
               <label><input type="checkbox" data-column="middle" checked> Middle Name</label>
               <label><input type="checkbox" data-column="phone" checked> Phone Number</label>
@@ -1125,6 +1136,11 @@ if ($pricingMode === 'admin') {
       </header>
 
       <div class="panel-body panel-body--flush">
+        <?php if (empty($clientSummaries)): ?>
+          <div class="empty-state">
+            <p>No clients are assigned yet. Once you add clients, they will appear here.</p>
+          </div>
+        <?php else: ?>
         <div class="table-wrapper">
           <table class="data-table" id="clientTable">
         <colgroup>
@@ -1270,9 +1286,9 @@ if ($pricingMode === 'admin') {
         </tbody>
           </table>
         </div>
+        <?php endif; ?>
       </div>
     </section>
-  <?php endif; ?>
   </div>
 </main>
 
@@ -1498,14 +1514,32 @@ if ($pricingMode === 'admin') {
 
   function setupColumnToggle(){
     if (!columnToggleBtn || !columnToggleMenu) return;
-    columnToggleBtn.addEventListener('click', () => {
-      columnToggleMenu.hidden = !columnToggleMenu.hidden;
+    const setMenuVisibility = (shouldShow) => {
+      columnToggleMenu.hidden = !shouldShow;
+      columnToggleBtn.setAttribute('aria-expanded', shouldShow ? 'true' : 'false');
+    };
+
+    setMenuVisibility(false);
+
+    columnToggleBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      const willOpen = columnToggleMenu.hidden;
+      setMenuVisibility(willOpen);
     });
+
     document.addEventListener('click', (event) => {
       if (!columnToggleMenu.hidden && !columnToggleMenu.contains(event.target) && event.target !== columnToggleBtn) {
-        columnToggleMenu.hidden = true;
+        setMenuVisibility(false);
       }
     });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !columnToggleMenu.hidden) {
+        setMenuVisibility(false);
+        columnToggleBtn.focus();
+      }
+    });
+
     columnToggleMenu.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
       checkbox.addEventListener('change', () => {
         const column = checkbox.dataset.column;
