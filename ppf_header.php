@@ -4,6 +4,7 @@
 
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/ppf_theme.php';
+require_once __DIR__ . '/trainer_sessions_helpers.php';
 
 if (!function_exists('h')) {
   function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -15,6 +16,18 @@ if (!function_exists('avatar_src')) {
     if ($val[0] === '/') return $val;                     // absolute web path
     if (stripos($val, 'uploads/') === 0) return '/'.$val; // relative /uploads/...
     return '/uploads/avatars/' . ltrim($val, '/');        // bare filename (legacy)
+  }
+}
+
+if (!function_exists('ppf_header_format_datetime')) {
+  function ppf_header_format_datetime(?string $iso): string {
+    if (!$iso) return '—';
+    try {
+      $dt = new DateTimeImmutable($iso);
+      return $dt->format('M j, Y g:i A');
+    } catch (Throwable $e) {
+      return (string)$iso;
+    }
   }
 }
 
@@ -103,6 +116,38 @@ $headerNotifySeed = [
 ];
 $headerNotifySeedJson = json_encode($headerNotifySeed, JSON_UNESCAPED_SLASHES);
 $headerNotifyTypesJson = json_encode(ppf_notifications_types(), JSON_UNESCAPED_SLASHES);
+$activeSessionContext = null;
+if ($headerUserId > 0 && isset($conn) && $conn instanceof mysqli) {
+  try {
+    if ($roleKey === 'client') {
+      $active = ppf_trainer_sessions_find_active_session_for_client($conn, $headerUserId);
+      if ($active) {
+        $trainerName = trim(($active['trainer_first'] ?? '') . ' ' . ($active['trainer_last'] ?? ''));
+        $activeSessionContext = [
+          'session_id' => (int)($active['id'] ?? 0),
+          'label' => $active['package_name'] ?? 'Active Session',
+          'subtitle' => $trainerName ? ('Trainer: ' . $trainerName) : 'Active Session',
+          'time' => ppf_header_format_datetime($active['scheduled_start'] ?? null),
+          'role' => 'client',
+        ];
+      }
+    } elseif (in_array($roleKey, ['trainer','trainer_admin'], true)) {
+      $active = ppf_trainer_sessions_find_active_session_for_trainer($conn, $headerUserId);
+      if ($active) {
+        $clientName = trim(($active['client_first'] ?? '') . ' ' . ($active['client_last'] ?? ''));
+        $activeSessionContext = [
+          'session_id' => (int)($active['id'] ?? 0),
+          'label' => $active['package_name'] ?? 'Active Session',
+          'subtitle' => $clientName ? ('Client: ' . $clientName) : 'Active Session',
+          'time' => ppf_header_format_datetime($active['scheduled_start'] ?? null),
+          'role' => 'trainer',
+        ];
+      }
+    }
+  } catch (Throwable $e) {
+    $activeSessionContext = null;
+  }
+}
 $showDemoBanner = false;
 if (ppf_is_admin_role($role)) {
   try {
@@ -138,6 +183,144 @@ if (isset($conn) && $conn instanceof mysqli && function_exists('ppf_log_page_vie
   top: 0;
   z-index: 4000;
   display: block;
+}
+.ppf-active-session-banner {
+  position: relative;
+  z-index: 3050;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-strong, var(--brand)) 85%, #1e293b 15%), color-mix(in srgb, var(--theme-swatch-2, var(--brand)) 65%, #0f172a 35%));
+  color: #f8fafc;
+  padding: 14px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--brand-strong, var(--brand)) 60%, rgba(15,23,42,0.65) 40%);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.35);
+}
+.ppf-active-session-banner strong {
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+.ppf-active-session-banner span {
+  font-size: 14px;
+  opacity: .85;
+}
+.ppf-active-session-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.ppf-active-session-button {
+  appearance: none;
+  border: 0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  background: rgba(15,23,42,0.18);
+  color: inherit;
+  cursor: pointer;
+  transition: background .2s ease, transform .2s ease;
+}
+.ppf-active-session-button:hover,
+.ppf-active-session-button:focus-visible {
+  background: rgba(15,23,42,0.32);
+  transform: translateY(-1px);
+}
+.ppf-active-session-button:focus-visible {
+  outline: 2px solid rgba(148, 163, 184, 0.6);
+  outline-offset: 2px;
+}
+.ppf-session-qr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.68);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+  padding: 24px;
+}
+body.ppf-session-qr-open {
+  overflow: hidden;
+}
+.ppf-session-qr-modal {
+  background: var(--panel-elevated);
+  border-radius: 20px;
+  max-width: min(460px, 100%);
+  width: 100%;
+  box-shadow: 0 30px 90px rgba(15, 23, 42, 0.55);
+  padding: 28px 28px 32px;
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--card-border) 60%, rgba(148,163,184,0.25) 40%);
+}
+.ppf-session-qr-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: transparent;
+  border: 0;
+  color: var(--text, #e2e8f0);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: .7;
+  transition: opacity .2s ease;
+}
+.ppf-session-qr-close:hover,
+.ppf-session-qr-close:focus-visible {
+  opacity: 1;
+}
+.ppf-session-qr-loading,
+.ppf-session-qr-error,
+.ppf-session-qr-ready,
+.ppf-session-qr-success {
+  text-align: center;
+  color: var(--text, #e2e8f0);
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+}
+.ppf-session-qr-code {
+  background: rgba(148, 163, 184, 0.12);
+  padding: 16px;
+  border-radius: 18px;
+  display: inline-block;
+}
+.ppf-session-qr-code img {
+  display: block;
+  width: 240px;
+  height: 240px;
+}
+.ppf-session-qr-subtitle {
+  font-size: 15px;
+  font-weight: 600;
+  opacity: .85;
+  margin: 0;
+}
+.ppf-session-qr-instructions {
+  font-size: 14px;
+  opacity: .75;
+  margin: 0;
+}
+.ppf-session-qr-error strong {
+  color: var(--danger, #fca5a5);
+}
+.ppf-session-qr-success-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  font-size: 42px;
+  font-weight: 700;
+}
+.ppf-session-qr-success h3 {
+  margin: 0;
+  font-size: 22px;
 }
 .ppf-topbar {
   display:flex;align-items:center;justify-content:space-between;
@@ -711,8 +894,30 @@ body.ppf-themed .tabs .tab.active {
     </nav>
   </div>
 </header>
+<?php if ($activeSessionContext): ?>
+  <div class="ppf-active-session-banner" role="status" aria-live="polite">
+    <div style="display:flex;flex-direction:column;gap:2px;">
+      <strong>Active Session</strong>
+      <span><?php echo h($activeSessionContext['label']); ?></span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px;min-width:180px;">
+      <span><?php echo h($activeSessionContext['subtitle']); ?></span>
+      <span><?php echo h($activeSessionContext['time']); ?></span>
+    </div>
+    <div class="ppf-active-session-actions">
+      <button type="button"
+              class="ppf-active-session-button"
+              data-session-qr-trigger="1"
+              data-session-qr-session-id="<?php echo h($activeSessionContext['session_id']); ?>"
+              data-session-qr-label="<?php echo h($activeSessionContext['label']); ?>">
+        Show QR Code
+      </button>
+    </div>
+  </div>
+<?php endif; ?>
 </div>
 
+<script src="trainer_sessions_qr.js"></script>
 <script>
 (function(){
   var chip=document.getElementById('ppfUserChip');
