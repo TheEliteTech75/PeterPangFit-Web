@@ -306,107 +306,564 @@ if ($pricingMode === 'admin') {
 }
 
 ?>
-<main class="page" id="trainerSessions">
-  <div class="page-header">
-    <div>
-      <h1>Trainer Sessions</h1>
-      <p class="muted">Coordinate pricing, packages, and scheduling for every client in one unified workspace.</p>
-    </div>
-    <?php if ($pricingMode === 'admin'): ?>
-    <div class="pricing-mode-indicator">
-      <span class="badge">Trainer Admin sets prices</span>
-    </div>
-    <?php else: ?>
-    <div class="pricing-mode-indicator">
-      <span class="badge">Trainer sets own prices</span>
-    </div>
-    <?php endif; ?>
-  </div>
+<style>
+  #trainerSessions {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding-bottom: 48px;
+  }
+  #trainerSessions .session-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  #trainerSessions .session-mode-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    background: rgba(37, 99, 235, 0.14);
+    border: 1px solid rgba(37, 99, 235, 0.35);
+    color: rgba(191, 219, 254, 0.95);
+    text-transform: uppercase;
+  }
+  #trainerSessions .session-mode-chip.is-trainer {
+    background: rgba(16, 185, 129, 0.14);
+    border-color: rgba(16, 185, 129, 0.35);
+    color: rgba(167, 243, 208, 0.95);
+  }
+  .session-panel {
+    background: rgba(12, 18, 32, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 18px;
+    box-shadow: 0 28px 70px rgba(2, 8, 23, 0.55);
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+  }
+  .session-panel__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 22px 26px;
+    gap: 18px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.88), rgba(30, 41, 59, 0.45));
+  }
+  .session-panel__title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .session-panel__title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: var(--text, #f8fafc);
+  }
+  .session-panel__subtitle {
+    margin: 0;
+    color: var(--muted, rgba(148, 163, 184, 0.88));
+    font-size: 13px;
+    line-height: 1.45;
+    max-width: 520px;
+  }
+  .session-panel__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .session-panel__actions .btn {
+    border-radius: 10px;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .session-panel__body {
+    padding: 24px 26px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .session-panel__body--flush {
+    padding: 0;
+  }
+  .session-panel__body .empty-state {
+    padding: 40px 24px;
+    border-radius: 14px;
+    border: 1px dashed rgba(148, 163, 184, 0.3);
+    background: rgba(8, 13, 23, 0.72);
+    text-align: center;
+    color: var(--muted, rgba(148, 163, 184, 0.85));
+    font-size: 14px;
+  }
+  .session-panel__body .empty-state p {
+    margin: 0;
+  }
+  .package-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+  }
+  .package-card {
+    background: linear-gradient(155deg, rgba(17, 24, 39, 0.92), rgba(30, 41, 59, 0.65));
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 16px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+  .package-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 24px 50px rgba(8, 24, 55, 0.45);
+    border-color: color-mix(in srgb, rgba(148, 163, 184, 0.18) 40%, var(--brand, #38bdf8) 60%);
+  }
+  .package-card header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .package-card h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text, #f8fafc);
+  }
+  .package-card .package-price {
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--brand, #38bdf8);
+  }
+  .package-card dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 14px;
+  }
+  .package-card dl div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .package-card dt {
+    font-size: 11px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--muted, rgba(148, 163, 184, 0.78));
+  }
+  .package-card dd {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text, #f8fafc);
+  }
+  .filter-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+  }
+  .filter-group .input {
+    background: rgba(8, 13, 23, 0.86);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    color: var(--text, #f8fafc);
+    padding: 8px 12px;
+    border-radius: 10px;
+    min-height: 36px;
+  }
+  .filter-group .input::placeholder {
+    color: rgba(148, 163, 184, 0.75);
+  }
+  .filter-group.has-menu {
+    position: relative;
+  }
+  .column-toggle-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    background: rgba(8, 13, 23, 0.96);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: grid;
+    gap: 8px;
+    min-width: 200px;
+    box-shadow: 0 22px 48px rgba(2, 8, 23, 0.55);
+    z-index: 30;
+  }
+  .column-toggle-menu label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text, #f8fafc);
+    white-space: nowrap;
+  }
+  .column-toggle-menu input {
+    accent-color: var(--brand, #38bdf8);
+  }
+  .table-responsive {
+    width: 100%;
+    overflow-x: auto;
+  }
+  #clientTable {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 960px;
+  }
+  #clientTable thead th {
+    background: rgba(12, 18, 32, 0.84);
+    padding: 14px 16px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted, rgba(148, 163, 184, 0.8));
+  }
+  #clientTable thead th .sort-btn {
+    color: inherit;
+  }
+  #clientTable tbody td {
+    padding: 14px 16px;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    font-size: 14px;
+    color: var(--text, #f8fafc);
+  }
+  #clientTable tbody tr {
+    transition: background 0.18s ease, box-shadow 0.18s ease;
+  }
+  #clientTable tbody tr:hover {
+    background: rgba(56, 189, 248, 0.08);
+  }
+  #clientTable tbody tr.is-active {
+    background: rgba(56, 189, 248, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
+  }
+  .table-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .client-row {
+    cursor: pointer;
+  }
+  .client-expansion {
+    display: none;
+  }
+  .client-expansion.is-open {
+    display: table-row;
+  }
+  .client-expansion > td {
+    padding: 0;
+    background: rgba(5, 9, 20, 0.85);
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+  }
+  .client-detail-panel {
+    padding: 24px;
+    display: grid;
+    gap: 18px;
+    background: linear-gradient(150deg, rgba(12, 18, 32, 0.92), rgba(8, 13, 23, 0.86));
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+  }
+  .detail-card {
+    background: rgba(9, 14, 28, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 14px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+  }
+  .detail-card header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text, #f8fafc);
+  }
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+  }
+  .metrics-grid .label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--muted, rgba(148, 163, 184, 0.75));
+  }
+  .metrics-grid .value {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text, #f8fafc);
+  }
+  .inner-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(8, 13, 23, 0.7);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .inner-table thead th {
+    background: rgba(15, 23, 42, 0.88);
+    color: var(--muted, rgba(148, 163, 184, 0.85));
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 12px 14px;
+  }
+  .inner-table tbody td {
+    padding: 12px 14px;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    font-size: 13px;
+    color: var(--text, #f8fafc);
+  }
+  .inner-table tbody tr:hover {
+    background: rgba(56, 189, 248, 0.08);
+  }
+  .session-row.is-active .status-pill {
+    background: rgba(16, 185, 129, 0.18);
+    color: #6ee7b7;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(56, 189, 248, 0.18);
+    color: rgba(125, 211, 252, 0.95);
+    text-transform: capitalize;
+  }
+  .modal-backdrop {
+    background: rgba(8, 13, 23, 0.86);
+    backdrop-filter: blur(6px);
+  }
+  .modal {
+    background: rgba(10, 16, 28, 0.96);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(2, 8, 23, 0.6);
+  }
+  .modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  }
+  .modal-body {
+    padding: 24px;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .form-grid {
+    display: grid;
+    gap: 18px;
+  }
+  .form-grid .field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .form-grid .input,
+  .form-grid select {
+    background: rgba(8, 13, 23, 0.86);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: var(--text, #f8fafc);
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+  .form-grid .input:focus-visible,
+  .form-grid select:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.55);
+    outline-offset: 2px;
+  }
+  .form-grid .radio-group {
+    display: grid;
+    gap: 8px;
+  }
+  .form-grid .split {
+    display: flex;
+    gap: 10px;
+  }
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+  .form-actions .btn {
+    min-width: 140px;
+  }
+  @media (max-width: 1100px) {
+    .session-panel__header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .session-panel__actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+    #clientTable {
+      min-width: 840px;
+    }
+  }
+  @media (max-width: 720px) {
+    #trainerSessions {
+      gap: 18px;
+    }
+    .session-panel__body {
+      padding: 20px;
+    }
+    .package-grid {
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+    .session-panel__actions {
+      gap: 10px;
+    }
+    .filter-group {
+      width: 100%;
+    }
+    .filter-group .input {
+      width: 100%;
+    }
+    .client-detail-panel {
+      padding: 18px;
+    }
+  }
+  @media (max-width: 560px) {
+    .session-panel__actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .filter-group {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .filter-group.has-menu .column-toggle-menu {
+      left: 0;
+      right: auto;
+    }
+    .session-panel__body {
+      padding: 18px;
+    }
+  }
+</style>
+<main class="wrap" id="trainerSessions">
+  <?php
+  ppf_subheader([
+    'title' => 'Trainer Sessions',
+    'subtitle' => 'Coordinate pricing, packages, and scheduling for every client in one unified workspace.',
+    'actions' => function () use ($pricingMode) {
+        ?>
+        <span class="session-mode-chip <?php echo $pricingMode === 'admin' ? 'is-admin' : 'is-trainer'; ?>">
+          <?php echo $pricingMode === 'admin' ? 'Trainer Admin sets prices' : 'Trainers set own prices'; ?>
+        </span>
+        <?php
+    },
+  ]);
+  ?>
 
-  <section class="card session-card" id="catalogCard">
-    <div class="card-header">
-      <div>
-        <h2>Packages</h2>
-        <?php if ($pricingMode === 'trainer'): ?>
-        <p class="muted">Build personalised packages that reflect your coaching style and value.</p>
+  <div class="session-layout">
+    <section class="session-panel" id="catalogCard">
+      <header class="session-panel__header">
+        <div class="session-panel__title-group">
+          <h2 class="session-panel__title">Packages</h2>
+          <?php if ($pricingMode === 'trainer'): ?>
+            <p class="session-panel__subtitle">Build personalised packages that reflect your coaching style and value.</p>
+          <?php else: ?>
+            <p class="session-panel__subtitle">Create global packages for your trainers to offer consistently across the team.</p>
+          <?php endif; ?>
+        </div>
+        <div class="session-panel__actions">
+          <button class="btn brand" type="button" id="createPackageBtn">Create Package</button>
+        </div>
+      </header>
+
+      <div class="session-panel__body">
+        <?php if (empty($catalogCards)): ?>
+          <div class="empty-state">
+            <p>No packages yet. Create your first offer to start selling sessions.</p>
+          </div>
         <?php else: ?>
-        <p class="muted">Create global packages for your trainers to offer consistently across the team.</p>
+          <div class="package-grid">
+            <?php foreach ($catalogCards as $pkg): ?>
+              <article class="package-card" data-package-id="<?php echo h($pkg['id']); ?>">
+                <header>
+                  <h3><?php echo h($pkg['title']); ?></h3>
+                  <span class="package-price"><?php echo h($pkg['total_price']); ?></span>
+                </header>
+                <dl>
+                  <div>
+                    <dt>Sessions</dt>
+                    <dd><?php echo h($pkg['sessions']); ?></dd>
+                  </div>
+                  <div>
+                    <dt>Price per Session</dt>
+                    <dd><?php echo h($pkg['price_per_session']); ?></dd>
+                  </div>
+                  <div>
+                    <dt>Expiration</dt>
+                    <dd><?php echo h($pkg['expires']); ?></dd>
+                  </div>
+                </dl>
+              </article>
+            <?php endforeach; ?>
+          </div>
         <?php endif; ?>
       </div>
-      <div class="card-actions">
-        <button class="btn" type="button" id="createPackageBtn">Create Package</button>
-      </div>
-    </div>
+    </section>
 
-    <?php if (empty($catalogCards)): ?>
-      <div class="empty-state">
-        <p>No packages yet. Create your first offer to start selling sessions.</p>
-      </div>
-    <?php else: ?>
-      <div class="package-grid">
-        <?php foreach ($catalogCards as $pkg): ?>
-          <article class="package-card" data-package-id="<?php echo h($pkg['id']); ?>">
-            <header>
-              <h3><?php echo h($pkg['title']); ?></h3>
-              <span class="package-price"><?php echo h($pkg['total_price']); ?></span>
-            </header>
-            <dl>
-              <div>
-                <dt>Sessions</dt>
-                <dd><?php echo h($pkg['sessions']); ?></dd>
-              </div>
-              <div>
-                <dt>Price per Session</dt>
-                <dd><?php echo h($pkg['price_per_session']); ?></dd>
-              </div>
-              <div>
-                <dt>Expiration</dt>
-                <dd><?php echo h($pkg['expires']); ?></dd>
-              </div>
-            </dl>
-          </article>
-        <?php endforeach; ?>
-      </div>
-    <?php endif; ?>
-  </section>
-
-  <?php if ($pricingMode === 'admin'): ?>
-  <section class="card session-card" id="clientRoster">
-    <div class="card-header">
-      <div>
-        <h2>Clients</h2>
-        <p class="muted">Monitor client engagement, manage sessions, and keep financials balanced.</p>
-      </div>
-      <div class="card-actions">
-        <?php if ($isTrainerAdmin || $isAdmin): ?>
-        <div class="filter-group">
-          <label for="rosterScope" class="visually-hidden">Filter clients</label>
-          <select id="rosterScope" class="input small">
-            <option value="my" <?php echo $rosterScope === 'my' ? 'selected' : ''; ?>>My Clients</option>
-            <option value="all" <?php echo $rosterScope === 'all' ? 'selected' : ''; ?>>All Clients</option>
-            <option value="unassigned" <?php echo $rosterScope === 'unassigned' ? 'selected' : ''; ?>>Unassigned</option>
-          </select>
+    <?php if ($pricingMode === 'admin'): ?>
+    <section class="session-panel" id="clientRoster">
+      <header class="session-panel__header">
+        <div class="session-panel__title-group">
+          <h2 class="session-panel__title">Clients</h2>
+          <p class="session-panel__subtitle">Monitor client engagement, manage sessions, and keep financials balanced.</p>
         </div>
-        <?php endif; ?>
-        <div class="filter-group">
-          <input type="search" id="clientSearch" class="input" placeholder="Search clients">
-        </div>
-        <div class="filter-group">
-          <button class="btn secondary" type="button" id="columnToggleBtn">Columns</button>
-          <div class="column-toggle-menu" id="columnToggleMenu" hidden>
-            <label><input type="checkbox" data-column="middle" checked> Middle Name</label>
-            <label><input type="checkbox" data-column="phone" checked> Phone Number</label>
-            <label><input type="checkbox" data-column="birthdate" checked> Birthdate</label>
-            <label><input type="checkbox" data-column="age" checked> Age</label>
-            <label><input type="checkbox" data-column="height" checked> Height</label>
-            <label><input type="checkbox" data-column="weight" checked> Weight</label>
+        <div class="session-panel__actions">
+          <?php if ($isTrainerAdmin || $isAdmin): ?>
+          <div class="filter-group">
+            <label for="rosterScope" class="visually-hidden">Filter clients</label>
+            <select id="rosterScope" class="input small">
+              <option value="my" <?php echo $rosterScope === 'my' ? 'selected' : ''; ?>>My Clients</option>
+              <option value="all" <?php echo $rosterScope === 'all' ? 'selected' : ''; ?>>All Clients</option>
+              <option value="unassigned" <?php echo $rosterScope === 'unassigned' ? 'selected' : ''; ?>>Unassigned</option>
+            </select>
+          </div>
+          <?php endif; ?>
+          <div class="filter-group">
+            <input type="search" id="clientSearch" class="input" placeholder="Search clients">
+          </div>
+          <div class="filter-group has-menu">
+            <button class="btn secondary" type="button" id="columnToggleBtn">Columns</button>
+            <div class="column-toggle-menu" id="columnToggleMenu" hidden>
+              <label><input type="checkbox" data-column="middle" checked> Middle Name</label>
+              <label><input type="checkbox" data-column="phone" checked> Phone Number</label>
+              <label><input type="checkbox" data-column="birthdate" checked> Birthdate</label>
+              <label><input type="checkbox" data-column="age" checked> Age</label>
+              <label><input type="checkbox" data-column="height" checked> Height</label>
+              <label><input type="checkbox" data-column="weight" checked> Weight</label>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </header>
 
-    <div class="table-responsive">
-      <table class="data-table" id="clientTable">
+      <div class="session-panel__body session-panel__body--flush">
+        <div class="table-responsive">
+          <table class="data-table" id="clientTable">
         <colgroup>
           <col span="1">
           <col span="1" data-column="middle">
@@ -548,10 +1005,12 @@ if ($pricingMode === 'admin') {
           </tr>
         <?php endforeach; ?>
         </tbody>
-      </table>
-    </div>
-  </section>
+          </table>
+        </div>
+      </div>
+    </section>
   <?php endif; ?>
+  </div>
 </main>
 
 <div class="modal-backdrop hidden" id="sessionModal" aria-hidden="true">
