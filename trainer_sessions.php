@@ -1424,21 +1424,23 @@ $availablePackagesForClients = array_map(function ($pkg) {
           <label><input type="radio" name="expires_type" value="date"> On a specific date</label>
         </div>
       </fieldset>
-      <div class="field" data-expiration="duration" hidden aria-hidden="true">
-        <label for="expiresValue">Duration</label>
-        <div class="split">
-          <input id="expiresValue" name="expires_value" type="number" min="1" class="input" value="30" disabled>
-          <select id="expiresUnit" name="expires_unit" class="input" disabled>
-            <option value="days">Days</option>
-            <option value="weeks">Weeks</option>
-            <option value="months">Months</option>
-            <option value="years">Years</option>
-          </select>
+      <div data-expiration-container>
+        <div class="field" data-expiration="duration" hidden aria-hidden="true">
+          <label for="expiresValue">Duration</label>
+          <div class="split">
+            <input id="expiresValue" name="expires_value" type="number" min="1" class="input" value="30" disabled>
+            <select id="expiresUnit" name="expires_unit" class="input" disabled>
+              <option value="days">Days</option>
+              <option value="weeks">Weeks</option>
+              <option value="months">Months</option>
+              <option value="years">Years</option>
+            </select>
+          </div>
         </div>
-      </div>
-      <div class="field" data-expiration="date" hidden aria-hidden="true">
-        <label for="expiresOn">Expiration Date</label>
-        <input id="expiresOn" name="expires_on" type="date" class="input" disabled>
+        <div class="field" data-expiration="date" hidden aria-hidden="true">
+          <label for="expiresOn">Expiration Date</label>
+          <input id="expiresOn" name="expires_on" type="date" class="input" disabled>
+        </div>
       </div>
       <div class="form-actions">
         <button type="submit" class="btn">Create Package</button>
@@ -1450,7 +1452,8 @@ $availablePackagesForClients = array_map(function ($pkg) {
     const sessionInput = wrapper.querySelector('#pkgSessions');
     const totalLabel = wrapper.querySelector('#pkgTotal');
     const expirationRadios = wrapper.querySelectorAll('input[name="expires_type"]');
-    const expirationSections = wrapper.querySelectorAll('[data-expiration]');
+    const expirationContainer = wrapper.querySelector('[data-expiration-container]');
+    const expirationSections = new Map();
 
     function updateTotal(){
       const sessions = Math.max(1, parseInt(sessionInput.value || '0', 10));
@@ -1460,21 +1463,41 @@ $availablePackagesForClients = array_map(function ($pkg) {
       totalLabel.textContent = formatCurrency(total);
     }
 
+    expirationContainer?.querySelectorAll('[data-expiration]').forEach((section) => {
+      const type = section.dataset.expiration;
+      if (!type) {
+        return;
+      }
+      section.removeAttribute('hidden');
+      section.setAttribute('aria-hidden', 'true');
+      section.classList.add('hidden');
+      section.querySelectorAll('input, select, textarea').forEach((input) => {
+        input.disabled = true;
+      });
+      expirationSections.set(type, section);
+      section.remove();
+    });
+
     function refreshExpiration(){
       const selected = wrapper.querySelector('input[name="expires_type"]:checked');
       const value = selected ? selected.value : 'none';
-      expirationSections.forEach((section) => {
-        const isActive = section.dataset.expiration === value;
-        if (isActive) {
-          section.removeAttribute('hidden');
-        } else {
-          section.setAttribute('hidden', '');
-        }
+
+      if (!expirationContainer) {
+        return;
+      }
+
+      expirationContainer.innerHTML = '';
+
+      expirationSections.forEach((section, type) => {
+        const isActive = type === value;
         section.setAttribute('aria-hidden', isActive ? 'false' : 'true');
         section.classList.toggle('hidden', !isActive);
         section.querySelectorAll('input, select, textarea').forEach((input) => {
           input.disabled = !isActive;
         });
+        if (isActive) {
+          expirationContainer.appendChild(section);
+        }
       });
     }
 
