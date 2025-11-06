@@ -1424,11 +1424,11 @@ $availablePackagesForClients = array_map(function ($pkg) {
           <label><input type="radio" name="expires_type" value="date"> On a specific date</label>
         </div>
       </fieldset>
-      <div class="field" data-expiration="duration" hidden>
+      <div class="field" data-expiration="duration" hidden aria-hidden="true">
         <label for="expiresValue">Duration</label>
         <div class="split">
-          <input id="expiresValue" name="expires_value" type="number" min="1" class="input" value="30">
-          <select id="expiresUnit" name="expires_unit" class="input">
+          <input id="expiresValue" name="expires_value" type="number" min="1" class="input" value="30" disabled>
+          <select id="expiresUnit" name="expires_unit" class="input" disabled>
             <option value="days">Days</option>
             <option value="weeks">Weeks</option>
             <option value="months">Months</option>
@@ -1436,9 +1436,9 @@ $availablePackagesForClients = array_map(function ($pkg) {
           </select>
         </div>
       </div>
-      <div class="field" data-expiration="date" hidden>
+      <div class="field" data-expiration="date" hidden aria-hidden="true">
         <label for="expiresOn">Expiration Date</label>
-        <input id="expiresOn" name="expires_on" type="date" class="input">
+        <input id="expiresOn" name="expires_on" type="date" class="input" disabled>
       </div>
       <div class="form-actions">
         <button type="submit" class="btn">Create Package</button>
@@ -1464,7 +1464,17 @@ $availablePackagesForClients = array_map(function ($pkg) {
       const selected = wrapper.querySelector('input[name="expires_type"]:checked');
       const value = selected ? selected.value : 'none';
       expirationSections.forEach((section) => {
-        section.hidden = section.dataset.expiration !== value;
+        const isActive = section.dataset.expiration === value;
+        if (isActive) {
+          section.removeAttribute('hidden');
+        } else {
+          section.setAttribute('hidden', '');
+        }
+        section.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+        section.classList.toggle('hidden', !isActive);
+        section.querySelectorAll('input, select, textarea').forEach((input) => {
+          input.disabled = !isActive;
+        });
       });
     }
 
