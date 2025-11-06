@@ -1465,8 +1465,13 @@ $availablePackagesForClients = array_map(function ($pkg) {
       const value = selected ? selected.value : 'none';
       expirationSections.forEach((section) => {
         const isActive = section.dataset.expiration === value;
-        section.hidden = !isActive;
+        if (isActive) {
+          section.removeAttribute('hidden');
+        } else {
+          section.setAttribute('hidden', '');
+        }
         section.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+        section.classList.toggle('hidden', !isActive);
         section.querySelectorAll('input, select, textarea').forEach((input) => {
           input.disabled = !isActive;
         });
